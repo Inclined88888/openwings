@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell scripts
+        run: |
+          pip install --quiet shellcheck-py==0.11.0.1
+          shellcheck -x scripts/*.sh scripts/dev/*.sh tests/*/run.sh
+
+      - name: Compose files
+        run: |
+          printf 'ODYSSEUS_APP_KEY=%s\n' "$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')" > .env
+          docker compose config --quiet
+          docker compose --profile ollama --profile caldav --profile https config --quiet
+          docker compose -f docker-compose.yml -f compose/ollama-nvidia.yml --profile ollama config --quiet
+          rm .env
+
+      - name: Overlay matches patches
+        run: |
+          scripts/dev/rebase-overlay.sh
+          git status --porcelain overlay
+          test -z "$(git status --porcelain overlay)" || { echo "overlay/ is stale: run scripts/dev/rebase-overlay.sh"; exit 1; }
+
+      - name: Python syntax
+        run: |
+          python3 -m py_compile overlay/app/wings/*.py tests/unit/*.py tests/e2e/*.py scripts/vendor/*.py
