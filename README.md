@@ -43,7 +43,8 @@ Requirements:
 
 * Linux server, macOS or Windows with WSL2
 * Docker Engine 24 or newer (Docker Desktop on macOS/Windows) with the Compose v2 plugin, version 2.24 or newer (`docker compose version`)
-* 4 GB RAM minimum for the app with hosted models; local models need much more (see [Models](#models))
+* RAM: the core stack measured about 0.6 GB idle in testing (before the embedding model loads); plan for 2 GB or more with hosted models. Local models need much more (see [Models](#models))
+* Disk: several GB for images (the upstream image bundles Chromium and build tools), plus your data and any local models
 * Outbound access to `ghcr.io` (the Odysseus image) and Docker Hub (sidecars)
 
 ```bash
@@ -70,6 +71,7 @@ Optional extras, all through the same script (safe to re-run; it never regenerat
 | `--with-caldav` | Bundled Radicale CalDAV server: a private calendar your phone can sync |
 | `--domain ai.example.com --acme-email you@example.com` | Public HTTPS through Caddy with Let's Encrypt |
 | `--bind 0.0.0.0 --port 7011` | Expose the UI on your LAN instead of only this machine |
+| `--no-agents` | Skip adding the starter agents |
 
 The stack:
 
@@ -175,7 +177,14 @@ Sidebar **Agents** opens the persona editor. An agent has a name, instructions (
 
 Press **Start Persona** to activate it; saved agents appear in the editor's drop down. Use the message box's **Agent** switch for tool use; **Chat** mode answers without tools.
 
-Examples worth creating: an *Inbox triage* agent (email, notes, tasks), a *Researcher* (web, research, documents), a *Scheduler* (calendar, notes, tasks), a *Writer* (documents only).
+Four starter agents are added on first install (`./scripts/seed-agents.sh` re-adds any you delete; it never overwrites edits):
+
+| Agent | Tool families | Behaviour |
+| --- | --- | --- |
+| Inbox Triage | email, notes, tasks, calendar, contacts | Groups new mail by what needs action, treats mail content as untrusted, drafts replies for you to send, offers tasks for deadlines |
+| Researcher | web, research, documents, memory | Reads several sources, cites only pages it opened with numbered inline links, flags uncertainty |
+| Writer | documents, memory, files | Drafts and edits in your voice, never invents facts, lists its changes |
+| Planner | calendar, notes, tasks | Answers schedule questions, confirms before creating events, turns plans into tasks |
 
 **Scheduled agents**: sidebar **Tasks** runs an agent prompt on a schedule, a cron expression or an event (for example a morning briefing). Results go to a chat, or by email to yourself only.
 

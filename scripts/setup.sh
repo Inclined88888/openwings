@@ -27,12 +27,13 @@ Options:
   --bind ADDR            Host address for the web UI (default 127.0.0.1; 0.0.0.0 = whole LAN)
   --port N               Host port for the web UI (default 7011)
   --no-start             Write .env and config only; do not build or start anything
+  --no-agents            Do not add the starter agents on first install
   -h, --help             Show this help
 EOF
 }
 
 DOMAIN=""; ACME_EMAIL=""; WITH_OLLAMA=0; OLLAMA_GPU=""; OLLAMA_MODEL=""
-WITH_CALDAV=0; CALDAV_USER="wings"; BIND=""; PORT=""; START=1
+WITH_CALDAV=0; CALDAV_USER="wings"; BIND=""; PORT=""; START=1; SEED_AGENTS=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,6 +47,7 @@ while [ $# -gt 0 ]; do
     --bind) BIND="${2:?--bind needs a value}"; shift 2 ;;
     --port) PORT="${2:?--port needs a value}"; shift 2 ;;
     --no-start) START=0; shift ;;
+    --no-agents) SEED_AGENTS=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
   esac
@@ -166,7 +168,7 @@ if [ "$START" -eq 0 ]; then
 fi
 
 # 3. Build and start -----------------------------------------------------
-info "Building the Wings image and starting the stack (first run downloads ~2-3 GB)"
+info "Building the Wings image and starting the stack (the first run downloads several GB of images)"
 dc up -d --build
 
 info "Waiting for Odysseus to become healthy (first boot also downloads the embedding model)"
@@ -184,6 +186,12 @@ if [ -n "$OLLAMA_MODEL" ]; then
   else
     warn "Ollama is not healthy yet; pull later with: docker compose exec ollama ollama pull ${OLLAMA_MODEL}"
   fi
+fi
+
+# Starter agents, first install only (re-run ./scripts/seed-agents.sh any time).
+if [ "$NEW_ADMIN_PASSWORD" -eq 1 ] && [ "$SEED_AGENTS" -eq 1 ]; then
+  info "Adding starter agents"
+  "$WINGS_ROOT/scripts/seed-agents.sh" || warn "could not add starter agents; run ./scripts/seed-agents.sh later"
 fi
 
 # 4. Summary -------------------------------------------------------------
