@@ -3491,7 +3491,9 @@ def setup_chat_routes(
         # Wings: the active agent's tool allowlist (persona enabled_tools),
         # enforced here alongside the global admin denylist.
         from wings.agent_tools import agent_denied_tools
-        disabled_tools.update(agent_denied_tools(preset_id))
+        disabled_tools.update(agent_denied_tools(
+            preset_id, str(form_data.get("wings_agent_template_id") or "") or None,
+        ))
 
         # Light auto-escalation: the user is in chat mode and just expressed a
         # notes/calendar/email intent. Grant the relevant managers but withhold

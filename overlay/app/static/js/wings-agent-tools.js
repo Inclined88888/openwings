@@ -25,6 +25,9 @@ const FALLBACK_FAMILIES = [
 
 let _families = null;
 let _pending = null;
+// True once the checkboxes show _pending. Until then read() returns _pending,
+// so saving before the family list loads can never erase a saved limit.
+let _applied = false;
 
 async function _loadFamilies(apiBase) {
   if (_families) return _families;
@@ -108,15 +111,21 @@ function _apply(root, families, value) {
 /** Show the given value (null | string[]) in the editor. */
 export function render(value, apiBase = '') {
   _pending = Array.isArray(value) ? value.slice() : null;
+  _applied = false;
   const root = _mount();
   if (!root) return;
-  _loadFamilies(apiBase).then((families) => _apply(root, families, _pending));
+  const token = _pending;
+  _loadFamilies(apiBase).then((families) => {
+    if (token !== _pending) return;  // a newer render() won
+    _apply(root, families, _pending);
+    _applied = true;
+  });
 }
 
 /** Current editor value: null (no restriction) or the checked family ids. */
 export function read() {
   const root = document.getElementById('wings-tool-access');
-  if (!root) return _pending;
+  if (!root || !_applied) return _pending;
   if (!root.querySelector('#wings-ta-restrict').checked) return null;
   return Array.from(root.querySelectorAll('#wings-ta-grid input[type="checkbox"]:checked')).map((b) => b.value);
 }

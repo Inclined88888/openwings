@@ -92,16 +92,24 @@ volume_name() {
 container_id() { dc ps -q "$1" 2>/dev/null | head -n 1; }
 
 # Wait until a service reports healthy. $1 service, $2 timeout seconds.
+# Fails fast when the container exits or restarts (a crash loop, e.g. the
+# Wings preflight refusing a mismatched key with exit code 78).
 wait_healthy() {
-  local svc="$1" timeout="${2:-600}" waited=0 cid status
+  local svc="$1" timeout="${2:-600}" waited=0 cid status restarts start_restarts=""
   while [ "$waited" -lt "$timeout" ]; do
     cid="$(container_id "$svc")"
     if [ -n "$cid" ]; then
       status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || true)"
+      restarts="$(docker inspect --format '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
+      [ -n "$start_restarts" ] || start_restarts="$restarts"
       case "$status" in
         healthy) return 0 ;;
         exited|dead) return 1 ;;
       esac
+      if [ "$restarts" != "$start_restarts" ] || \
+         [ "$(docker inspect --format '{{.State.Restarting}}' "$cid" 2>/dev/null)" = "true" ]; then
+        return 1
+      fi
     fi
     sleep 3
     waited=$((waited + 3))

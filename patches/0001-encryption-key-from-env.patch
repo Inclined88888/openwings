@@ -1,21 +1,23 @@
 Wings patch 0001: read the encryption key from ODYSSEUS_APP_KEY
 
 Upstream keeps its Fernet keys (data/.app_key for database secrets, data/.key
-for api_keys.json) inside the data directory, so every copy of the data
-volume, including backups, carries the key that decrypts it. With this patch
-both key users take the key from the ODYSSEUS_APP_KEY environment variable
-when it is set, and never write a key file in that mode. A malformed key, or
-an existing key file that differs from the variable, raises instead of
-silently generating a new key and orphaning stored secrets.
+for api_keys.json and webhook secrets) inside the data directory, so every
+copy of the data volume, including backups, carries the key that decrypts it.
+With this patch both key users take the key from ODYSSEUS_APP_KEY (or from
+wings.keyholder, where the Wings launcher moves it so child processes do not
+inherit it) and never write a key file in that mode. A malformed key, or an
+existing key file that differs from the variable, raises instead of silently
+generating a new key and orphaning stored secrets; with WINGS_KEY_FROM_ENV=1 a
+process that lacks the key refuses to create a key file at all.
 
 Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
 diff --git a/src/api_key_manager.py b/src/api_key_manager.py
-index 3372041..0ed2cc9 100644
+index 3372041..fda8fe3 100644
 --- a/src/api_key_manager.py
 +++ b/src/api_key_manager.py
-@@ -16,6 +16,14 @@ class APIKeyManager:
+@@ -16,6 +16,16 @@ class APIKeyManager:
          
      def get_or_create_key(self) -> bytes:
          """Get or create encryption key for API keys"""
@@ -27,11 +29,13 @@ index 3372041..0ed2cc9 100644
 +        if env_key is not None:
 +            check_key_file_matches_env(Path(self.key_file), env_key)
 +            return env_key
++        if not os.path.exists(self.key_file) and os.environ.get("WINGS_KEY_FROM_ENV", "").strip() == "1":
++            raise RuntimeError("ODYSSEUS_APP_KEY is not available in this process; refusing to create a key file")
          if os.path.exists(self.key_file):
              # Older versions wrote .key with the process umask (often 0o644,
              # i.e. group/world-readable). Re-restrict on read so existing
 diff --git a/src/secret_storage.py b/src/secret_storage.py
-index c4a08be..040fc12 100644
+index c4a08be..0a3101d 100644
 --- a/src/secret_storage.py
 +++ b/src/secret_storage.py
 @@ -11,6 +11,12 @@ backup, leaked container layer, sibling-tenant read). Does **not**
@@ -47,7 +51,7 @@ index c4a08be..040fc12 100644
  Encrypted values carry an `enc:` prefix so the migration is
  idempotent: passing an already-encrypted value to `encrypt()` is a
  no-op; passing a plaintext value to `decrypt()` returns it
-@@ -34,7 +40,52 @@ _PREFIX = "enc:"
+@@ -34,9 +40,68 @@ _PREFIX = "enc:"
  _fernet: Fernet | None = None
  
  
@@ -57,9 +61,18 @@ index c4a08be..040fc12 100644
 +def env_app_key() -> bytes | None:
 +    """Return the Fernet key from ODYSSEUS_APP_KEY, or None when unset.
 +
-+    Raises RuntimeError for a malformed key so a typo never falls back to a
-+    freshly generated key (which would orphan every stored secret)."""
++    The key comes from the environment, or from wings.keyholder when the
++    Wings launcher has already moved it out of the environment (so child
++    processes do not inherit it). Raises RuntimeError for a malformed key so
++    a typo never falls back to a freshly generated key (which would orphan
++    every stored secret)."""
 +    raw = os.environ.get(ENV_KEY_VAR, "").strip()
++    if not raw:
++        try:
++            from wings import keyholder
++            raw = (keyholder.APP_KEY or "").strip()
++        except ImportError:
++            raw = ""
 +    if not raw:
 +        return None
 +    key = raw.encode("ascii", errors="strict") if raw.isascii() else b""
@@ -99,4 +112,11 @@ index c4a08be..040fc12 100644
 +        return env_key
      if _KEY_PATH.exists():
          return _KEY_PATH.read_bytes()
++    if os.environ.get("WINGS_KEY_FROM_ENV", "").strip() == "1":
++        # A Wings deployment keeps its key in the environment. A process that
++        # lacks it (e.g. a user-added MCP server with a scrubbed environment)
++        # must not mint a second key and fork the encrypted data.
++        raise RuntimeError(f"{ENV_KEY_VAR} is not available in this process; refusing to create a key file")
      _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+     key = Fernet.generate_key()
+     _KEY_PATH.write_bytes(key)

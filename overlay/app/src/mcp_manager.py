@@ -236,11 +236,19 @@ class McpManager:
             # deployment secrets; their own configured env still applies.
             if env:
                 if _wings_is_trusted_builtin(server_id, command, args):
-                    base_env = dict(os.environ)
+                    # The launcher keeps the key out of os.environ; hand it
+                    # to upstream's own servers explicitly.
+                    from wings.keyholder import with_key
+                    base_env = with_key(dict(os.environ))
                 else:
                     from wings.envscrub import scrubbed_environ
                     base_env = scrubbed_environ()
                 merged_env = {**base_env, **env}
+            elif os.environ.get("WINGS_KEY_FROM_ENV"):
+                # Same minimal environment the MCP SDK would use, plus the
+                # marker that stops a key-less child from minting a key file.
+                from mcp.client.stdio import get_default_environment
+                merged_env = {**get_default_environment(), "WINGS_KEY_FROM_ENV": os.environ["WINGS_KEY_FROM_ENV"]}
             else:
                 merged_env = None
             server_params = StdioServerParameters(

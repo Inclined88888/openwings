@@ -18,7 +18,7 @@ usage() {
 
 Options:
   --domain NAME          Serve https://NAME through the bundled Caddy (profile https)
-  --acme-email EMAIL     Contact address for Let's Encrypt (recommended with --domain)
+  --acme-email EMAIL     Contact address for Let's Encrypt (required with --domain)
   --with-ollama          Run the bundled Ollama container (profile ollama)
   --ollama-gpu nvidia    Give the bundled Ollama the NVIDIA GPU (needs nvidia-container-toolkit)
   --ollama-model NAME    Pull this model into the bundled Ollama after start (e.g. qwen3:4b)
@@ -58,6 +58,10 @@ case "$DOMAIN" in
   *) die "--domain must be a fully qualified name such as ai.example.com" ;;
 esac
 case "$DOMAIN" in *[!A-Za-z0-9.-]*) die "--domain contains invalid characters";; esac
+if [ -n "$DOMAIN" ] && [ -z "$ACME_EMAIL" ] && [ -z "$(env_get WINGS_ACME_EMAIL 2>/dev/null)" ]; then
+  die "--domain needs --acme-email you@example.com (Let's Encrypt contact; Caddy will not start without it)"
+fi
+case "$ACME_EMAIL" in ''|*@*.*) ;; *) die "--acme-email does not look like an email address";; esac
 case "$CALDAV_USER" in ''|*[!A-Za-z0-9._-]*) die "--caldav-user may contain only letters, digits, dot, dash and underscore";; esac
 case "$OLLAMA_GPU" in ''|nvidia) ;; *) die "--ollama-gpu supports only: nvidia";; esac
 case "$PORT" in ''|*[!0-9]*) [ -z "$PORT" ] || die "--port must be a number";; esac
@@ -137,6 +141,9 @@ if [ "$WITH_CALDAV" -eq 1 ]; then
   add_profile caldav
   env_set ODYSSEUS_ALLOW_PRIVATE_CALDAV 1
   users_file="$WINGS_ROOT/config/radicale/users"
+  if [ -d "$users_file" ]; then
+    die "$users_file is a directory (Docker creates one when the file is missing). Remove it (sudo rmdir \"$users_file\") and re-run."
+  fi
   if [ ! -s "$users_file" ] || ! grep -q "^${CALDAV_USER}:" "$users_file"; then
     [ "$START" -eq 1 ] || require_docker
     pw="$(env_get RADICALE_PASSWORD)"
@@ -153,7 +160,10 @@ if [ "$WITH_CALDAV" -eq 1 ]; then
     touch "$users_file"
     grep -v "^${CALDAV_USER}:" "$users_file" > "${users_file}.tmp" || true
     printf '%s:%s\n' "$CALDAV_USER" "$hash" >> "${users_file}.tmp"
-    mv "${users_file}.tmp" "$users_file"
+    # Rewrite in place (same inode) so a running Radicale sees the change
+    # through its bind mount.
+    cat "${users_file}.tmp" > "$users_file"
+    rm -f "${users_file}.tmp"
     # The Radicale container runs as uid 2999 and must be able to read this.
     chmod 644 "$users_file"
     ok "CalDAV user '${CALDAV_USER}' created"
@@ -175,7 +185,7 @@ info "Waiting for Odysseus to become healthy (first boot also downloads the embe
 if ! wait_healthy odysseus 900; then
   dc ps
   dc logs --tail 80 odysseus || true
-  die "Odysseus did not become healthy. See the logs above, then run ./scripts/verify.sh"
+  die "Odysseus did not become healthy. See the logs above and the README section Troubleshooting."
 fi
 ok "Odysseus is healthy"
 

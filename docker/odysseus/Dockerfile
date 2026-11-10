@@ -30,7 +30,9 @@ RUN set -eu; \
 # Wings preflight (encryption-key checks) runs first, then the upstream
 # entrypoint. Setting ENTRYPOINT clears the inherited CMD, so restate it.
 ENTRYPOINT ["/app/wings/entrypoint.sh"]
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7000"]
+# wings.serve = uvicorn, after moving ODYSSEUS_APP_KEY into memory and
+# dropping ODYSSEUS_ADMIN_PASSWORD, so no child process inherits either.
+CMD ["python", "-m", "wings.serve", "app:app", "--host", "0.0.0.0", "--port", "7000"]
 
 LABEL org.opencontainers.image.title="wings-odysseus" \
       org.opencontainers.image.description="Odysseus with the Wings hardening overlay" \

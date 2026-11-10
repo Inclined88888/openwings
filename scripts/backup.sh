@@ -47,7 +47,7 @@ HOST_UID="$(id -u)"; HOST_GID="$(id -g)"
 IMAGE="$(wings_image)"
 DATA_VOL="$(volume_name odysseus-data)"
 helper() {
-  docker run --rm -i --network none --entrypoint sh -v "${DEST}:/backup" "$@"
+  docker run --rm -i --network none --entrypoint sh -v "${DEST}:/backup:z" "$@"
 }
 
 info "Backing up to ${DEST}"
@@ -89,7 +89,14 @@ if [ "$INCLUDE_MODELS" -eq 1 ]; then
   archive_volume odysseus-hf-cache
 fi
 
-# 3. Manifest with versions and checksums.
+# 3. The CalDAV account file lives outside the volumes.
+if [ -f "$WINGS_ROOT/config/radicale/users" ]; then
+  cp "$WINGS_ROOT/config/radicale/users" "$DEST/radicale-users"
+  chmod 600 "$DEST/radicale-users"
+  ok "radicale accounts"
+fi
+
+# 4. Manifest with versions and checksums.
 {
   echo "wings_backup_version=1"
   echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -100,10 +107,13 @@ fi
 } > "${DEST}/MANIFEST" 2>/dev/null || true
 (
   cd "$DEST"
-  for f in *.tar.gz; do
-    printf '%s  %s\n' "$(sha256_file "$f")" "$f"
+  for f in *.tar.gz radicale-users; do
+    [ -e "$f" ] || continue
+    sum="$(sha256_file "$f")" || exit 1
+    [ -n "$sum" ] || exit 1
+    printf '%s  %s\n' "$sum" "$f"
   done
-) > "${DEST}/SHA256SUMS"
+) > "${DEST}/SHA256SUMS" || die "could not checksum the backup files (are they readable by $(id -un)?)"
 
 ok "Backup complete: ${DEST}"
 du -sh "$DEST" 2>/dev/null | awk '{print "     size: " $1}'

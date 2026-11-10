@@ -16,17 +16,19 @@ Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
 diff --git a/routes/chat_routes.py b/routes/chat_routes.py
-index 5a42d33..55a5fab 100644
+index 5a42d33..331b695 100644
 --- a/routes/chat_routes.py
 +++ b/routes/chat_routes.py
-@@ -3488,6 +3488,10 @@ def setup_chat_routes(
+@@ -3488,6 +3488,12 @@ def setup_chat_routes(
          _global_disabled = get_setting("disabled_tools", [])
          if _global_disabled and isinstance(_global_disabled, list):
              disabled_tools.update(_global_disabled)
 +        # Wings: the active agent's tool allowlist (persona enabled_tools),
 +        # enforced here alongside the global admin denylist.
 +        from wings.agent_tools import agent_denied_tools
-+        disabled_tools.update(agent_denied_tools(preset_id))
++        disabled_tools.update(agent_denied_tools(
++            preset_id, str(form_data.get("wings_agent_template_id") or "") or None,
++        ))
  
          # Light auto-escalation: the user is in chat mode and just expressed a
          # notes/calendar/email intent. Grant the relevant managers but withhold
@@ -72,7 +74,7 @@ index 5496002..bc50322 100644
              if success:
                  return {"success": True, "message": "Custom preset updated"}
 diff --git a/src/preset_manager.py b/src/preset_manager.py
-index 8dbf73f..47586b1 100644
+index 8dbf73f..2f47d60 100644
 --- a/src/preset_manager.py
 +++ b/src/preset_manager.py
 @@ -65,6 +65,9 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
@@ -103,7 +105,7 @@ index 8dbf73f..47586b1 100644
 +        # an agent's tools.
 +        if enabled_tools is self.KEEP_TOOLS:
 +            enabled_tools = None
-+            if isinstance(current, dict) and current_name == name:
++            if isinstance(current, dict) and (current.get("character_name") or "") == (name or ""):
 +                enabled_tools = current.get("enabled_tools")
 +            elif name:
 +                for template in self.get_user_templates():
@@ -135,8 +137,22 @@ index dde1c59..e6960d8 100644
  
  
  class DirectoryRequest(BaseModel):
+diff --git a/static/js/group.js b/static/js/group.js
+index 3905745..44328f1 100644
+--- a/static/js/group.js
++++ b/static/js/group.js
+@@ -845,6 +845,9 @@ async function _streamToHolder(modelIdx, sessionId, msg, holderEl, abortCtrl) {
+   const fd = new FormData();
+   fd.append('message', msg);
+   fd.append('session', sessionId);
++  // Wings: apply this participant's own agent tool limit server side.
++  const _charId = _models[modelIdx]?.character?.characterId;
++  if (_charId) fd.append('wings_agent_template_id', _charId);
+ 
+   let accumulated = '';
+   let _buffer = '';
 diff --git a/static/js/presets.js b/static/js/presets.js
-index 775fd36..3c4e5fd 100644
+index 775fd36..3bb2edc 100644
 --- a/static/js/presets.js
 +++ b/static/js/presets.js
 @@ -1,3 +1,4 @@
@@ -164,7 +180,15 @@ index 775fd36..3c4e5fd 100644
    const delBtn = document.getElementById('char-delete-template-btn');
    if (delBtn) delBtn.style.display = '';
  }
-@@ -627,6 +632,8 @@ export function openCustomPresetModal(openTab = '') {
+@@ -544,6 +549,7 @@ export async function loadPresets(showError) {
+     const hasCustomSettings = custom && (
+       custom.character_name || custom.system_prompt || custom.inject_prefix || custom.inject_suffix
+       || custom.thinking_mode || custom.temperature !== 1.0 || !!custom.max_tokens
++      || Array.isArray(custom.enabled_tools)
+     );
+     if (custom && custom.enabled !== false && hasCustomSettings) {
+       selectedPreset = 'custom';
+@@ -627,6 +633,8 @@ export function openCustomPresetModal(openTab = '') {
    if (promptInput) promptInput.value = savedConfig.system_prompt || '';
    if (thinkingInput) thinkingInput.value = ['on', 'off'].includes(savedConfig.thinking_mode) ? savedConfig.thinking_mode : '';
    if (showNameInput) showNameInput.checked = savedConfig.show_persona_name !== false;
@@ -173,7 +197,7 @@ index 775fd36..3c4e5fd 100644
  
    // Load inject fields
    const prefixInput = document.getElementById('inject-prefix');
-@@ -834,6 +841,8 @@ export async function saveCustomPreset(showToast, showError) {
+@@ -834,6 +842,8 @@ export async function saveCustomPreset(showToast, showError) {
      show_persona_name: showNameInput ? showNameInput.checked : true,
      persona_memory: presets.custom?.character_name === name ? (presets.custom?.persona_memory || '') : '',
      persona_memory_schema: presets.custom?.character_name === name ? (presets.custom?.persona_memory_schema || 'general') : 'general',
@@ -182,7 +206,17 @@ index 775fd36..3c4e5fd 100644
    };
  
    try {
-@@ -890,6 +899,7 @@ export async function saveCustomPreset(showToast, showError) {
+@@ -855,7 +865,8 @@ export async function saveCustomPreset(showToast, showError) {
+       // temp + max tokens" would silently do nothing.
+       const _hasTuning = (config.temperature !== 1.0) || (config.max_tokens !== 0) || !!config.thinking_mode;
+       const _hasInject = !!(config.inject_prefix || config.inject_suffix);
+-      const _hasContent = !!(system_prompt || name || _hasTuning || _hasInject);
++      // Wings: a tool limit alone also makes this an active agent.
++      const _hasContent = !!(system_prompt || name || _hasTuning || _hasInject || Array.isArray(config.enabled_tools));
+       if (enabled && _hasContent) {
+         selectedPreset = 'custom';
+         // Turn off research — doesn't make sense with a character
+@@ -890,6 +901,7 @@ export async function saveCustomPreset(showToast, showError) {
            max_tokens: config.max_tokens,
            persona_memory: config.persona_memory || '',
            persona_memory_schema: config.persona_memory_schema || 'general',
@@ -190,7 +224,7 @@ index 775fd36..3c4e5fd 100644
          }
          const ENDPOINT = `${API_BASE}/api/presets/templates`;
  
-@@ -1165,6 +1175,7 @@ export function onSessionSwitch(sessionId) {
+@@ -1165,9 +1177,17 @@ export function onSessionSwitch(sessionId) {
          max_tokens: tmpl.max_tokens || 0,
          persona_memory: tmpl.persona_memory || '',
          persona_memory_schema: tmpl.persona_memory_schema || 'general',
@@ -198,12 +232,22 @@ index 775fd36..3c4e5fd 100644
          enabled: true,
        };
        selectedPreset = 'custom';
++      // Wings: the server applies the saved custom slot's prompt and tool
++      // limit, so make it match this chat's agent before the next message.
++      fetch(`${API_BASE}/api/presets/custom`, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ ...presets.custom, name: charName, enabled: true }),
++      }).catch(() => {});
+     }
+     _syncCharIndicator();
+     // Mark this as a locked persistent chat
 diff --git a/static/js/wings-agent-tools.js b/static/js/wings-agent-tools.js
 new file mode 100644
-index 0000000..3bb125a
+index 0000000..b6b43ae
 --- /dev/null
 +++ b/static/js/wings-agent-tools.js
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,131 @@
 +// Wings: per-agent tool access in the persona editor (patch 0005).
 +//
 +// Adds a "Tool access" section under the system prompt. When "Limit this
@@ -231,6 +275,9 @@ index 0000000..3bb125a
 +
 +let _families = null;
 +let _pending = null;
++// True once the checkboxes show _pending. Until then read() returns _pending,
++// so saving before the family list loads can never erase a saved limit.
++let _applied = false;
 +
 +async function _loadFamilies(apiBase) {
 +  if (_families) return _families;
@@ -314,15 +361,21 @@ index 0000000..3bb125a
 +/** Show the given value (null | string[]) in the editor. */
 +export function render(value, apiBase = '') {
 +  _pending = Array.isArray(value) ? value.slice() : null;
++  _applied = false;
 +  const root = _mount();
 +  if (!root) return;
-+  _loadFamilies(apiBase).then((families) => _apply(root, families, _pending));
++  const token = _pending;
++  _loadFamilies(apiBase).then((families) => {
++    if (token !== _pending) return;  // a newer render() won
++    _apply(root, families, _pending);
++    _applied = true;
++  });
 +}
 +
 +/** Current editor value: null (no restriction) or the checked family ids. */
 +export function read() {
 +  const root = document.getElementById('wings-tool-access');
-+  if (!root) return _pending;
++  if (!root || !_applied) return _pending;
 +  if (!root.querySelector('#wings-ta-restrict').checked) return null;
 +  return Array.from(root.querySelectorAll('#wings-ta-grid input[type="checkbox"]:checked')).map((b) => b.value);
 +}

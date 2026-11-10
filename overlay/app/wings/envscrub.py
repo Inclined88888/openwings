@@ -25,6 +25,11 @@ ALWAYS_SCRUB = frozenset({
 # Anything that looks like a credential by name.
 _SECRET_NAME = re.compile(r"(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|COOKIE|SESSION)", re.I)
 
+# Not secrets, despite matching the pattern: markers children must keep.
+# WINGS_KEY_FROM_ENV tells a process without ODYSSEUS_APP_KEY never to mint a
+# key file of its own (patch 0001).
+ALWAYS_KEEP = frozenset({"WINGS_KEY_FROM_ENV"})
+
 # Credentials some tools legitimately need; kept unless a caller opts out.
 _ALLOW_BY_DEFAULT = frozenset({
     "HF_TOKEN",                # Cookbook model downloads
@@ -46,5 +51,5 @@ def scrubbed_environ(
     Variables in ``keep`` survive unless they are in ALWAYS_SCRUB.
     """
     src = dict(os.environ if base is None else base)
-    keep = set(keep) - ALWAYS_SCRUB
+    keep = (set(keep) | ALWAYS_KEEP) - ALWAYS_SCRUB
     return {k: v for k, v in src.items() if k in keep or not is_secret_name(k)}

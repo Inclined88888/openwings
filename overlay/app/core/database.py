@@ -2497,11 +2497,15 @@ def _wings_migrate_encrypt_session_headers_and_mcp_env():
             migrated = 0
             for rid, raw in conn.execute(text("SELECT id, headers FROM sessions WHERE headers IS NOT NULL")).fetchall():
                 value = raw
-                if isinstance(value, str):
+                # Legacy rows can be JSON encoded more than once; unwrap
+                # until we reach the object (or an already-encrypted string).
+                for _ in range(4):
+                    if not isinstance(value, str) or is_encrypted(value):
+                        break
                     try:
                         value = _json.loads(value)
                     except ValueError:
-                        continue
+                        break
                 if not value or (isinstance(value, str) and is_encrypted(value)):
                     continue
                 if isinstance(value, (dict, list)):

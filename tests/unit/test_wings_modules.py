@@ -305,3 +305,132 @@ def test_preflight_imports_nothing_from_the_app(tmp_path):
     e = dict(os.environ, ODYSSEUS_APP_KEY=Fernet.generate_key().decode(), ODYSSEUS_DATA_DIR=str(tmp_path))
     out = subprocess.run([sys.executable, "-c", code], env=e, capture_output=True, text=True).stdout
     assert out.strip().endswith("False False"), out
+
+
+# ---------------------------------------------------------------- review fixes
+
+def test_key_from_keyholder_when_env_was_moved(monkeypatch, tmp_path):
+    key = Fernet.generate_key().decode()
+    ss = _fresh_secret_storage(monkeypatch, tmp_path, None)
+    from wings import keyholder
+    monkeypatch.setattr(keyholder, "APP_KEY", key)
+    token = ss.encrypt("x")
+    assert Fernet(key.encode()).decrypt(token[4:].encode()) == b"x"
+    assert not (tmp_path / ".app_key").exists()
+
+
+def test_marker_without_key_refuses_to_mint_a_key_file(monkeypatch, tmp_path):
+    ss = _fresh_secret_storage(monkeypatch, tmp_path, None)
+    from wings import keyholder
+    monkeypatch.setattr(keyholder, "APP_KEY", None)
+    monkeypatch.setenv("WINGS_KEY_FROM_ENV", "1")
+    with pytest.raises(RuntimeError):
+        ss.encrypt("x")
+    assert ss.decrypt("enc:whatever") == ""  # degrades, never creates a key
+    assert not (tmp_path / ".app_key").exists()
+
+
+def test_keyholder_with_key_only_adds_when_held(monkeypatch):
+    from wings import keyholder
+    monkeypatch.setattr(keyholder, "APP_KEY", None)
+    assert keyholder.with_key({"A": "1"}) == {"A": "1"}
+    monkeypatch.setattr(keyholder, "APP_KEY", "k")
+    assert keyholder.with_key({"A": "1"}) == {"A": "1", "ODYSSEUS_APP_KEY": "k"}
+
+
+def _db_with_secret(tmp_path, key: bytes):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "app.db")
+    conn.execute("CREATE TABLE model_endpoints (id TEXT, api_key TEXT)")
+    conn.execute("INSERT INTO model_endpoints VALUES ('e', ?)", ("enc:" + Fernet(key).encrypt(b"sk").decode(),))
+    conn.commit()
+    conn.close()
+
+
+def test_preflight_rejects_key_that_does_not_decrypt_stored_data(tmp_path):
+    _db_with_secret(tmp_path, Fernet.generate_key())
+    r = _preflight({"ODYSSEUS_APP_KEY": Fernet.generate_key().decode()}, tmp_path)
+    assert r.returncode == 78 and "does not decrypt data already stored" in r.stderr
+
+
+def test_preflight_accepts_key_that_decrypts_stored_data(tmp_path):
+    key = Fernet.generate_key()
+    _db_with_secret(tmp_path, key)
+    r = _preflight({"ODYSSEUS_APP_KEY": key.decode()}, tmp_path)
+    assert r.returncode == 0, r.stderr
+
+
+def test_preflight_keeps_pending_upstream_schedules_once(tmp_path):
+    import sqlite3
+    db = tmp_path / "scheduled_emails.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE scheduled_emails (id TEXT, status TEXT, odysseus_kind TEXT)")
+    conn.execute("INSERT INTO scheduled_emails VALUES ('h','pending','scheduled'),('a','agent_draft','agent_draft'),('s','sent','scheduled')")
+    conn.commit(); conn.close()
+    r = _preflight({"ODYSSEUS_APP_KEY": Fernet.generate_key().decode()}, tmp_path)
+    assert r.returncode == 0, r.stderr
+    conn = sqlite3.connect(db)
+    flags = dict(conn.execute("SELECT id, wings_human_approved FROM scheduled_emails"))
+    assert flags == {"h": 1, "a": 0, "s": 0}
+
+
+def test_runtime_flag_column_approves_nothing(gate, tmp_path):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "s.db")
+    conn.execute("CREATE TABLE scheduled_emails (id TEXT, status TEXT, odysseus_kind TEXT)")
+    conn.execute("INSERT INTO scheduled_emails VALUES ('x','pending','scheduled')")
+    conn.commit()
+    gate.ensure_scheduled_flag(conn)
+    assert not gate.scheduled_row_approved(conn, "x")
+
+
+def test_scrub_keeps_the_key_marker():
+    from wings.envscrub import scrubbed_environ
+    out = scrubbed_environ({"WINGS_KEY_FROM_ENV": "1", "OPENAI_API_KEY": "x", "PATH": "/b"}, keep=())
+    assert out == {"WINGS_KEY_FROM_ENV": "1", "PATH": "/b"}
+
+
+def test_preflight_quarantines_a_stray_key_file(tmp_path):
+    key = Fernet.generate_key()
+    _db_with_secret(tmp_path, key)
+    (tmp_path / ".app_key").write_bytes(Fernet.generate_key())  # minted by a key-less child
+    r = _preflight({"ODYSSEUS_APP_KEY": key.decode()}, tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert not (tmp_path / ".app_key").exists()
+    assert any(p.name.startswith(".app_key.stray-") for p in tmp_path.iterdir())
+
+
+def test_preflight_still_refuses_a_legacy_key_file(tmp_path):
+    legacy = Fernet.generate_key()
+    _db_with_secret(tmp_path, legacy)
+    (tmp_path / ".app_key").write_bytes(legacy)
+    r = _preflight({"ODYSSEUS_APP_KEY": Fernet.generate_key().decode()}, tmp_path)
+    assert r.returncode == 78 and "adopt-key.sh" in r.stderr
+    assert (tmp_path / ".app_key").exists()
+
+
+def test_preflight_accept_key_loss_override(tmp_path):
+    _db_with_secret(tmp_path, Fernet.generate_key())
+    r = _preflight({"ODYSSEUS_APP_KEY": Fernet.generate_key().decode(), "WINGS_ACCEPT_KEY_LOSS": "1"}, tmp_path)
+    assert r.returncode == 0 and "WINGS_ACCEPT_KEY_LOSS" in r.stderr
+
+
+def test_group_participant_template_limits_apply(tmp_path, monkeypatch):
+    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
+    from wings import agent_tools
+    (tmp_path / "presets.json").write_text(json.dumps({
+        "custom": {"enabled": False},
+        "user_templates": [{"id": "t1", "name": "Reader", "enabled_tools": []}],
+    }))
+    denied = agent_tools.agent_denied_tools(None, "t1")
+    assert {"web_search", "bash", "manage_calendar"} <= denied
+    assert "ui_control" not in denied and "ask_user" not in denied
+    assert agent_tools.agent_denied_tools(None, "unknown") == set()
+
+
+def test_email_family_does_not_grant_contact_editing():
+    from wings import agent_tools
+    contract = agent_tools._contract_families()
+    email_only = agent_tools.allowed_tool_names(["email"], contract, [])
+    assert "manage_contact" not in email_only
+    assert "manage_contact" in agent_tools.allowed_tool_names(["email", "contacts"], contract, [])

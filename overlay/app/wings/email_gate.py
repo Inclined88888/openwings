@@ -105,8 +105,13 @@ def check_send(recipients: Iterable[str], *, human_approved: bool) -> None:
 SCHEDULED_FLAG_COLUMN = "wings_human_approved"
 
 
-def ensure_scheduled_flag(conn) -> None:
-    """Add the approval flag column to scheduled_emails if missing (idempotent)."""
+def ensure_scheduled_flag(conn, *, approve_existing: bool = False) -> None:
+    """Add the approval flag column to scheduled_emails if missing (idempotent).
+
+    approve_existing=True is used once, by the container preflight, when an
+    upstream Odysseus volume is first started under Wings: rows that were
+    already pending were created by upstream's own Schedule Send. At runtime
+    the column is added with every row unapproved."""
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(scheduled_emails)")}
     except Exception:
@@ -116,6 +121,11 @@ def ensure_scheduled_flag(conn) -> None:
             f"ALTER TABLE scheduled_emails ADD COLUMN {SCHEDULED_FLAG_COLUMN} "
             "INTEGER NOT NULL DEFAULT 0"
         )
+        if approve_existing:
+            where = "status = 'pending'"
+            if "odysseus_kind" in cols:
+                where += " AND COALESCE(odysseus_kind, '') != 'agent_draft'"
+            conn.execute(f"UPDATE scheduled_emails SET {SCHEDULED_FLAG_COLUMN} = 1 WHERE {where}")
         conn.commit()
 
 

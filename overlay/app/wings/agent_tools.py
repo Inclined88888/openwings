@@ -43,8 +43,13 @@ FAMILIES: dict[str, dict] = {
     "external_mcp": {"label": "MCP servers you added", "external_mcp": True},
 }
 
-# Always available: these only talk to the person in the chat.
-ALWAYS_ALLOWED = frozenset({"ask_user", "update_plan", "todowrite"})
+# Always available: these only talk to the person in the chat or drive the
+# person's own UI (opening panels, toggles), never external systems.
+ALWAYS_ALLOWED = frozenset({"ask_user", "update_plan", "todowrite", "ui_control"})
+
+# Contact editing belongs to the Contacts family even though upstream lists it
+# under email too; email keeps read-only address lookup.
+CONTACT_WRITE_TOOLS = frozenset({"manage_contact"})
 
 BUILTIN_MCP_SERVERS = frozenset({"email", "memory", "rag", "image_gen"})
 
@@ -53,25 +58,43 @@ def _data_dir() -> Path:
     return Path(os.environ.get("ODYSSEUS_DATA_DIR") or "/app/data")
 
 
+def _load_presets() -> dict:
+    try:
+        data = json.loads((_data_dir() / "presets.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _normalize(allowed) -> list | None:
+    if allowed is None:
+        return None
+    if not isinstance(allowed, list) or not all(isinstance(x, str) for x in allowed):
+        return []  # malformed: fail closed
+    return allowed
+
+
+def load_template_allowlist(template_id: str | None) -> list | None:
+    """enabled_tools of a saved agent template (group chat participants)."""
+    if not template_id:
+        return None
+    for t in _load_presets().get("user_templates") or []:
+        if isinstance(t, dict) and t.get("id") == template_id:
+            return _normalize(t.get("enabled_tools"))
+    return None
+
+
 def load_active_allowlist(preset_id: str | None) -> list | None:
     """Return the active persona's enabled_tools, or None for no restriction."""
     if not preset_id:
         return None
-    try:
-        presets = json.loads((_data_dir() / "presets.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    preset = presets.get(preset_id) if isinstance(presets, dict) else None
+    presets = _load_presets()
+    preset = presets.get(preset_id)
     if not isinstance(preset, dict):
         return None
     if preset_id == "custom" and not preset.get("enabled", True):
         return None
-    if "enabled_tools" not in preset or preset.get("enabled_tools") is None:
-        return None
-    allowed = preset.get("enabled_tools")
-    if not isinstance(allowed, list) or not all(isinstance(x, str) for x in allowed):
-        return []  # malformed: fail closed
-    return allowed
+    return _normalize(preset.get("enabled_tools"))
 
 
 def _contract_families() -> dict:
@@ -127,6 +150,8 @@ def allowed_tool_names(families: list[str], contract: dict, mcp: list[tuple[str,
                 allowed.add(f"mcp__{server}__{tool}")
             if spec.get("external_mcp") and server not in BUILTIN_MCP_SERVERS:
                 allowed.add(f"mcp__{server}__{tool}")
+    if "contacts" not in families:
+        allowed -= CONTACT_WRITE_TOOLS
     # The built-in email MCP server exposes the email family's tools.
     for server, tool in mcp:
         if server == "email" and tool in allowed:
@@ -134,14 +159,22 @@ def allowed_tool_names(families: list[str], contract: dict, mcp: list[tuple[str,
     return allowed
 
 
-def agent_denied_tools(preset_id: str | None) -> set[str]:
-    """Tool names to add to the turn's disabled set for the active persona."""
-    families = load_active_allowlist(preset_id)
-    if families is None:
+def agent_denied_tools(preset_id: str | None, template_id: str | None = None) -> set[str]:
+    """Tool names to add to the turn's disabled set.
+
+    Combines the active persona (preset_id, normal chats) and an explicit
+    saved agent template (template_id, group chat participants): a tool must
+    be allowed by every restriction that applies."""
+    restrictions = [r for r in (load_active_allowlist(preset_id), load_template_allowlist(template_id)) if r is not None]
+    if not restrictions:
         return set()
     contract = _contract_families()
     mcp = _mcp_tools()
-    return _universe(contract, mcp) - allowed_tool_names(families, contract, mcp)
+    universe = _universe(contract, mcp)
+    denied: set[str] = set()
+    for families in restrictions:
+        denied |= universe - allowed_tool_names(families, contract, mcp)
+    return denied
 
 
 def families_for_ui() -> list[dict]:

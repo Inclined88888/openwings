@@ -46,9 +46,18 @@ ENV_KEY_VAR = "ODYSSEUS_APP_KEY"
 def env_app_key() -> bytes | None:
     """Return the Fernet key from ODYSSEUS_APP_KEY, or None when unset.
 
-    Raises RuntimeError for a malformed key so a typo never falls back to a
-    freshly generated key (which would orphan every stored secret)."""
+    The key comes from the environment, or from wings.keyholder when the
+    Wings launcher has already moved it out of the environment (so child
+    processes do not inherit it). Raises RuntimeError for a malformed key so
+    a typo never falls back to a freshly generated key (which would orphan
+    every stored secret)."""
     raw = os.environ.get(ENV_KEY_VAR, "").strip()
+    if not raw:
+        try:
+            from wings import keyholder
+            raw = (keyholder.APP_KEY or "").strip()
+        except ImportError:
+            raw = ""
     if not raw:
         return None
     key = raw.encode("ascii", errors="strict") if raw.isascii() else b""
@@ -88,6 +97,11 @@ def _load_or_create_key() -> bytes:
         return env_key
     if _KEY_PATH.exists():
         return _KEY_PATH.read_bytes()
+    if os.environ.get("WINGS_KEY_FROM_ENV", "").strip() == "1":
+        # A Wings deployment keeps its key in the environment. A process that
+        # lacks it (e.g. a user-added MCP server with a scrubbed environment)
+        # must not mint a second key and fork the encrypted data.
+        raise RuntimeError(f"{ENV_KEY_VAR} is not available in this process; refusing to create a key file")
     _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
     key = Fernet.generate_key()
     _KEY_PATH.write_bytes(key)

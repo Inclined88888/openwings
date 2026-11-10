@@ -549,6 +549,7 @@ export async function loadPresets(showError) {
     const hasCustomSettings = custom && (
       custom.character_name || custom.system_prompt || custom.inject_prefix || custom.inject_suffix
       || custom.thinking_mode || custom.temperature !== 1.0 || !!custom.max_tokens
+      || Array.isArray(custom.enabled_tools)
     );
     if (custom && custom.enabled !== false && hasCustomSettings) {
       selectedPreset = 'custom';
@@ -864,7 +865,8 @@ export async function saveCustomPreset(showToast, showError) {
       // temp + max tokens" would silently do nothing.
       const _hasTuning = (config.temperature !== 1.0) || (config.max_tokens !== 0) || !!config.thinking_mode;
       const _hasInject = !!(config.inject_prefix || config.inject_suffix);
-      const _hasContent = !!(system_prompt || name || _hasTuning || _hasInject);
+      // Wings: a tool limit alone also makes this an active agent.
+      const _hasContent = !!(system_prompt || name || _hasTuning || _hasInject || Array.isArray(config.enabled_tools));
       if (enabled && _hasContent) {
         selectedPreset = 'custom';
         // Turn off research — doesn't make sense with a character
@@ -1179,6 +1181,13 @@ export function onSessionSwitch(sessionId) {
         enabled: true,
       };
       selectedPreset = 'custom';
+      // Wings: the server applies the saved custom slot's prompt and tool
+      // limit, so make it match this chat's agent before the next message.
+      fetch(`${API_BASE}/api/presets/custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...presets.custom, name: charName, enabled: true }),
+      }).catch(() => {});
     }
     _syncCharIndicator();
     // Mark this as a locked persistent chat

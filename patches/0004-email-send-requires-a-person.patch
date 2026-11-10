@@ -140,7 +140,7 @@ index ed8d5ac..f38934b 100644
                  uid=uid,
                  body=body,
 diff --git a/routes/email/email_helpers.py b/routes/email/email_helpers.py
-index d697b2f..98e797a 100644
+index d697b2f..e231963 100644
 --- a/routes/email/email_helpers.py
 +++ b/routes/email/email_helpers.py
 @@ -251,8 +251,13 @@ class _PolicySMTP_SSL(smtplib.SMTP_SSL):
@@ -159,6 +159,18 @@ index d697b2f..98e797a 100644
      host = cfg["smtp_host"]
      port = int(cfg.get("smtp_port") or 465)
      user = cfg.get("smtp_user") or ""
+@@ -848,6 +853,11 @@ def _init_scheduled_db():
+             owner TEXT DEFAULT ''
+         )
+     """)
++    # Wings: the approval flag column exists from the first start, unapproved
++    # (patch 0004). Only the container preflight approves pre-existing rows,
++    # once, when an upstream volume is migrated.
++    from wings.email_gate import ensure_scheduled_flag
++    ensure_scheduled_flag(conn)
+     # Email summary cache. SECURITY: Message-IDs are global, so AI-derived
+     # cache rows must be owner-scoped just like email_tags.
+     _ensure_owner_scoped_email_cache_table(conn, "email_summaries", """
 diff --git a/routes/email/email_pollers.py b/routes/email/email_pollers.py
 index ec9d6a8..efda0eb 100644
 --- a/routes/email/email_pollers.py
@@ -193,7 +205,7 @@ index ec9d6a8..efda0eb 100644
                  # Append to local Sent folder
                  try:
 diff --git a/routes/email/email_routes.py b/routes/email/email_routes.py
-index 81173f8..2b3d336 100644
+index 81173f8..56f535d 100644
 --- a/routes/email/email_routes.py
 +++ b/routes/email/email_routes.py
 @@ -3154,12 +3154,14 @@ def setup_email_routes():
@@ -290,7 +302,33 @@ index 81173f8..2b3d336 100644
                  )
                  logger.info(
                      "Email sent account=%s from=%s via=%s to=%s: %s",
-@@ -7265,8 +7280,12 @@ def setup_email_routes():
+@@ -7128,6 +7143,7 @@ def setup_email_routes():
+         data: dict,
+         account_id: str | None = Query(None),
+         owner: str = Depends(require_owner),
++        request: Request = None,
+     ):
+         """Update email configuration.
+ 
+@@ -7136,6 +7152,17 @@ def setup_email_routes():
+         overwritten when a non-empty value is provided, so saving the form
+         without retyping the password no longer wipes it.
+         """
++        # Wings: changing where mail is sent from or which credentials are
++        # used is people-only, so an agent cannot repoint the account's
++        # servers and harvest the stored password. Automation flags stay open.
++        _server_fields = {
++            "smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_security",
++            "imap_host", "imap_port", "imap_user", "imap_password", "imap_starttls",
++            "email_from", "from_address",
++        }
++        if _server_fields & set(data or {}):
++            from wings.email_gate import require_human
++            require_human(request, "Changing email account servers or credentials")
+         if account_id:
+             _assert_owns_account(account_id, owner)
+ 
+@@ -7265,8 +7292,12 @@ def setup_email_routes():
              db.close()
  
      @router.post("/accounts")
@@ -304,7 +342,7 @@ index 81173f8..2b3d336 100644
          from core.database import SessionLocal, EmailAccount
          from src.secret_storage import encrypt as _enc
          import uuid as _uuid
-@@ -7320,8 +7339,10 @@ def setup_email_routes():
+@@ -7320,8 +7351,10 @@ def setup_email_routes():
              db.close()
  
      @router.put("/accounts/{account_id}")
@@ -316,7 +354,7 @@ index 81173f8..2b3d336 100644
          # Path param account_id — dep validated via Query, re-check the path-param value.
          _assert_owns_account(account_id, owner)
          from core.database import SessionLocal, EmailAccount
-@@ -7559,6 +7580,9 @@ def setup_email_routes():
+@@ -7559,6 +7592,9 @@ def setup_email_routes():
          the saved row's stored creds and test those — used by the
          clickable test-dot in the integrations list, where the form has
          no live values."""

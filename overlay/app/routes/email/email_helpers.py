@@ -853,6 +853,11 @@ def _init_scheduled_db():
             owner TEXT DEFAULT ''
         )
     """)
+    # Wings: the approval flag column exists from the first start, unapproved
+    # (patch 0004). Only the container preflight approves pre-existing rows,
+    # once, when an upstream volume is migrated.
+    from wings.email_gate import ensure_scheduled_flag
+    ensure_scheduled_flag(conn)
     # Email summary cache. SECURITY: Message-IDs are global, so AI-derived
     # cache rows must be owner-scoped just like email_tags.
     _ensure_owner_scoped_email_cache_table(conn, "email_summaries", """

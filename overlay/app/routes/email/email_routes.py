@@ -7143,6 +7143,7 @@ def setup_email_routes():
         data: dict,
         account_id: str | None = Query(None),
         owner: str = Depends(require_owner),
+        request: Request = None,
     ):
         """Update email configuration.
 
@@ -7151,6 +7152,17 @@ def setup_email_routes():
         overwritten when a non-empty value is provided, so saving the form
         without retyping the password no longer wipes it.
         """
+        # Wings: changing where mail is sent from or which credentials are
+        # used is people-only, so an agent cannot repoint the account's
+        # servers and harvest the stored password. Automation flags stay open.
+        _server_fields = {
+            "smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_security",
+            "imap_host", "imap_port", "imap_user", "imap_password", "imap_starttls",
+            "email_from", "from_address",
+        }
+        if _server_fields & set(data or {}):
+            from wings.email_gate import require_human
+            require_human(request, "Changing email account servers or credentials")
         if account_id:
             _assert_owns_account(account_id, owner)
 

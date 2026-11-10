@@ -172,7 +172,7 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
         # an agent's tools.
         if enabled_tools is self.KEEP_TOOLS:
             enabled_tools = None
-            if isinstance(current, dict) and current_name == name:
+            if isinstance(current, dict) and (current.get("character_name") or "") == (name or ""):
                 enabled_tools = current.get("enabled_tools")
             elif name:
                 for template in self.get_user_templates():

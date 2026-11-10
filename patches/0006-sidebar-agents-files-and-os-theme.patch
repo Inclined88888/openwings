@@ -46,7 +46,7 @@ index 89836d2..db97580 100644
  <script type="module" src="/static/js/spinner.js"></script>
  <script type="module" src="/static/js/tts-ai.js"></script>
 diff --git a/static/js/theme.js b/static/js/theme.js
-index 6e4194d..779bd74 100644
+index 6e4194d..1b9dccd 100644
 --- a/static/js/theme.js
 +++ b/static/js/theme.js
 @@ -34,7 +34,10 @@ export const THEMES = {
@@ -61,6 +61,17 @@ index 6e4194d..779bd74 100644
  const THEME_DISPLAY_NAMES = { ocean: 'starfield' };
  const LS_KEY = 'odysseus-theme';
  const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
+@@ -1009,8 +1012,8 @@ export function initThemeUI() {
+       if (ds) ds.value = DEFAULT_DENSITY;
+       if (ps) ps.value = 'none';
+       grid.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+-      const darkSwatch = grid.querySelector('[data-theme="dark"]');
+-      if (darkSwatch) darkSwatch.classList.add('active');
++      const defaultSwatch = grid.querySelector(`[data-theme="${DEFAULT_THEME}"]`);
++      if (defaultSwatch) defaultSwatch.classList.add('active');
+     });
+   }
+ 
 diff --git a/static/js/wings-ui.js b/static/js/wings-ui.js
 new file mode 100644
 index 0000000..219f3f4

@@ -7,16 +7,19 @@
 # Before touching anything it verifies checksums and archive safety, then takes
 # a fresh safety backup of the current state into backups/pre-restore-<time>/
 # (skip with --no-safety-backup). Restore with the same .env the backup was
-# made with; otherwise stored API keys and passwords cannot be decrypted.
+# made with. If its key differs, the script stops before changing anything;
+# --accept-key-loss restores anyway and starts the app with the stored API
+# keys and mail/calendar passwords unreadable (re-enter them in Settings).
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
-SRC=""; YES=0; SAFETY=1
+SRC=""; YES=0; SAFETY=1; ACCEPT_KEY_LOSS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1; shift ;;
     --no-safety-backup) SAFETY=0; shift ;;
+    --accept-key-loss) ACCEPT_KEY_LOSS=1; shift ;;
     -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [ -z "$SRC" ] || die "only one backup folder may be given"; SRC="$1"; shift ;;
@@ -46,14 +49,16 @@ if [ -f "$SRC/MANIFEST" ]; then
   want="$(sed -n 's/^app_key_fingerprint=//p' "$SRC/MANIFEST")"
   have="$(env_get ODYSSEUS_APP_KEY | sha256_stdin_short)"
   if [ -n "$want" ] && [ "$want" != "$have" ]; then
-    warn "ODYSSEUS_APP_KEY in .env differs from the key used when this backup was made."
-    warn "Data will restore, but stored API keys and mail/calendar passwords will not decrypt."
-    warn "Restore the matching .env first, or re-enter those credentials after restoring."
+    if [ "$ACCEPT_KEY_LOSS" -ne 1 ]; then
+      die "ODYSSEUS_APP_KEY in .env differs from the key this backup was made with. Put back the matching .env and re-run (nothing was changed), or re-run with --accept-key-loss to restore everything except stored credentials."
+    fi
+    warn "Restoring with a different key: stored API keys and mail/calendar passwords will be unreadable; re-enter them in Settings."
+    env_set WINGS_ACCEPT_KEY_LOSS 1
   fi
 fi
 
 IMAGE="$(wings_image)"
-helper() { docker run --rm -i --network none --entrypoint sh -v "${SRC}:/backup:ro" "$@"; }
+helper() { docker run --rm -i --network none --entrypoint sh -v "${SRC}:/backup:ro,z" "$@"; }
 
 # Upstream's validator rejects absolute paths, '..', links and special files.
 helper "$IMAGE" -c "python /app/scripts/odysseus-backup verify /backup/odysseus-data.tar.gz >/dev/null" \
@@ -88,6 +93,15 @@ fi
 info "Stopping the stack"
 dc stop >/dev/null
 
+# The CalDAV account file lives outside the volumes; put it back first so
+# Docker never creates a directory in its place.
+if [ -f "$SRC/radicale-users" ]; then
+  mkdir -p "$WINGS_ROOT/config/radicale"
+  cat "$SRC/radicale-users" > "$WINGS_ROOT/config/radicale/users"
+  chmod 644 "$WINGS_ROOT/config/radicale/users"
+  ok "restored radicale accounts"
+fi
+
 # Make sure every volume exists (fresh host: create without starting the apps).
 dc create >/dev/null 2>&1 || true
 
@@ -98,7 +112,9 @@ restore_into() {
     warn "volume ${short} does not exist in this stack; skipping ${archive}"
     return 0
   fi
-  helper -v "${vol}:/dst" "$IMAGE" -c "find /dst -mindepth 1 -delete && tar -xzf /backup/${archive} -C /dst --no-same-owner"
+  # Keep the numeric owners recorded in the archive (Radicale runs as 2999,
+  # the app as PUID); the archives were made as root, so they hold them.
+  helper -v "${vol}:/dst" "$IMAGE" -c "find /dst -mindepth 1 -delete && tar --numeric-owner -xzpf /backup/${archive} -C /dst"
   ok "restored ${short}"
 }
 

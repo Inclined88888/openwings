@@ -1420,10 +1420,14 @@ def setup_cookbook_routes() -> APIRouter:
                 logger.error(f"Local detached download launch failed: {e}")
                 return {"ok": False, "error": str(e), "session_id": session_id}
         else:
+            # Wings: whichever launch starts the tmux server fixes its global
+            # environment for every pane; keep deployment secrets out of it.
+            from wings.envscrub import scrubbed_environ
             proc = await asyncio.create_subprocess_shell(
                 setup_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=scrubbed_environ(),
             )
             await proc.wait()
 
@@ -2834,10 +2838,14 @@ def setup_cookbook_routes() -> APIRouter:
                 logger.error(f"Local detached serve launch failed: {e}")
                 return {"ok": False, "error": str(e), "session_id": session_id}
         else:
+            # Wings: whichever launch starts the tmux server fixes its global
+            # environment for every pane; keep deployment secrets out of it.
+            from wings.envscrub import scrubbed_environ
             proc = await asyncio.create_subprocess_shell(
                 setup_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=scrubbed_environ(),
             )
             await proc.wait()
 

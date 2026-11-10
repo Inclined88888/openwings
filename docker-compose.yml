@@ -52,6 +52,11 @@ services:
       # Wings hardening (see patches/). Encryption keys come from .env so they
       # never sit in the same volume (or backup) as the data they protect.
       - ODYSSEUS_APP_KEY=${ODYSSEUS_APP_KEY:?ODYSSEUS_APP_KEY is not set. Run ./scripts/setup.sh first}
+      # Processes that lack the key refuse to create a new key file (patch 0001).
+      - WINGS_KEY_FROM_ENV=1
+      # 1 = start even though the key cannot decrypt stored credentials (after
+      # restoring without the matching .env). Remove once credentials are re-entered.
+      - WINGS_ACCEPT_KEY_LOSS=${WINGS_ACCEPT_KEY_LOSS:-}
       # No email leaves without a person clicking Send (patch 0004). Automated
       # mail (task results, reminders) may reach only the addresses listed here.
       - WINGS_FORCE_EMAIL_CONFIRM=${WINGS_FORCE_EMAIL_CONFIRM:-1}
