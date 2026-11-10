@@ -1,0 +1,4 @@
+# Only docker/ and overlay/ are needed to build the Wings image.
+*
+!docker/
+!overlay/

@@ -1,0 +1,32 @@
+# HTTPS front door for Wings (profile: https).
+# WINGS_DOMAIN must resolve to this host, and ports 80 and 443 must be
+# reachable from the internet so Let's Encrypt can issue the certificate.
+{
+	email {$WINGS_ACME_EMAIL}
+}
+
+{$WINGS_DOMAIN} {
+	encode zstd gzip
+
+	# Optional bundled CalDAV server (profile: caldav), for phones and desktop
+	# calendar apps: https://<domain>/dav/
+	handle_path /dav/* {
+		reverse_proxy radicale:5232 {
+			header_up X-Script-Name /dav
+		}
+	}
+
+	handle {
+		reverse_proxy odysseus:7000 {
+			# Stream chat tokens and research progress immediately.
+			flush_interval -1
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}

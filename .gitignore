@@ -1,0 +1,16 @@
+# Secrets and local state: never commit these.
+.env
+.env.*
+!.env.example
+config/radicale/users
+backups/
+*.tar.gz
+*.age
+*.gpg
+
+# Tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+node_modules/

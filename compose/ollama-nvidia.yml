@@ -1,0 +1,16 @@
+# NVIDIA GPU for the bundled Ollama (profile: ollama).
+# Enable with: ./scripts/setup.sh --with-ollama --ollama-gpu nvidia
+# which writes COMPOSE_FILE=docker-compose.yml:compose/ollama-nvidia.yml to .env.
+#
+# Host requirements: NVIDIA driver + NVIDIA Container Toolkit, then
+#   sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+# Check with: docker run --rm --gpus all ubuntu nvidia-smi
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

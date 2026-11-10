@@ -1,0 +1,321 @@
+# Wings: a self-hosted AI workspace built on Odysseus
+# (https://github.com/odysseus-dev/odysseus), pinned to an exact upstream build.
+#
+#   ./scripts/setup.sh            first run: writes .env, builds, starts, prints login
+#   docker compose up -d          every run after that
+#
+# Every service keeps its state in a NAMED volume (see the bottom of this file),
+# so `docker compose down`, image upgrades and container recreation never touch
+# your chats, notes, files, memory or calendar. Only `docker compose down -v`
+# deletes data. Back up with ./scripts/backup.sh.
+#
+# Optional services are switched on with Compose profiles, set COMPOSE_PROFILES
+# in .env (setup.sh does this for you):
+#   ollama  bundled Ollama server for local models (CPU; add compose/ollama-nvidia.yml for GPU)
+#   caldav  bundled Radicale CalDAV server, a private calendar your phone can sync
+#   https   Caddy reverse proxy with automatic Let's Encrypt TLS for WINGS_DOMAIN
+
+name: ${COMPOSE_PROJECT_NAME:-wings}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  odysseus:
+    # Built locally: the pinned upstream image plus the Wings patch overlay
+    # (docker/odysseus/Dockerfile). pull_policy=build means Compose never tries
+    # to pull this tag from a registry, so nobody can squat the name.
+    image: wings/odysseus:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w1}
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: docker/odysseus/Dockerfile
+      args:
+        ODYSSEUS_BASE_IMAGE: ${ODYSSEUS_BASE_IMAGE:-ghcr.io/odysseus-dev/odysseus:1.0.3-9d0d372@sha256:5117c5e07e5976095ce213e601277ff372e0387a67de34c5fd59a3de723e6113}
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7011}:7000"
+    volumes:
+      - odysseus-data:/app/data
+      - odysseus-logs:/app/logs
+      - odysseus-ssh:/app/.ssh
+      - odysseus-hf-cache:/app/.cache/huggingface
+      - odysseus-local:/app/.local
+    extra_hosts:
+      # Reach services on the Docker host, e.g. a native Ollama at
+      # http://host.docker.internal:11434 (the right choice on macOS, where
+      # Docker cannot use the Apple GPU).
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Wings hardening (see patches/). Encryption keys come from .env so they
+      # never sit in the same volume (or backup) as the data they protect.
+      - ODYSSEUS_APP_KEY=${ODYSSEUS_APP_KEY:?ODYSSEUS_APP_KEY is not set. Run ./scripts/setup.sh first}
+      # No email leaves without a person clicking Send (patch 0004). Automated
+      # mail (task results, reminders) may reach only the addresses listed here.
+      - WINGS_FORCE_EMAIL_CONFIRM=${WINGS_FORCE_EMAIL_CONFIRM:-1}
+      - WINGS_EMAIL_SELF_ADDRESSES=${WINGS_EMAIL_SELF_ADDRESSES:-}
+      - TZ=${TZ:-Etc/UTC}
+      # Upstream's agent tools call the app over loopback and default to port
+      # 7011, but inside the container uvicorn listens on 7000. Without this,
+      # every agent tool that loops back fails with "connection refused".
+      - ODYSSEUS_INTERNAL_BASE=http://127.0.0.1:7000
+      # Upstream defers scheduled agent tasks while any browser tab is open,
+      # so an always-open tab can stop schedules from ever running. Off by
+      # default here; set true if scheduled jobs slow a single local GPU.
+      - BACKGROUND_TASK_FOREGROUND_GATE=${BACKGROUND_TASK_FOREGROUND_GATE:-false}
+      # Browser automation is not functional in this upstream build; do not
+      # download an unpinned @playwright/mcp@latest from npm at every start.
+      - ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=${ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE:-1}
+      # Accounts and auth
+      - AUTH_ENABLED=true
+      - LOCALHOST_BYPASS=false
+      - ODYSSEUS_ADMIN_USER=${ODYSSEUS_ADMIN_USER:-admin}
+      - ODYSSEUS_ADMIN_PASSWORD=${ODYSSEUS_ADMIN_PASSWORD:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7011,http://127.0.0.1:7011}
+      - SECURE_COOKIES=${SECURE_COOKIES:-}
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-}
+      # Models. Providers are normally added in Settings; these are optional
+      # bootstrap values for hosts without a browser at hand.
+      - LLM_HOST=${LLM_HOST:-localhost}
+      - LLM_HOSTS=${LLM_HOSTS:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+      # Embeddings for file search, memory and RAG. Empty = built-in FastEmbed.
+      - EMBEDDING_URL=${EMBEDDING_URL:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - FASTEMBED_MODEL=${FASTEMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      # Bundled services, reached over the internal Compose network only.
+      - SEARXNG_INSTANCE=http://searxng:8080
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - DATABASE_URL=sqlite:///./data/app.db
+      # Needed only for the bundled Radicale (profile: caldav), whose address is
+      # private. Upstream blocks private CalDAV hosts by default (SSRF guard).
+      - ODYSSEUS_ALLOW_PRIVATE_CALDAV=${ODYSSEUS_ALLOW_PRIVATE_CALDAV:-0}
+      # Mail servers on a private address (Proton Mail Bridge, DavMail for
+      # Outlook/Exchange, a LAN mail server) are blocked by upstream's SSRF
+      # guard on the send path unless this is true.
+      - EMAIL_ALLOW_PRIVATE_IPS=${EMAIL_ALLOW_PRIVATE_IPS:-}
+      # Optional paid search backends (SearXNG is the free default).
+      - DATA_BRAVE_API_KEY=${DATA_BRAVE_API_KEY:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GOOGLE_PSE_CX=${GOOGLE_PSE_CX:-}
+      # Gmail / Google Workspace OAuth for email (optional; app passwords work too).
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
+      # Safety rails. Keep these on.
+      - ODYSSEUS_TOOL_APPROVAL_GATE=${ODYSSEUS_TOOL_APPROVAL_GATE:-1}
+      - ODYSSEUS_CAPTURE_MODEL_REQUESTS=0
+      # Background work
+      - ODYSSEUS_INPROCESS_POLLERS=${ODYSSEUS_INPROCESS_POLLERS:-1}
+      - ODYSSEUS_INPROCESS_TASKS=${ODYSSEUS_INPROCESS_TASKS:-1}
+      - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-24}
+      # Upload limits (bytes)
+      - ODYSSEUS_CHAT_UPLOAD_MAX_BYTES=${ODYSSEUS_CHAT_UPLOAD_MAX_BYTES:-52428800}
+      - ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES=${ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES:-52428800}
+      - ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES=${ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES:-26214400}
+      # File ownership inside the named volumes
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/api/health', timeout=5).read(1)"]
+      interval: 15s
+      timeout: 6s
+      retries: 10
+      start_period: 90s
+    depends_on:
+      searxng:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    networks:
+      wings:
+    logging: *logging
+    restart: unless-stopped
+
+  chromadb:
+    # Vector store for file search, memory and RAG. Internal only: no host port.
+    image: docker.io/chromadb/chroma:1.5.9@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
+    volumes:
+      # The image persists to /data (chroma run /config.yaml). Mounting the
+      # pre-1.0 path /chroma/chroma would silently persist nothing.
+      - chromadb-data:/data
+    environment:
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      wings:
+    logging: *logging
+    restart: unless-stopped
+
+  searxng:
+    # Private metasearch for the web search tool and Deep Research.
+    # Internal only: no host port. Same pin and bootstrap as upstream.
+    image: docker.io/searxng/searxng:2026.10.24-ef0ec03da@sha256:7c7cbe509429e82755104b2a95f52085a98633c95d53f44e4e905fa3a59f08c8
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'odysseus-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
+          secret="$${SEARXNG_SECRET:-}"
+          if [ -z "$$secret" ]; then
+            secret="$$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          fi
+          sed "s|__SEARXNG_SECRET__|$$secret|g" /tmp/searxng-settings.yml.template > /etc/searxng/settings.yml
+        fi
+        /usr/local/searxng/.venv/bin/python /tmp/migrate-searxng-settings.py /etc/searxng/settings.yml || true
+        exec /usr/local/searxng/entrypoint.sh
+    volumes:
+      - searxng-data:/etc/searxng
+      - ./config/searxng/settings.yml:/tmp/searxng-settings.yml.template:ro,z
+      - ./scripts/vendor/migrate_searxng_settings.py:/tmp/migrate-searxng-settings.py:ro,z
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-}
+      # The image binds IPv6 (::) by default and crash-loops on hosts with
+      # IPv6 disabled (common on VPSes). IPv4 is all the internal network needs.
+      - GRANIAN_HOST=${SEARXNG_LISTEN:-0.0.0.0}
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5).read(1)\""]
+      interval: 5s
+      timeout: 6s
+      retries: 20
+      start_period: 10s
+    networks:
+      wings:
+    logging: *logging
+    restart: unless-stopped
+
+  ntfy:
+    # Push notifications for reminders and finished background tasks.
+    # Loopback by default; set NTFY_BIND to a LAN or Tailscale IP for your phone.
+    image: docker.io/binwiederhier/ntfy:v2.32.0@sha256:59250e1d8be2ee2186c4560322f625faef22ace380331f05b63f8842dbd62602
+    command: serve
+    ports:
+      - "${NTFY_BIND:-127.0.0.1}:${NTFY_PORT:-8091}:80"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    environment:
+      - NTFY_BASE_URL=${NTFY_BASE_URL:-http://localhost:8091}
+    networks:
+      wings:
+    logging: *logging
+    restart: unless-stopped
+
+  ollama:
+    # Optional local model server (profile: ollama). In Settings add the
+    # endpoint http://ollama:11434/v1, or set OLLAMA_BASE_URL to it in .env.
+    profiles: ["ollama"]
+    image: docker.io/ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-16384}
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      wings:
+    logging: *logging
+    restart: unless-stopped
+
+  radicale:
+    # Optional private CalDAV server (profile: caldav). Odysseus syncs to it,
+    # and so can your phone. Accounts live in ./config/radicale/users
+    # (bcrypt), created by ./scripts/setup.sh --with-caldav.
+    profiles: ["caldav"]
+    image: docker.io/tomsquest/docker-radicale:3.8.3.0@sha256:a3b1b452f4bc3d1aee43015b85bc2d9ee5de0ff7e96d5d2b47f1d889aa682409
+    ports:
+      - "${RADICALE_BIND:-127.0.0.1}:${RADICALE_PORT:-5232}:5232"
+    environment:
+      # The named volume already inherits the image's radicale ownership;
+      # the image's default recursive chown fails under the dropped caps.
+      - TAKE_FILE_OWNERSHIP=false
+    volumes:
+      - radicale-data:/data
+      - ./config/radicale/config:/config/config:ro,z
+      - ./config/radicale/users:/config/users:ro,z
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - KILL
+    networks:
+      wings:
+    logging: *logging
+    restart: unless-stopped
+
+  caddy:
+    # Optional HTTPS front door (profile: https). Needs a DNS name pointing at
+    # this host and ports 80/443 reachable from the internet for Let's Encrypt.
+    profiles: ["https"]
+    image: docker.io/library/caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      - WINGS_DOMAIN=${WINGS_DOMAIN:-localhost}
+      - WINGS_ACME_EMAIL=${WINGS_ACME_EMAIL:-}
+    depends_on:
+      odysseus:
+        condition: service_healthy
+    networks:
+      wings:
+        # Fixed address so FORWARDED_ALLOW_IPS can trust exactly this proxy.
+        ipv4_address: ${WINGS_PROXY_IP:-172.30.57.250}
+    logging: *logging
+    restart: unless-stopped
+
+networks:
+  wings:
+    ipam:
+      config:
+        - subnet: ${WINGS_SUBNET:-172.30.57.0/24}
+          # Dynamic addresses come from the lower half only, so the proxy's
+          # fixed address (.250) can never be taken by another container.
+          ip_range: ${WINGS_IP_RANGE:-172.30.57.0/25}
+
+volumes:
+  odysseus-data:      # database, settings, notes, tasks, memory, documents, uploads, skills
+  odysseus-logs:
+  odysseus-ssh:       # Cookbook remote-server SSH identity
+  odysseus-hf-cache:  # downloaded HuggingFace models (re-downloadable)
+  odysseus-local:     # Cookbook-installed serving engines (re-installable)
+  chromadb-data:      # vector index for files, memory, RAG
+  searxng-data:       # generated SearXNG settings (re-creatable)
+  ntfy-cache:
+  ollama-models:      # local models pulled by the bundled Ollama (re-downloadable)
+  radicale-data:      # your CalDAV calendars and contacts
+  caddy-data:         # TLS certificates
+  caddy-config:

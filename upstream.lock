@@ -1,0 +1,7 @@
+# The exact upstream build Wings is pinned to. scripts/dev/rebase-overlay.sh
+# reads this file; docker-compose.yml carries the same image reference.
+ODYSSEUS_REPO=https://github.com/odysseus-dev/odysseus
+ODYSSEUS_BRANCH=main
+ODYSSEUS_COMMIT=9d0d3720f4ca181d87bef94da826d730acc6d483
+ODYSSEUS_IMAGE=ghcr.io/odysseus-dev/odysseus:1.0.3-9d0d372
+ODYSSEUS_IMAGE_DIGEST=sha256:5117c5e07e5976095ce213e601277ff372e0387a67de34c5fd59a3de723e6113
