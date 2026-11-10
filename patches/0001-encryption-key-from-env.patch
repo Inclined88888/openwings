@@ -1,0 +1,102 @@
+Wings patch 0001: read the encryption key from ODYSSEUS_APP_KEY
+
+Upstream keeps its Fernet keys (data/.app_key for database secrets, data/.key
+for api_keys.json) inside the data directory, so every copy of the data
+volume, including backups, carries the key that decrypts it. With this patch
+both key users take the key from the ODYSSEUS_APP_KEY environment variable
+when it is set, and never write a key file in that mode. A malformed key, or
+an existing key file that differs from the variable, raises instead of
+silently generating a new key and orphaning stored secrets.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/api_key_manager.py b/src/api_key_manager.py
+index 3372041..0ed2cc9 100644
+--- a/src/api_key_manager.py
++++ b/src/api_key_manager.py
+@@ -16,6 +16,14 @@ class APIKeyManager:
+         
+     def get_or_create_key(self) -> bytes:
+         """Get or create encryption key for API keys"""
++        # Wings: prefer the deployment's ODYSSEUS_APP_KEY so the key never
++        # lives in the data directory; never write a key file in that mode.
++        from pathlib import Path
++        from src.secret_storage import check_key_file_matches_env, env_app_key
++        env_key = env_app_key()
++        if env_key is not None:
++            check_key_file_matches_env(Path(self.key_file), env_key)
++            return env_key
+         if os.path.exists(self.key_file):
+             # Older versions wrote .key with the process umask (often 0o644,
+             # i.e. group/world-readable). Re-restrict on read so existing
+diff --git a/src/secret_storage.py b/src/secret_storage.py
+index c4a08be..040fc12 100644
+--- a/src/secret_storage.py
++++ b/src/secret_storage.py
+@@ -11,6 +11,12 @@ backup, leaked container layer, sibling-tenant read). Does **not**
+ protect against a process compromise — anyone who can read this
+ module's memory or the key file has plaintext.
+ 
++Wings: when ODYSSEUS_APP_KEY is set (a Fernet key from the deployment's
++environment), that key is used instead and no key file is ever written, so
++the key does not travel with the data directory or its backups. If a key
++file already exists and holds a different key, startup fails loudly rather
++than silently making every stored secret undecryptable.
++
+ Encrypted values carry an `enc:` prefix so the migration is
+ idempotent: passing an already-encrypted value to `encrypt()` is a
+ no-op; passing a plaintext value to `decrypt()` returns it
+@@ -34,7 +40,52 @@ _PREFIX = "enc:"
+ _fernet: Fernet | None = None
+ 
+ 
++ENV_KEY_VAR = "ODYSSEUS_APP_KEY"
++
++
++def env_app_key() -> bytes | None:
++    """Return the Fernet key from ODYSSEUS_APP_KEY, or None when unset.
++
++    Raises RuntimeError for a malformed key so a typo never falls back to a
++    freshly generated key (which would orphan every stored secret)."""
++    raw = os.environ.get(ENV_KEY_VAR, "").strip()
++    if not raw:
++        return None
++    key = raw.encode("ascii", errors="strict") if raw.isascii() else b""
++    try:
++        Fernet(key)
++    except (ValueError, TypeError) as exc:
++        raise RuntimeError(
++            f"{ENV_KEY_VAR} is not a valid Fernet key (expected 44 URL-safe "
++            "base64 characters, e.g. from `python -c \"from cryptography.fernet "
++            "import Fernet; print(Fernet.generate_key().decode())\"`)"
++        ) from exc
++    return key
++
++
++def check_key_file_matches_env(path: Path, env_key: bytes) -> None:
++    """Refuse to run when an on-disk key differs from the environment key.
++
++    Values already stored were encrypted with the file key; switching keys
++    silently would make them decrypt to "" (unconfigured) everywhere."""
++    try:
++        file_key = path.read_bytes().strip()
++    except FileNotFoundError:
++        return
++    if file_key and file_key != env_key:
++        raise RuntimeError(
++            f"{path} exists and differs from {ENV_KEY_VAR}. Secrets stored so "
++            f"far were encrypted with the key in that file. Move it into the "
++            f"environment (Wings: ./scripts/adopt-key.sh --yes), or unset "
++            f"{ENV_KEY_VAR}."
++        )
++
++
+ def _load_or_create_key() -> bytes:
++    env_key = env_app_key()
++    if env_key is not None:
++        check_key_file_matches_env(_KEY_PATH, env_key)
++        return env_key
+     if _KEY_PATH.exists():
+         return _KEY_PATH.read_bytes()
+     _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)

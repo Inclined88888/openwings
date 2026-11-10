@@ -1,0 +1,99 @@
+Wings patch 0006: Agents and Files in the sidebar, theme follows the OS
+
+Adds an 'Agents' sidebar entry (keyboard-focusable) that opens the persona
+editor where an agent's instructions and tool access live, relabels the
+document Library as 'Files & Docs', and makes the default theme follow the
+operating system's light/dark preference when the user has not picked one
+(upstream always started dark).
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/static/index.html b/static/index.html
+index 89836d2..db97580 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -925,12 +925,22 @@
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.5;">
+             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h6M9 11h4"/>
+           </svg>
+-          <span class="grow">Library</span>
++          <span class="grow" title="Files and documents library">Files &amp; Docs</span>
+           <button type="button" class="list-item-plus-btn" id="library-new-doc-btn" title="New document">
+             <svg class="list-item-plus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+             <span class="list-item-plus-label">document</span>
+           </button>
+         </div>
++        <div class="list-item" id="tool-agents-btn" role="button" tabindex="0" title="Agents: instructions and tool access">
++          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
++            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
++            style="flex-shrink:0;opacity:0.5;" aria-hidden="true">
++            <rect x="4" y="8" width="16" height="12" rx="3"/>
++            <path d="M12 8V4"/><circle cx="12" cy="3" r="1"/>
++            <circle cx="9" cy="14" r="1.2"/><circle cx="15" cy="14" r="1.2"/>
++          </svg>
++          <span class="grow">Agents</span>
++        </div>
+         <div class="list-item" id="tool-memory-btn">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+@@ -2679,6 +2689,7 @@
+ <script type="module" src="/static/js/models.js"></script>  <!-- This must come BEFORE app.js -->
+ <script type="module" src="/static/js/rag.js"></script>
+ <script type="module" src="/static/js/presets.js?v=20260908personaname1"></script>
++<script type="module" src="/static/js/wings-ui.js"></script>
+ <script type="module" src="/static/js/search.js"></script>
+ <script type="module" src="/static/js/spinner.js"></script>
+ <script type="module" src="/static/js/tts-ai.js"></script>
+diff --git a/static/js/theme.js b/static/js/theme.js
+index 6e4194d..779bd74 100644
+--- a/static/js/theme.js
++++ b/static/js/theme.js
+@@ -34,7 +34,10 @@ export const THEMES = {
+   yoyo:       { bg:'#211f23', fg:'#dfdbd7', panel:'#141415', border:'#3e5146', red:'#e09d6c' },
+ };
+ 
+-const DEFAULT_THEME = 'dark';
++// Wings: with no saved choice, follow the operating system's light/dark
++// preference instead of always starting dark. A saved theme still wins.
++const DEFAULT_THEME = (typeof window !== 'undefined' && window.matchMedia
++  && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+ const THEME_DISPLAY_NAMES = { ocean: 'starfield' };
+ const LS_KEY = 'odysseus-theme';
+ const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
+diff --git a/static/js/wings-ui.js b/static/js/wings-ui.js
+new file mode 100644
+index 0000000..219f3f4
+--- /dev/null
++++ b/static/js/wings-ui.js
+@@ -0,0 +1,30 @@
++// Wings: sidebar entry for Agents (patch 0006).
++// Opens the persona editor on its Character tab, where an agent's
++// instructions and (patch 0005) tool access are set. Same module URL as
++// app.js, so this is the same presets instance the rest of the app uses.
++import presetsModule from './presets.js?v=20260908personaname1';
++
++function openAgents() {
++  if (presetsModule && typeof presetsModule.openCustomPresetModal === 'function') {
++    presetsModule.openCustomPresetModal('character');
++  }
++}
++
++function wire() {
++  const btn = document.getElementById('tool-agents-btn');
++  if (!btn || btn.dataset.wingsWired) return;
++  btn.dataset.wingsWired = '1';
++  btn.addEventListener('click', openAgents);
++  btn.addEventListener('keydown', (e) => {
++    if (e.key === 'Enter' || e.key === ' ') {
++      e.preventDefault();
++      openAgents();
++    }
++  });
++}
++
++if (document.readyState === 'loading') {
++  document.addEventListener('DOMContentLoaded', wire);
++} else {
++  wire();
++}

@@ -1,0 +1,328 @@
+Wings patch 0005: per-agent tool access
+
+Upstream agents (persona presets) carry instructions, temperature and persona
+memory but no tool restriction: chat tool access is decided only by per-turn
+toggles and the global admin denylist. This adds an optional enabled_tools
+list of tool families to each persona (saved templates and the active custom
+preset). When set, every tool outside those families, including MCP tools, is
+added to the turn's disabled-tool set in routes/chat_routes.py, the same
+server-side choke point the global denylist uses (wings/agent_tools.py).
+null = no restriction, [] = no tools. Re-posts of the active persona that
+omit the field keep the saved value, so they can never widen an agent's
+tools. The persona editor gets a 'Tool access' section
+(static/js/wings-agent-tools.js); GET /api/tools also lists the families.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/routes/chat_routes.py b/routes/chat_routes.py
+index 5a42d33..55a5fab 100644
+--- a/routes/chat_routes.py
++++ b/routes/chat_routes.py
+@@ -3488,6 +3488,10 @@ def setup_chat_routes(
+         _global_disabled = get_setting("disabled_tools", [])
+         if _global_disabled and isinstance(_global_disabled, list):
+             disabled_tools.update(_global_disabled)
++        # Wings: the active agent's tool allowlist (persona enabled_tools),
++        # enforced here alongside the global admin denylist.
++        from wings.agent_tools import agent_denied_tools
++        disabled_tools.update(agent_denied_tools(preset_id))
+ 
+         # Light auto-escalation: the user is in chat mode and just expressed a
+         # notes/calendar/email intent. Grant the relevant managers but withhold
+diff --git a/routes/model_routes.py b/routes/model_routes.py
+index 6aec3b9..f1f1e19 100644
+--- a/routes/model_routes.py
++++ b/routes/model_routes.py
+@@ -3073,7 +3073,9 @@ def setup_model_routes(model_discovery):
+         tools = []
+         for tag in sorted(TOOL_TAGS):
+             tools.append({"id": tag, "enabled": tag not in disabled})
+-        return {"tools": tools}
++        # Wings: tool families an agent (persona) can be limited to.
++        from wings.agent_tools import families_for_ui
++        return {"tools": tools, "agent_families": families_for_ui()}
+ 
+     class ToolsUpdate(BaseModel):
+         disabled: list = []
+diff --git a/routes/preset_routes.py b/routes/preset_routes.py
+index 5496002..bc50322 100644
+--- a/routes/preset_routes.py
++++ b/routes/preset_routes.py
+@@ -23,6 +23,8 @@ class UserTemplateRequest(BaseModel):
+     max_tokens: int = Field(0, ge=0, le=65536)
+     persona_memory: str = Field("", max_length=6000)
+     persona_memory_schema: str = Field("general", pattern="^(general|health)$")
++    # Wings: tool families this agent may use; None = no restriction.
++    enabled_tools: list[str] | None = Field(None, max_length=50)
+ 
+ 
+ def setup_preset_routes(preset_manager) -> APIRouter:
+@@ -47,6 +49,12 @@ def setup_preset_routes(preset_manager) -> APIRouter:
+                 preset_update.persona_memory_schema,
+                 preset_update.thinking_mode,
+                 preset_update.show_persona_name,
++                # Wings: an omitted field keeps the agent's saved tool access.
++                enabled_tools=(
++                    preset_update.enabled_tools
++                    if "enabled_tools" in preset_update.model_fields_set
++                    else preset_manager.KEEP_TOOLS
++                ),
+             )
+             if success:
+                 return {"success": True, "message": "Custom preset updated"}
+diff --git a/src/preset_manager.py b/src/preset_manager.py
+index 8dbf73f..47586b1 100644
+--- a/src/preset_manager.py
++++ b/src/preset_manager.py
+@@ -65,6 +65,9 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
+         }
+     }
+     
++    # Wings: sentinel meaning "keep the agent's current tool access".
++    KEEP_TOOLS = object()
++
+     def __init__(self, data_dir: str):
+         self.presets_file = os.path.join(data_dir, "presets.json")
+         self.presets = self.load()
+@@ -145,6 +148,7 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
+         persona_memory_schema: str = "general",
+         thinking_mode: str = "",
+         show_persona_name: bool = True,
++        enabled_tools=None,
+     ) -> bool:
+         """Update the custom preset"""
+         persona_memory_schema = persona_memory_schema if persona_memory_schema in {"general", "health"} else "general"
+@@ -162,7 +166,23 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
+                         persona_memory = template.get("persona_memory", "") or ""
+                         persona_memory_schema = template.get("persona_memory_schema", persona_memory_schema) or persona_memory_schema
+                         break
++        # Wings: resolve the agent's tool access. KEEP_TOOLS (field omitted)
++        # keeps the current value for the same agent, else the saved
++        # template's value, so re-posts that predate this field never widen
++        # an agent's tools.
++        if enabled_tools is self.KEEP_TOOLS:
++            enabled_tools = None
++            if isinstance(current, dict) and current_name == name:
++                enabled_tools = current.get("enabled_tools")
++            elif name:
++                for template in self.get_user_templates():
++                    if isinstance(template, dict) and template.get("name") == name:
++                        enabled_tools = template.get("enabled_tools")
++                        break
++        if enabled_tools is not None:
++            enabled_tools = [str(t) for t in enabled_tools if isinstance(t, str)][:50]
+         self.presets["custom"] = {
++            "enabled_tools": enabled_tools if enabled else None,
+             "name": name or "Custom",
+             "character_name": name,
+             "temperature": temperature,
+diff --git a/src/request_models.py b/src/request_models.py
+index dde1c59..e6960d8 100644
+--- a/src/request_models.py
++++ b/src/request_models.py
+@@ -112,6 +112,13 @@ class PresetUpdateRequest(BaseModel):
+         pattern="^(general|health)$",
+         description="Schema used by persona memory extraction"
+     )
++    # Wings: per-agent tool access. None = no restriction; a list of tool
++    # family ids (see wings/agent_tools.py) = only those families.
++    enabled_tools: Optional[List[str]] = Field(
++        None,
++        max_length=50,
++        description="Tool families this agent may use (None = all)"
++    )
+ 
+ 
+ class DirectoryRequest(BaseModel):
+diff --git a/static/js/presets.js b/static/js/presets.js
+index 775fd36..3c4e5fd 100644
+--- a/static/js/presets.js
++++ b/static/js/presets.js
+@@ -1,3 +1,4 @@
++import * as wingsTools from './wings-agent-tools.js';
+ // static/js/presets.js
+ 
+ /**
+@@ -295,7 +296,9 @@ function _tryLoadTemplate(name) {
+         character_name: builtin.isCharacter && !builtin.noName ? name : '',
+         persona_memory: builtin.persona_memory || '',
+         persona_memory_schema: builtin.persona_memory_schema || 'general',
++        enabled_tools: null,
+       };
++      wingsTools.render(null, API_BASE);
+       return;
+     }
+     return;
+@@ -322,7 +325,9 @@ function _tryLoadTemplate(name) {
+     character_name: tmpl.name || name,
+     persona_memory: tmpl.persona_memory || '',
+     persona_memory_schema: tmpl.persona_memory_schema || 'general',
++    enabled_tools: tmpl.enabled_tools ?? null,
+   };
++  wingsTools.render(tmpl.enabled_tools ?? null, API_BASE);
+   const delBtn = document.getElementById('char-delete-template-btn');
+   if (delBtn) delBtn.style.display = '';
+ }
+@@ -627,6 +632,8 @@ export function openCustomPresetModal(openTab = '') {
+   if (promptInput) promptInput.value = savedConfig.system_prompt || '';
+   if (thinkingInput) thinkingInput.value = ['on', 'off'].includes(savedConfig.thinking_mode) ? savedConfig.thinking_mode : '';
+   if (showNameInput) showNameInput.checked = savedConfig.show_persona_name !== false;
++  // Wings: per-agent tool access
++  wingsTools.render(savedConfig.enabled_tools ?? null, API_BASE);
+ 
+   // Load inject fields
+   const prefixInput = document.getElementById('inject-prefix');
+@@ -834,6 +841,8 @@ export async function saveCustomPreset(showToast, showError) {
+     show_persona_name: showNameInput ? showNameInput.checked : true,
+     persona_memory: presets.custom?.character_name === name ? (presets.custom?.persona_memory || '') : '',
+     persona_memory_schema: presets.custom?.character_name === name ? (presets.custom?.persona_memory_schema || 'general') : 'general',
++    // Wings: null = all tools, [] = none, [families] = only those
++    enabled_tools: _isInjectStart ? null : wingsTools.read(),
+   };
+ 
+   try {
+@@ -890,6 +899,7 @@ export async function saveCustomPreset(showToast, showError) {
+           max_tokens: config.max_tokens,
+           persona_memory: config.persona_memory || '',
+           persona_memory_schema: config.persona_memory_schema || 'general',
++          enabled_tools: config.enabled_tools,
+         }
+         const ENDPOINT = `${API_BASE}/api/presets/templates`;
+ 
+@@ -1165,6 +1175,7 @@ export function onSessionSwitch(sessionId) {
+         max_tokens: tmpl.max_tokens || 0,
+         persona_memory: tmpl.persona_memory || '',
+         persona_memory_schema: tmpl.persona_memory_schema || 'general',
++        enabled_tools: tmpl.enabled_tools ?? null,
+         enabled: true,
+       };
+       selectedPreset = 'custom';
+diff --git a/static/js/wings-agent-tools.js b/static/js/wings-agent-tools.js
+new file mode 100644
+index 0000000..3bb125a
+--- /dev/null
++++ b/static/js/wings-agent-tools.js
+@@ -0,0 +1,122 @@
++// Wings: per-agent tool access in the persona editor (patch 0005).
++//
++// Adds a "Tool access" section under the system prompt. When "Limit this
++// agent's tools" is on, only the checked tool families are offered to the
++// model for chats with this agent; the server enforces it (wings/agent_tools.py).
++// Value semantics: null = no restriction, [] = no tools, [ids] = those families.
++
++const FALLBACK_FAMILIES = [
++  { id: 'web', label: 'Web search and reading' },
++  { id: 'notes', label: 'Notes' },
++  { id: 'tasks', label: 'Tasks and schedules' },
++  { id: 'calendar', label: 'Calendar' },
++  { id: 'email', label: 'Email (sending always needs your click)' },
++  { id: 'contacts', label: 'Contacts' },
++  { id: 'documents', label: 'Documents' },
++  { id: 'memory', label: 'Memory, skills and past chats' },
++  { id: 'research', label: 'Deep research' },
++  { id: 'files', label: 'Read files and media' },
++  { id: 'images', label: 'Image generation and editing' },
++  { id: 'shell', label: 'Shell, code and file writes (admin)' },
++  { id: 'sessions', label: 'Other chats and models' },
++  { id: 'admin', label: 'Admin, models and settings' },
++  { id: 'external_mcp', label: 'MCP servers you added' },
++];
++
++let _families = null;
++let _pending = null;
++
++async function _loadFamilies(apiBase) {
++  if (_families) return _families;
++  try {
++    const res = await fetch(`${apiBase || ''}/api/tools`, { credentials: 'same-origin' });
++    if (res.ok) {
++      const data = await res.json();
++      if (Array.isArray(data.agent_families) && data.agent_families.length) {
++        _families = data.agent_families;
++        return _families;
++      }
++    }
++  } catch (_) { /* fall back below */ }
++  _families = FALLBACK_FAMILIES;
++  return _families;
++}
++
++function _injectStyles() {
++  if (document.getElementById('wings-tool-access-style')) return;
++  const style = document.createElement('style');
++  style.id = 'wings-tool-access-style';
++  style.textContent = `
++    #wings-tool-access.wings-tool-access { margin: 10px 0 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-width: 0; }
++    #wings-tool-access label { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; margin: 0; cursor: pointer; text-align: left; }
++    #wings-tool-access > label { font-weight: 600; }
++    #wings-tool-access input[type="checkbox"] { display: inline-block !important; width: auto !important; height: auto; margin: 0 !important; flex: 0 0 auto; }
++    #wings-tool-access .wings-ta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; margin-top: 8px; }
++    #wings-tool-access .wings-ta-grid[hidden] { display: none; }
++    #wings-tool-access .wings-ta-grid label { font-size: 0.9em; }
++    #wings-tool-access .wings-ta-hint { margin: 6px 0 0; font-size: 0.8em; color: var(--color-muted); }
++    #wings-tool-access input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
++  `;
++  document.head.appendChild(style);
++}
++
++function _mount() {
++  let root = document.getElementById('wings-tool-access');
++  if (root) return root;
++  const prompt = document.getElementById('custom-system-prompt');
++  const anchor = prompt ? (prompt.closest('.char-prompt-wrap') || prompt) : null;
++  if (!anchor || !anchor.parentNode) return null;
++  _injectStyles();
++  root = document.createElement('fieldset');
++  root.id = 'wings-tool-access';
++  root.className = 'wings-tool-access';
++  root.innerHTML = `
++    <label for="wings-ta-restrict"><input type="checkbox" id="wings-ta-restrict"> Limit this agent's tools</label>
++    <div class="wings-ta-grid" id="wings-ta-grid" role="group" aria-label="Allowed tool families" hidden></div>
++    <p class="wings-ta-hint" id="wings-ta-hint">Off: the agent can use every tool your account can. On: only the checked families, enforced by the server.</p>`;
++  anchor.parentNode.insertBefore(root, anchor.nextSibling);
++  root.querySelector('#wings-ta-restrict').addEventListener('change', (e) => {
++    root.querySelector('#wings-ta-grid').hidden = !e.target.checked;
++  });
++  return root;
++}
++
++function _apply(root, families, value) {
++  const grid = root.querySelector('#wings-ta-grid');
++  const restrict = root.querySelector('#wings-ta-restrict');
++  if (!grid.childElementCount) {
++    for (const fam of families) {
++      const id = `wings-ta-${fam.id}`;
++      const label = document.createElement('label');
++      label.setAttribute('for', id);
++      const box = document.createElement('input');
++      box.type = 'checkbox';
++      box.id = id;
++      box.value = fam.id;
++      label.appendChild(box);
++      label.appendChild(document.createTextNode(' ' + fam.label));
++      grid.appendChild(label);
++    }
++  }
++  const limited = Array.isArray(value);
++  restrict.checked = limited;
++  grid.hidden = !limited;
++  const chosen = new Set(limited ? value : []);
++  grid.querySelectorAll('input[type="checkbox"]').forEach((box) => { box.checked = chosen.has(box.value); });
++}
++
++/** Show the given value (null | string[]) in the editor. */
++export function render(value, apiBase = '') {
++  _pending = Array.isArray(value) ? value.slice() : null;
++  const root = _mount();
++  if (!root) return;
++  _loadFamilies(apiBase).then((families) => _apply(root, families, _pending));
++}
++
++/** Current editor value: null (no restriction) or the checked family ids. */
++export function read() {
++  const root = document.getElementById('wings-tool-access');
++  if (!root) return _pending;
++  if (!root.querySelector('#wings-ta-restrict').checked) return null;
++  return Array.from(root.querySelectorAll('#wings-ta-grid input[type="checkbox"]:checked')).map((b) => b.value);
++}

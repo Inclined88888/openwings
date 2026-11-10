@@ -1,0 +1,328 @@
+Wings patch 0004: WINGS_FORCE_EMAIL_CONFIRM, no email without a person's click
+
+Upstream's only guard on agent-written mail is the agent_email_confirm setting
+(which the agent can change through manage_settings), its staged drafts have
+no approval UI, and the agent can bypass it entirely by calling /api/email/send
+through its in-process app_api tool. Scheduled-task output, away auto-replies
+and plugin tokens send with no human step. With WINGS_FORCE_EMAIL_CONFIRM on
+(default in Wings, settable only in .env):
+
+  * _send_smtp_message is a deny-by-default chokepoint: it refuses any message
+    not marked human_approved, except automated mail whose every recipient is
+    in WINGS_EMAIL_SELF_ADDRESSES.
+  * Only a signed-in person's session-cookie request can mark a send approved:
+    compose Send, Schedule Send, approving a staged draft, Unsubscribe. The
+    agent's loopback calls (internal token header), API tokens and plugin
+    routes get HTTP 403.
+  * Scheduled rows carry a wings_human_approved flag; the poller sends only
+    flagged rows.
+  * Adding, editing or testing an email account is people-only, so an agent
+    cannot repoint SMTP at another host to harvest the stored password.
+  * Away auto-replies are off.
+  * In the MCP email server, send_email / reply_to_email create draft documents
+    (with a Send button) instead, and SMTP is hard-disabled in that process.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/mcp_servers/email_server.py b/mcp_servers/email_server.py
+index ed8d5ac..f38934b 100644
+--- a/mcp_servers/email_server.py
++++ b/mcp_servers/email_server.py
+@@ -2514,6 +2514,12 @@ def _resolve_send_config(account=None):
+ 
+ def _smtp_connect(account=None, cfg=None):
+     """Connect to SMTP server, returns logged-in connection."""
++    # Wings: the agent's MCP process never opens SMTP while
++    # WINGS_FORCE_EMAIL_CONFIRM is on; mail it writes becomes a draft that a
++    # person sends from the web app.
++    from wings.email_gate import EmailSendBlocked, force_confirm_enabled
++    if force_confirm_enabled():
++        raise EmailSendBlocked("SMTP is disabled for agents (WINGS_FORCE_EMAIL_CONFIRM)")
+     cfg = cfg or _load_config(account)
+     if not _smtp_ready(cfg):
+         raise ValueError(f"Email account {cfg.get('account_name') or account or 'default'} has no SMTP configured")
+@@ -2568,6 +2574,12 @@ def _read_agent_email_confirm_setting() -> bool:
+     queued for manual approval instead of SMTPed immediately. Defaults to
+     True so a fresh install is safe — agents have been observed inventing
+     signatures and sending to real recipients without the user's review."""
++    try:
++        from wings.email_gate import force_confirm_enabled
++        if force_confirm_enabled():
++            return True
++    except Exception:
++        return True
+     try:
+         from src.settings import get_setting
+         return bool(get_setting("agent_email_confirm", True))
+@@ -2660,6 +2672,36 @@ def _send_email(to, subject, body, in_reply_to=None, references=None, cc=None, b
+     `agent_draft` row and the user reviews + approves it from the chat
+     UI. This closes the auto-send hole that let earlier models invent
+     signatures and ship them to real recipients without confirmation."""
++    try:
++        from wings.email_gate import force_confirm_enabled as _wings_force
++        _wings_on = _wings_force()
++    except Exception:
++        _wings_on = True
++    if _wings_on:
++        # Wings: stage the message as a draft document with a Send button
++        # (upstream's agent_draft rows have no approval UI).
++        draft = _create_email_draft_document(
++            to=to if isinstance(to, str) else ", ".join(to),
++            subject=subject,
++            body=body,
++            cc=cc,
++            bcc=bcc,
++            in_reply_to=in_reply_to,
++            references=references,
++            account=account,
++        )
++        if draft.get("error"):
++            return {"success": False, "error": draft["error"]}
++        return {
++            "success": True,
++            "pending": True,
++            "pending_id": None,
++            "draft_doc_id": draft.get("doc_id"),
++            "draft_title": draft.get("title"),
++            "to": draft.get("to"),
++            "subject": draft.get("subject"),
++            "account": draft.get("account"),
++        }
+     if _read_agent_email_confirm_setting():
+         # Even confirmation-first sends must resolve the selected account now.
+         # Otherwise a caller could stage a pending draft against another
+@@ -4408,6 +4450,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+             )
+             if "error" in result:
+                 return [TextContent(type="text", text=f"Error: {result['error']}")]
++            if result.get("draft_doc_id"):
++                return [TextContent(
++                    type="text",
++                    text=(
++                        f"NOT SENT. Saved as draft [{result.get('draft_title')}](#document-{result['draft_doc_id']}) "
++                        f"(document ID: {result['draft_doc_id']}). The user must open it, review it and click Send; "
++                        "agents cannot send email in this workspace. Tell the user the draft is ready."
++                    ),
++                )]
+             if result.get("pending"):
+                 return [TextContent(
+                     type="text",
+@@ -4450,6 +4501,30 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+             body = arguments.get("body")
+             if not uid or body is None:
+                 return [TextContent(type="text", text="Error: uid and body are required")]
++            try:
++                from wings.email_gate import force_confirm_enabled as _wings_force
++                _wings_on = _wings_force()
++            except Exception:
++                _wings_on = True
++            if _wings_on:
++                # Wings: replies become a threaded draft the user sends.
++                result = _draft_reply_to_email(
++                    uid=uid,
++                    body=body,
++                    folder=arguments.get("folder", "INBOX"),
++                    reply_all=bool(arguments.get("reply_all", False)),
++                    account=acct,
++                )
++                if "error" in result:
++                    return [TextContent(type="text", text=f"Error: {result['error']}")]
++                return [TextContent(
++                    type="text",
++                    text=(
++                        f"NOT SENT. Saved reply draft [{result['title']}](#document-{result['doc_id']}) for UID {uid} "
++                        f"(document ID: {result['doc_id']}). The user must open it and click Send; "
++                        "agents cannot send email in this workspace."
++                    ),
++                )]
+             result = _reply_to_email(
+                 uid=uid,
+                 body=body,
+diff --git a/routes/email/email_helpers.py b/routes/email/email_helpers.py
+index d697b2f..98e797a 100644
+--- a/routes/email/email_helpers.py
++++ b/routes/email/email_helpers.py
+@@ -251,8 +251,13 @@ class _PolicySMTP_SSL(smtplib.SMTP_SSL):
+         return self.context.wrap_socket(sock, server_hostname=self._host)
+ 
+ 
+-def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message: str | bytes, timeout: int = 30) -> None:
+-    """Send through SMTP using the configured transport security mode."""
++def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message: str | bytes, timeout: int = 30, *, human_approved: bool = False) -> None:
++    """Send through SMTP using the configured transport security mode.
++
++    Wings: with WINGS_FORCE_EMAIL_CONFIRM on, refuses (EmailSendBlocked) any
++    message a person did not approve; see wings/email_gate.py."""
++    from wings.email_gate import check_send
++    check_send(recipients, human_approved=human_approved)
+     host = cfg["smtp_host"]
+     port = int(cfg.get("smtp_port") or 465)
+     user = cfg.get("smtp_user") or ""
+diff --git a/routes/email/email_pollers.py b/routes/email/email_pollers.py
+index ec9d6a8..efda0eb 100644
+--- a/routes/email/email_pollers.py
++++ b/routes/email/email_pollers.py
+@@ -441,6 +441,12 @@ def _send_away_reply(settings: dict, account_owner: str, account_id: str | None,
+     if _away_reply_already_sent(settings, account_owner, account_id, message_id, sender_addr):
+         return False, "already sent"
+ 
++    # Wings: away auto-replies send to third parties with no per-message
++    # approval, so they are off while WINGS_FORCE_EMAIL_CONFIRM is on.
++    from wings.email_gate import force_confirm_enabled
++    if force_confirm_enabled():
++        return False, "disabled by WINGS_FORCE_EMAIL_CONFIRM"
++
+     body = (settings.get("email_auto_reply_message") or "").strip()
+     if not body:
+         body = "Thanks for your email. I'm away and may be slower to reply."
+@@ -1664,7 +1670,14 @@ def _scheduled_poll_once() -> dict:
+                 if r[3]:
+                     recipients.extend([a.strip() for a in r[3].split(",") if a.strip()])
+ 
+-                _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string())
++                # Wings: only rows a person created or approved may go out.
++                from wings.email_gate import scheduled_row_approved
++                _gate_conn = sqlite3.connect(SCHEDULED_DB)
++                try:
++                    _approved = scheduled_row_approved(_gate_conn, sid)
++                finally:
++                    _gate_conn.close()
++                _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string(), human_approved=_approved)
+ 
+                 # Append to local Sent folder
+                 try:
+diff --git a/routes/email/email_routes.py b/routes/email/email_routes.py
+index 81173f8..2b3d336 100644
+--- a/routes/email/email_routes.py
++++ b/routes/email/email_routes.py
+@@ -3154,12 +3154,14 @@ def setup_email_routes():
+             return {"success": False, "error": "Mail operation failed", "candidates": []}
+ 
+     @router.post("/unsubscribe/execute")
+-    def execute_unsubscribe(data: dict, owner: str = Depends(require_owner)):
++    def execute_unsubscribe(data: dict, owner: str = Depends(require_owner), request: Request = None):
+         """Execute an approved unsubscribe action.
+ 
+         First implementation supports mailto List-Unsubscribe only. The message
+         header is re-read server-side; client-supplied addresses are not trusted.
+         """
++        from wings.email_gate import require_human
++        require_human(request, "Sending an unsubscribe email")
+         uid = str((data or {}).get("uid") or "").strip()
+         folder = str((data or {}).get("folder") or "INBOX").strip() or "INBOX"
+         account_id = (data or {}).get("account_id") or None
+@@ -3202,7 +3204,7 @@ def setup_email_routes():
+             msg_out["Subject"] = subject
+             msg_out["Message-ID"] = email.utils.make_msgid(domain="odysseus.local")
+             _apply_odysseus_headers(msg_out, "unsubscribe", uid)
+-            _send_smtp_message(cfg, cfg["from_address"], [target], msg_out.as_string())
++            _send_smtp_message(cfg, cfg["from_address"], [target], msg_out.as_string(), human_approved=True)
+             moved = False
+             deleted = False
+             delete_error = ""
+@@ -5771,8 +5773,10 @@ def setup_email_routes():
+         _cleanup_compose_uploads(attachments)
+ 
+     @router.post("/schedule")
+-    async def schedule_email(req: dict, owner: str = Depends(require_owner)):
++    async def schedule_email(req: dict, owner: str = Depends(require_owner), request: Request = None):
+         """Schedule an email to be sent at a specific time. ISO8601 UTC."""
++        from wings.email_gate import require_human, mark_scheduled_approved
++        require_human(request, "Scheduling email")
+         import sqlite3
+         import uuid as _uuid
+         try:
+@@ -5828,6 +5832,7 @@ def setup_email_routes():
+                 req.get("odysseus_kind") or "scheduled",
+                 owner or "",
+             ))
++            mark_scheduled_approved(conn, sid)  # Wings: a person created this row
+             conn.commit()
+             conn.close()
+             logger.info(f"Scheduled email {sid} for {send_at}")
+@@ -5903,11 +5908,14 @@ def setup_email_routes():
+             return {"pending": [], "error": "Mail operation failed"}
+ 
+     @router.post("/pending/{sid}/approve")
+-    async def approve_agent_draft(sid: str, owner: str = Depends(require_owner)):
++    async def approve_agent_draft(sid: str, owner: str = Depends(require_owner), request: Request = None):
+         """Approve a draft staged by the agent: flip status → pending and
+         backdate send_at so the scheduled-send poller picks it up
+         immediately."""
+         import sqlite3
++        # Wings: the agent must not approve its own draft.
++        from wings.email_gate import require_human, mark_scheduled_approved
++        require_human(request, "Approving a drafted email")
+         try:
+             conn = sqlite3.connect(SCHEDULED_DB)
+             cur = conn.execute(
+@@ -5918,6 +5926,8 @@ def setup_email_routes():
+             )
+             conn.commit()
+             affected = cur.rowcount
++            if affected:
++                mark_scheduled_approved(conn, sid)
+             conn.close()
+             if not affected:
+                 return {"success": False, "error": "Draft not found or already handled"}
+@@ -5996,10 +6006,14 @@ def setup_email_routes():
+             return {"contacts": [], "error": "Mail operation failed"}
+ 
+     @router.post("/send")
+-    async def send_email(req: SendEmailRequest, background_tasks: BackgroundTasks, owner: str = Depends(require_owner)):
++    async def send_email(req: SendEmailRequest, background_tasks: BackgroundTasks, owner: str = Depends(require_owner), request: Request = None):
+         """Queue an email for SMTP delivery. Returns immediately; send runs in background.
+ 
+         Uses req.account_id to pick the sending account (falls back to default)."""
++        # Wings: only a signed-in person's click may send (not the agent's
++        # loopback calls, API tokens, or plugin routes calling this directly).
++        from wings.email_gate import require_human
++        require_human(request, "Sending email")
+         # Body-based account_id — dep can't see it, check here.
+         if req.account_id:
+             _assert_owns_account(req.account_id, owner)
+@@ -6113,6 +6127,7 @@ def setup_email_routes():
+                     _from,
+                     _recipients,
+                     outer_str,
++                    human_approved=True,
+                 )
+                 logger.info(
+                     "Email sent account=%s from=%s via=%s to=%s: %s",
+@@ -7265,8 +7280,12 @@ def setup_email_routes():
+             db.close()
+ 
+     @router.post("/accounts")
+-    async def create_email_account(data: dict, owner: str = Depends(require_owner)):
++    async def create_email_account(data: dict, owner: str = Depends(require_owner), request: Request = None):
+         """Create a new email account."""
++        # Wings: account servers/credentials change only by a person's hand,
++        # so an agent cannot repoint SMTP to harvest the stored password.
++        from wings.email_gate import require_human
++        require_human(request, "Adding an email account")
+         from core.database import SessionLocal, EmailAccount
+         from src.secret_storage import encrypt as _enc
+         import uuid as _uuid
+@@ -7320,8 +7339,10 @@ def setup_email_routes():
+             db.close()
+ 
+     @router.put("/accounts/{account_id}")
+-    async def update_email_account(account_id: str, data: dict, owner: str = Depends(require_user)):
++    async def update_email_account(account_id: str, data: dict, owner: str = Depends(require_user), request: Request = None):
+         """Update an email account. Passwords only overwrite if non-empty."""
++        from wings.email_gate import require_human
++        require_human(request, "Changing an email account")
+         # Path param account_id — dep validated via Query, re-check the path-param value.
+         _assert_owns_account(account_id, owner)
+         from core.database import SessionLocal, EmailAccount
+@@ -7559,6 +7580,9 @@ def setup_email_routes():
+         the saved row's stored creds and test those — used by the
+         clickable test-dot in the integrations list, where the form has
+         no live values."""
++        # Wings: a test can send stored credentials to any host; people only.
++        from wings.email_gate import require_human
++        require_human(req, "Testing email account settings")
+         try:
+             body = await req.json()
+         except Exception:
