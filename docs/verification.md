@@ -22,26 +22,42 @@ on top of it through the real `docker/odysseus/Dockerfile`, with
 
 ## Upstream regression tests
 
-The upstream test suite was run inside the built images over the 159 test
-files that touch any patched module (4,828 tests), three times:
+The upstream test suite was run inside the built images over the 170 test
+files that touch any patched module (4,998 tests), three times, after the
+review fixes:
 
 | Image | Email gate | Result |
 | --- | --- | --- |
 | Unpatched upstream | n/a | 26 failed, 4742 passed |
 | Wings | `WINGS_FORCE_EMAIL_CONFIRM=0` | identical failure set: no regressions |
-| Wings | `WINGS_FORCE_EMAIL_CONFIRM=1` | the same 26 plus 26 more, all of them tests that assert an email is sent, a connection test runs, or a draft is staged for an agent without a person's approval: intended |
+| Wings | `WINGS_FORCE_EMAIL_CONFIRM=1` | the same 26 plus 30 more, all of them tests that assert an email is sent, scheduled, connection-tested, or staged for an agent without a person's session: intended |
 
 The 26 baseline failures are environmental (no IPv6, README files excluded
 from the image, no network for some fixtures).
 
 ## Wings unit tests
 
-`./tests/unit/run.sh`: 31 tests for the email gate (human vs agent loopback vs
+`./tests/unit/run.sh`: 44 tests for the email gate (human vs agent loopback vs
 API token vs auth disabled; self address allowlist; the SMTP chokepoint),
 environment scrubbing, per agent tool allowlists (including MCP tools and fail
 closed handling), the encryption key patch (env key used, no file written,
 malformed or mismatched key refused, upstream behaviour without the variable)
-and the preflight (exit 78 cases; imports nothing from the app).
+and the preflight (exit 78 cases; stored-ciphertext key check; stray key
+quarantine; the WINGS_ACCEPT_KEY_LOSS override; one-time approval of
+schedules migrated from upstream; imports nothing from the app).
+
+## Adversarial review
+
+An independent review (four reviewers, each finding then checked by a
+separate skeptic told to refute it) ran over the patches, scripts and docs.
+Every confirmed issue was fixed in the commit "Fix issues found by
+adversarial review": Cookbook and terminal launches on Linux inherited
+secrets; the key marker was itself scrubbed; adopt-key could lose webhook
+secrets or the key; the email config route let an agent repoint mail
+servers; group chats ignored agent tool limits; restore left files root
+owned; Caddy needed an ACME email; restoring with a different key had no
+safe path. Ten of the skeptic checks did not run (usage limit); their
+findings were assessed and fixed directly.
 
 ## End to end, on a fresh install made by `scripts/setup.sh`
 

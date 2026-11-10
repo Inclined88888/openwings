@@ -69,7 +69,7 @@ Optional extras, all through the same script (safe to re-run; it never regenerat
 | `--ollama-gpu nvidia` | GPU for the bundled Ollama (needs the NVIDIA Container Toolkit) |
 | `--ollama-model qwen3:4b` | Pulls a model into the bundled Ollama after start |
 | `--with-caldav` | Bundled Radicale CalDAV server: a private calendar your phone can sync |
-| `--domain ai.example.com --acme-email you@example.com` | Public HTTPS through Caddy with Let's Encrypt |
+| `--domain ai.example.com --acme-email you@example.com` | Public HTTPS through Caddy with Let's Encrypt (the email is required) |
 | `--bind 0.0.0.0 --port 7011` | Expose the UI on your LAN instead of only this machine |
 | `--no-agents` | Skip adding the starter agents |
 
@@ -175,7 +175,7 @@ Sidebar **Agents** opens the persona editor. An agent has a name, instructions (
 * **Limit this agent's tools** off: the agent can use every tool your account can.
 * On: tick the tool families it may use (web, notes, tasks, calendar, email, documents, memory, research, files, images, shell, admin, your own MCP servers). Everything else is removed server side for chats with that agent, not just hidden in the prompt.
 
-Press **Start Persona** to activate it; saved agents appear in the editor's drop down. Use the message box's **Agent** switch for tool use; **Chat** mode answers without tools.
+Press **Start Persona** to activate it; saved agents appear in the editor's drop down. Limits also apply to each agent taking part in a group chat. The agent can always ask you questions, update its plan and open panels in your UI. Use the message box's **Agent** switch for tool use; **Chat** mode answers without tools.
 
 Four starter agents are added on first install (`./scripts/seed-agents.sh` re-adds any you delete; it never overwrites edits):
 
@@ -222,7 +222,7 @@ Keyboard: Ctrl/Cmd+K search chats, Ctrl/Cmd+Alt+N new chat, Ctrl/Cmd+/ focus the
 ./scripts/backup.sh --include-models     # also downloaded models (large)
 ```
 
-A backup is a folder with one archive per volume, a manifest and SHA-256 checksums. SQLite databases are copied with SQLite's backup API, so it is safe while the app runs; ChromaDB and Radicale pause for the few seconds their archive takes. Archives are mode 600.
+A backup is a folder with one archive per volume, the CalDAV accounts file, a manifest and SHA-256 checksums. SQLite databases are copied with SQLite's backup API, so it is safe while the app runs; ChromaDB and Radicale pause for the few seconds their archive takes. Archives are mode 600.
 
 **The backup does not contain `.env`.** Keep `.env` separately; without its `ODYSSEUS_APP_KEY`, a restore brings back all data except stored credentials (re-enter API keys and mail/calendar passwords).
 
@@ -230,7 +230,7 @@ A backup is a folder with one archive per volume, a manifest and SHA-256 checksu
 ./scripts/restore.sh backups/wings-20261110-030000 --yes
 ```
 
-Restore verifies checksums and archive safety, takes a fresh safety backup of the current state first, stops the stack, replaces each volume's contents, starts the stack and waits until healthy. It warns if `.env` holds a different key than the backup was made with.
+Restore verifies checksums and archive safety, takes a fresh safety backup of the current state first, stops the stack, replaces each volume's contents (keeping file owners), starts the stack and waits until healthy. If `.env` holds a different key than the backup was made with, it stops before changing anything. Lost the matching `.env`? `./scripts/restore.sh <folder> --yes --accept-key-loss` restores everything and starts with stored credentials unreadable (it sets `WINGS_ACCEPT_KEY_LOSS=1`); re-enter API keys and passwords in Settings, then remove that line from `.env`.
 
 Nightly backups with cron (`crontab -e`):
 
@@ -246,7 +246,7 @@ Nightly backups with cron (`crontab -e`):
 ## Security model
 
 * **Encryption at rest**: provider and endpoint API keys, email passwords and OAuth tokens, CalDAV passwords, MCP server environment and OAuth tokens, and the per chat copies of endpoint keys are Fernet encrypted in the database. The key comes from `ODYSSEUS_APP_KEY` in `.env`, never from the data volume, so a stolen volume or backup cannot be decrypted. A wrong or mismatched key stops the container at start (exit code 78) with a clear message instead of silently losing credentials.
-* **Child processes**: third party MCP servers and Cookbook model servers get an environment without the key, the admin password or provider keys.
+* **Child processes**: the server is started by `wings.serve`, which moves the key into memory and drops the admin password before anything runs, so no child process inherits either. Third party MCP servers, Cookbook engines, pip installs and terminal sessions additionally get an environment without any secret looking variable (provider keys, OAuth client secrets, tokens). A process that lacks the key refuses to create a new key file.
 * **Network**: the app listens on loopback by default; SearXNG and ChromaDB have no host ports; HTTPS through Caddy with the proxy pinned to one trusted address (`FORWARDED_ALLOW_IPS`) so login rate limits see real client addresses.
 * **Email**: see [No email leaves without your click](#no-email-leaves-without-your-click).
 * **Pinned supply chain**: every image is pinned by digest; Wings disables upstream's start time download of an unpinned npm browser package.
@@ -278,8 +278,8 @@ See [docs/verification.md](docs/verification.md) for the full record. Summary:
 Verified by running the real stack (with a stand in for the upstream image, built from the same commit, because the build environment could not download from GitHub's registry):
 
 * `setup.sh` fresh install, idempotent re-run, health, login; named volumes; backup → delete → restore round trip; key adoption from an existing volume; the fail loud key check
-* 4,828 upstream tests over every area the patches touch: no new failures with the email gate off; with it on, only the 26 tests that assert sends happen without a person fail, by design
-* 31 Wings unit tests; the end to end suite in `tests/e2e/` (streaming chat, model switch, per agent tool access A/B, human send delivered, agent and token sends refused, unapproved scheduled mail refused, CalDAV round trip with Radicale, no plaintext secret anywhere in the data volume or logs)
+* 4,998 upstream tests over every area the patches touch: no new failures with the email gate off; with it on, only the 30 tests that assert sends happen without a person's session fail, by design
+* 44 Wings unit tests; the end to end suite in `tests/e2e/` (streaming chat, model switch, per agent tool access A/B, human send delivered, agent and token sends refused, unapproved scheduled mail refused, CalDAV round trip with Radicale, no plaintext secret anywhere in the data volume or logs)
 * the UI changes in Chromium: Agents entry, tool access editor saving and restoring, OS light/dark
 
 Not verifiable here, verify on your server:
@@ -301,6 +301,7 @@ To run the end to end suite on a **test** install (it creates test data): `./tes
 | --- | --- |
 | `ODYSSEUS_APP_KEY is not set` | Run `./scripts/setup.sh` |
 | Container restarts with "configuration error: .app_key exists and differs" | Data came from elsewhere: `./scripts/adopt-key.sh --yes` |
+| Container restarts with "does not decrypt data already stored" | `.env` is from another install: put back the matching `.env` (or see `--accept-key-loss` under Backup) |
 | Login works only on `localhost` | Add the exact URL you use to `ALLOWED_ORIGINS` in `.env` |
 | Mail account on Proton Bridge, DavMail or a LAN server cannot send | `EMAIL_ALLOW_PRIVATE_IPS=true` |
 | An agent says it cannot send email | Intended: open the draft it made and click Send |
