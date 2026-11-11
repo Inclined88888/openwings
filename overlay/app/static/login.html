@@ -44,6 +44,14 @@
   try {
     var t = JSON.parse(localStorage.getItem('odysseus-theme'));
     var s = document.documentElement.style;
+    // OpenWings: the chosen look (static/openwings/skins.css styles the
+    // login card under html[data-ow-skin=...]).
+    var owLink = document.createElement('link');
+    owLink.rel = 'stylesheet';
+    owLink.href = 'static/openwings/skins.css?v=1';
+    document.head.appendChild(owLink);
+    var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-feather' : 'ow-feather-night');
+    document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
     if (t && t.colors) {
       var c = t.colors;
       // Base palette

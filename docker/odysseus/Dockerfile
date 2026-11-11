@@ -40,7 +40,7 @@ RUN set -eu; \
     cp /app/wings/brand/icon-192.png /app/wings/brand/icon-512.png /app/wings/brand/icon-maskable-512.png /app/static/icons/; \
     cp /app/wings/brand/favicon.ico /app/static/icon.ico; \
     mkdir -p /app/static/openwings; \
-    cp /app/wings/brand/openwings-tile.svg /app/static/openwings/; \
+    cp -R /app/wings/brand/. /app/static/openwings/; \
     cd /tmp/wings/app; \
     find . -name '*.py' -print | sed 's|^\./|/app/|' | xargs -r python -m py_compile; \
     rm -rf /tmp/wings /app/.gitkeep

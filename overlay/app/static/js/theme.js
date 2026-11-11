@@ -522,7 +522,17 @@ export function getSaved() {
   return obj;
 }
 
+// OpenWings: themes named ow-* also change type, shapes and textures, not
+// only colors. Their stylesheet (static/openwings/skins.css) applies only
+// under html[data-ow-skin="<name>"].
+export function applyOpenWingsSkin(name) {
+  try {
+    document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(String(name || '')) ? String(name) : '');
+  } catch (_) {}
+}
+
 export function save(name, colors, opts) {
+  applyOpenWingsSkin(name);
   const obj = { name, colors };
   if (opts) {
     if (normalizeFont(opts.font) !== DEFAULT_FONT) obj.font = normalizeFont(opts.font);
@@ -2328,3 +2338,6 @@ if (document.readyState === 'loading') {
 } else {
   _initWithSync();
 }
+
+// OpenWings: the look of the saved theme (or the default) from the start.
+try { applyOpenWingsSkin((getSaved() || {}).name || DEFAULT_THEME); } catch (_) {}

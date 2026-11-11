@@ -1,0 +1,359 @@
+/* OpenWings looks (patch 0020). Each look applies only under
+   html[data-ow-skin="ow-<name>"], so upstream's themes are untouched.
+   Fonts are self hosted open licence files in fonts/ (licences beside them). */
+
+/* ---------- fonts ---------- */
+@font-face { font-family: 'OW Stencil'; src: url('fonts/big-shoulders-stencil-display-latin-900-normal.woff2') format('woff2'); font-weight: 900; font-display: swap; }
+@font-face { font-family: 'OW Stencil'; src: url('fonts/big-shoulders-stencil-display-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'OW Condensed'; src: url('fonts/barlow-condensed-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'OW Condensed'; src: url('fonts/barlow-condensed-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'OW Condensed'; src: url('fonts/barlow-condensed-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'OW Plex Sans'; src: url('fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'OW Plex Sans'; src: url('fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'OW Plex Sans'; src: url('fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'OW Plex Mono'; src: url('fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'OW Plex Mono'; src: url('fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+
+/* =====================================================================
+   HANGAR: industrial. Concrete floor, steel plates with rivets, stencil
+   lettering, hazard stripes, safety orange used as paint, never as text.
+   ===================================================================== */
+:root[data-ow-skin="ow-hangar"] {
+  --ow-ink: #16181a;
+  --ow-steel: #1c1f22;
+  --ow-steel-2: #2b2f33;
+  --ow-steel-text: #e8e5dc;
+  --ow-steel-muted: #a9a59a;
+  --ow-plate: #efede6;
+  --ow-concrete: #d5d2c8;
+  --ow-rule: #77736a;
+  --ow-paint: #ff5a1f;          /* safety orange: fills and stripes only */
+  --ow-paint-ink: #98320a;      /* burnt orange: orange that can be read as text */
+  --ow-rivet: radial-gradient(circle at 50% 50%, #6d6a62 0 2px, transparent 2.6px);
+  --ow-hazard: repeating-linear-gradient(-45deg, var(--ow-ink) 0 8px, var(--ow-paint) 8px 16px);
+  --red: var(--ow-paint-ink) !important;
+  --accent: var(--ow-paint-ink) !important;
+  --accent-primary: var(--ow-paint-ink) !important;
+  --border: var(--ow-rule) !important;
+}
+:root[data-ow-skin="ow-hangar"] body {
+  font-family: 'OW Plex Sans', system-ui, sans-serif !important;
+  color: var(--ow-ink) !important;
+  background-color: var(--ow-concrete) !important;
+  /* poured concrete: fine noise */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E") !important;
+}
+:root[data-ow-skin="ow-hangar"] body,
+:root[data-ow-skin="ow-hangar"] #message,
+:root[data-ow-skin="ow-hangar"] button,
+:root[data-ow-skin="ow-hangar"] input,
+:root[data-ow-skin="ow-hangar"] select,
+:root[data-ow-skin="ow-hangar"] textarea { font-family: 'OW Plex Sans', system-ui, sans-serif !important; }
+
+/* sidebar: a steel wall */
+:root[data-ow-skin="ow-hangar"] .sidebar {
+  background: var(--ow-steel) !important;
+  color: var(--ow-steel-text) !important;
+  border-right: 4px solid var(--ow-ink) !important;
+  box-shadow: inset -1px 0 0 var(--ow-steel-2) !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar-header {
+  border-bottom: 2px solid var(--ow-steel-2) !important;
+  padding-bottom: 10px !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar-brand-title {
+  font-family: 'OW Stencil', 'OW Condensed', sans-serif !important;
+  font-weight: 900 !important;
+  font-size: 30px !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: var(--ow-steel-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--ow-steel-text) !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar-hamburger,
+:root[data-ow-skin="ow-hangar"] .sidebar svg { color: var(--ow-steel-muted) !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item,
+:root[data-ow-skin="ow-hangar"] .sidebar .section-title,
+:root[data-ow-skin="ow-hangar"] .sidebar .section-title-label {
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--ow-steel-text) !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item {
+  border-left: 4px solid transparent !important;
+  border-radius: 0 !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item:hover,
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item.active {
+  background: var(--ow-steel-2) !important;
+  border-left-color: var(--ow-paint) !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar .section { border-top: 1px dashed var(--ow-steel-2) !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar-user-bar {
+  border-top: 2px solid var(--ow-steel-2) !important;
+  color: var(--ow-steel-text) !important;
+  font-family: 'OW Plex Mono', monospace !important;
+}
+
+/* top bar: a painted header strip */
+:root[data-ow-skin="ow-hangar"] .chat-top-bar,
+:root[data-ow-skin="ow-hangar"] .chat-meta-overlay,
+:root[data-ow-skin="ow-hangar"] #current-meta {
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  color: var(--ow-ink) !important;
+}
+
+/* welcome: stencilled on the floor */
+:root[data-ow-skin="ow-hangar"] .welcome-name {
+  font-family: 'OW Stencil', sans-serif !important;
+  font-weight: 900 !important;
+  font-size: clamp(56px, 8vw, 104px) !important;
+  letter-spacing: 0.03em !important;
+  text-transform: uppercase !important;
+  color: var(--ow-ink) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] .welcome-name img.welcome-boat {
+  width: 0.9em !important; height: 0.9em !important;
+  border: 3px solid var(--ow-ink) !important; border-radius: 0 !important;
+  margin-right: 0.18em !important;
+}
+:root[data-ow-skin="ow-hangar"] .welcome-sub,
+:root[data-ow-skin="ow-hangar"] .welcome-tip {
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase !important;
+  color: #45423c !important;
+}
+
+/* messages: steel plates with corner rivets */
+:root[data-ow-skin="ow-hangar"] #chat-history .msg {
+  border-radius: 0 !important;
+  border: 2px solid var(--ow-ink) !important;
+  box-shadow: 6px 6px 0 rgba(22, 24, 26, 0.18) !important;
+  background-image: var(--ow-rivet), var(--ow-rivet), var(--ow-rivet), var(--ow-rivet) !important;
+  background-size: 12px 12px !important;
+  background-repeat: no-repeat !important;
+  background-position: 4px 4px, calc(100% - 4px) 4px, 4px calc(100% - 4px), calc(100% - 4px) calc(100% - 4px) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai {
+  background-color: var(--ow-plate) !important;
+  color: var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-user {
+  background-color: var(--ow-steel) !important;
+  color: var(--ow-steel-text) !important;
+  border-color: var(--ow-steel) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-user .body,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-user .body * { color: var(--ow-steel-text) !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .role {
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .role { color: var(--ow-ink) !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-user .role { color: var(--ow-steel-muted) !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body {
+  font-family: 'OW Plex Sans', system-ui, sans-serif !important;
+  font-size: 15.5px !important;
+  line-height: 1.62 !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body strong,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body b { color: var(--ow-ink) !important; font-weight: 600 !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body h1,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body h2,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body h3 {
+  font-family: 'OW Condensed', sans-serif !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  color: var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body a,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-ai .body code:not(pre code) {
+  color: var(--ow-paint-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body ol li::marker,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body ul li::marker {
+  color: var(--ow-paint-ink) !important;
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 700 !important;
+}
+/* tables: a parts list */
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body table {
+  border-collapse: collapse !important;
+  border: 2px solid var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body th {
+  background: var(--ow-ink) !important;
+  color: var(--ow-plate) !important;
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  border-color: var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body td {
+  border: 1px solid #b9b5ab !important;
+  color: var(--ow-ink) !important;
+  font-variant-numeric: tabular-nums !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body tr:nth-child(even) td { background: #e3e0d7 !important; }
+/* code: a stencilled steel plate with a paint stripe */
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre {
+  background: var(--ow-steel) !important;
+  color: var(--ow-steel-text) !important;
+  border: 0 !important;
+  border-left: 6px solid var(--ow-paint) !important;
+  border-radius: 0 !important;
+  font-family: 'OW Plex Mono', monospace !important;
+}
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre code,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre span { font-family: 'OW Plex Mono', monospace !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre .hljs-string,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre span[class*="string"] { color: #ffb38a !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre span[class*="literal"],
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre span[class*="keyword"] { color: #ffd166 !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-footer button,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-footer svg { color: #55524b !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg-user .msg-footer svg { color: var(--ow-steel-muted) !important; }
+
+/* composer: a control panel with a hazard stripe */
+:root[data-ow-skin="ow-hangar"] .chat-input-bar {
+  background: var(--ow-plate) !important;
+  border: 3px solid var(--ow-ink) !important;
+  border-radius: 0 !important;
+  box-shadow: 8px 8px 0 rgba(22, 24, 26, 0.22) !important;
+  position: relative !important;
+}
+:root[data-ow-skin="ow-hangar"] .chat-input-bar::before {
+  content: '' !important;
+  position: absolute !important;
+  left: -3px; right: -3px; top: -11px; height: 8px;
+  background: var(--ow-hazard) !important;
+  border: 0 !important;
+  pointer-events: none !important;
+}
+:root[data-ow-skin="ow-hangar"] #message { color: var(--ow-ink) !important; font-size: 15.5px !important; }
+:root[data-ow-skin="ow-hangar"] #message::placeholder {
+  color: #5f5b53 !important;
+  font-family: 'OW Condensed', sans-serif !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.12em !important;
+}
+:root[data-ow-skin="ow-hangar"] .input-icon-btn { color: var(--ow-ink) !important; border-radius: 0 !important; }
+:root[data-ow-skin="ow-hangar"] .mode-toggle {
+  border: 2px solid var(--ow-ink) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  overflow: hidden !important;
+}
+:root[data-ow-skin="ow-hangar"] .mode-toggle-btn {
+  font-family: 'OW Condensed', sans-serif !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  border-radius: 0 !important;
+  color: var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] .mode-toggle-btn.active {
+  background: var(--ow-ink) !important;
+  color: var(--ow-plate) !important;
+}
+:root[data-ow-skin="ow-hangar"] .send-btn {
+  background: var(--ow-paint) !important;
+  color: var(--ow-ink) !important;
+  border: 2px solid var(--ow-ink) !important;
+  border-radius: 0 !important;
+  box-shadow: 3px 3px 0 var(--ow-ink) !important;
+}
+:root[data-ow-skin="ow-hangar"] .send-btn svg { color: var(--ow-ink) !important; stroke: var(--ow-ink) !important; }
+:root[data-ow-skin="ow-hangar"] .send-btn:active { transform: translate(2px, 2px) !important; box-shadow: 1px 1px 0 var(--ow-ink) !important; }
+:root[data-ow-skin="ow-hangar"] *::-webkit-scrollbar-thumb { background: #8c887d !important; border-radius: 0 !important; }
+
+/* Hangar: legibility fixes over upstream's own colors */
+:root[data-ow-skin="ow-hangar"] {
+  --hl-bg: #1c1f22 !important; --hl-fg: #e8e5dc !important; --hl-keyword: #ffd166 !important;
+  --hl-string: #ffb38a !important; --hl-comment: #a9a59a !important; --hl-function: #9fd3c7 !important;
+  --hl-number: #ffd166 !important; --hl-builtin: #9fd3c7 !important; --hl-variable: #e8e5dc !important;
+  --hl-params: #e8e5dc !important; --sidebar-bg: #1c1f22 !important; --fg-muted: #45423c !important;
+}
+:root[data-ow-skin="ow-hangar"] .sidebar-header,
+:root[data-ow-skin="ow-hangar"] .sidebar-inner,
+:root[data-ow-skin="ow-hangar"] .sidebar-user-bar { background: var(--ow-steel) !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item,
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item *,
+:root[data-ow-skin="ow-hangar"] .sidebar .section-title *,
+:root[data-ow-skin="ow-hangar"] .sidebar-user-bar,
+:root[data-ow-skin="ow-hangar"] .sidebar-user-bar * { color: var(--ow-steel-text) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item svg,
+:root[data-ow-skin="ow-hangar"] .sidebar .section-title svg,
+:root[data-ow-skin="ow-hangar"] .sidebar-user-bar svg { color: var(--ow-steel-muted) !important; stroke: currentColor !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item:hover svg,
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item.active svg { color: var(--ow-paint) !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre,
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre * { color: var(--ow-steel-text) !important; background: transparent; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre { background: var(--ow-steel) !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre [class*="string"] { color: #ffb38a !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre [class*="keyword"],
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre [class*="literal"],
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre [class*="number"] { color: #ffd166 !important; }
+:root[data-ow-skin="ow-hangar"] #chat-history .msg .body pre [class*="comment"] { color: #a9a59a !important; }
+:root[data-ow-skin="ow-hangar"] .welcome-tip { opacity: 1 !important; color: #5a564e !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar-hamburger,
+:root[data-ow-skin="ow-hangar"] .sidebar-hamburger * { color: var(--ow-steel-text) !important; stroke: var(--ow-steel-text) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item span.grow,
+:root[data-ow-skin="ow-hangar"] .sidebar .list-item > span { font-size: 14px !important; letter-spacing: 0.1em !important; }
+:root[data-ow-skin="ow-hangar"] .sidebar .section-title,
+:root[data-ow-skin="ow-hangar"] .sidebar .section-title-label { font-size: 16px !important; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ow-skin] .send-btn:active { transform: none !important; }
+}
+
+/* Hangar: login card, a stencilled locker door */
+:root[data-ow-skin="ow-hangar"] main.card {
+  background: var(--ow-plate) !important;
+  color: var(--ow-ink) !important;
+  border: 3px solid var(--ow-ink) !important;
+  border-radius: 0 !important;
+  box-shadow: 10px 10px 0 rgba(22, 24, 26, 0.35) !important;
+  position: relative !important;
+}
+:root[data-ow-skin="ow-hangar"] main.card::before {
+  content: '' !important; position: absolute !important; left: -3px; right: -3px; top: -14px; height: 10px;
+  background: var(--ow-hazard) !important;
+}
+:root[data-ow-skin="ow-hangar"] main.card h1.logo,
+:root[data-ow-skin="ow-hangar"] main.card h1.logo span {
+  font-family: 'OW Stencil', sans-serif !important; font-weight: 900 !important; text-transform: uppercase !important;
+  letter-spacing: 0.04em !important; color: var(--ow-ink) !important; -webkit-text-fill-color: var(--ow-ink) !important;
+  background: none !important; font-size: 44px !important;
+}
+:root[data-ow-skin="ow-hangar"] main.card label,
+:root[data-ow-skin="ow-hangar"] main.card .built-on {
+  font-family: 'OW Condensed', sans-serif !important; font-weight: 600 !important; text-transform: uppercase !important;
+  letter-spacing: 0.12em !important; color: #45423c !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-hangar"] main.card input[type="text"],
+:root[data-ow-skin="ow-hangar"] main.card input[type="password"] {
+  background: #ffffff !important; color: var(--ow-ink) !important; border: 2px solid var(--ow-ink) !important;
+  border-radius: 0 !important; font-family: 'OW Plex Mono', monospace !important;
+}
+:root[data-ow-skin="ow-hangar"] main.card #submitBtn {
+  background: var(--ow-paint) !important; color: var(--ow-ink) !important; border: 2px solid var(--ow-ink) !important;
+  border-radius: 0 !important; box-shadow: 4px 4px 0 var(--ow-ink) !important;
+  font-family: 'OW Condensed', sans-serif !important; font-weight: 700 !important; text-transform: uppercase !important;
+  letter-spacing: 0.16em !important; font-size: 18px !important;
+}
+:root[data-ow-skin="ow-hangar"] body:has(main.card) { background-color: var(--ow-concrete) !important; }

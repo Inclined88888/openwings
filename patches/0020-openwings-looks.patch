@@ -1,0 +1,84 @@
+OpenWings patch 0020: OpenWings looks (type, shapes and textures, not only colors)
+
+Upstream's themes recolor one layout; two of them are named after other
+products. OpenWings themes, named ow-*, also restyle type, shapes, borders
+and textures through one stylesheet (wings/brand/skins.css, served as
+/static/openwings/skins.css), which applies only under
+html[data-ow-skin="<theme name>"], so upstream's themes look exactly as
+before.
+
+  * static/index.html: the early boot script loads the stylesheet and
+    marks the saved look (or the default) before the first paint.
+  * static/js/theme.js: the OpenWings themes, and applyOpenWingsSkin(),
+    which save() calls whenever a theme is chosen.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/static/index.html b/static/index.html
+index a117b24..70cb8ee 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -26,6 +26,14 @@
+   (function(){
+     try {
+       var t = JSON.parse(localStorage.getItem('odysseus-theme'));
++      // OpenWings: load its looks stylesheet and mark the chosen look before
++      // the first paint (the stylesheet only styles html[data-ow-skin=...]).
++      var owLink = document.createElement('link');
++      owLink.rel = 'stylesheet';
++      owLink.href = '/static/openwings/skins.css?v=1';
++      document.head.appendChild(owLink);
++      var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-feather' : 'ow-feather-night');
++      document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
+       if (t && t.colors) {
+         var s = document.documentElement.style;
+         var c = t.colors;
+diff --git a/static/js/theme.js b/static/js/theme.js
+index 1cb0ab2..871c8b0 100644
+--- a/static/js/theme.js
++++ b/static/js/theme.js
+@@ -522,7 +522,17 @@ export function getSaved() {
+   return obj;
+ }
+ 
++// OpenWings: themes named ow-* also change type, shapes and textures, not
++// only colors. Their stylesheet (static/openwings/skins.css) applies only
++// under html[data-ow-skin="<name>"].
++export function applyOpenWingsSkin(name) {
++  try {
++    document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(String(name || '')) ? String(name) : '');
++  } catch (_) {}
++}
++
+ export function save(name, colors, opts) {
++  applyOpenWingsSkin(name);
+   const obj = { name, colors };
+   if (opts) {
+     if (normalizeFont(opts.font) !== DEFAULT_FONT) obj.font = normalizeFont(opts.font);
+@@ -2328,3 +2338,6 @@ if (document.readyState === 'loading') {
+ } else {
+   _initWithSync();
+ }
++
++// OpenWings: the look of the saved theme (or the default) from the start.
++try { applyOpenWingsSkin((getSaved() || {}).name || DEFAULT_THEME); } catch (_) {}
+diff --git a/static/login.html b/static/login.html
+index da086cf..7adf46c 100644
+--- a/static/login.html
++++ b/static/login.html
+@@ -44,6 +44,14 @@
+   try {
+     var t = JSON.parse(localStorage.getItem('odysseus-theme'));
+     var s = document.documentElement.style;
++    // OpenWings: the chosen look (static/openwings/skins.css styles the
++    // login card under html[data-ow-skin=...]).
++    var owLink = document.createElement('link');
++    owLink.rel = 'stylesheet';
++    owLink.href = 'static/openwings/skins.css?v=1';
++    document.head.appendChild(owLink);
++    var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-feather' : 'ow-feather-night');
++    document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
+     if (t && t.colors) {
+       var c = t.colors;
+       // Base palette
