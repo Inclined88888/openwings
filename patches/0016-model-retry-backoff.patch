@@ -1,0 +1,64 @@
+Wings patch 0016: retry rate limits and overloads with backoff
+
+Upstream's streaming model path, which every chat and agent reply uses,
+retried 502/503/504/529 once after half a second and never retried a 429
+rate limit, so a busy hosted provider ended the reply with an error.
+OpenManus retries model calls with exponential backoff.
+
+  * src/llm_core.py (_stream_candidate_with_context_recovery): before any
+    output, a 429, 503 or 529 is retried up to WINGS_MODEL_RETRIES times
+    (default 3), waiting what the provider asks for ("try again in 20s")
+    or 2, 4, 8 seconds (1, 2, 4 for overloads), at most 20 seconds each;
+    see wings/backoff.py. 502, 504 and network errors keep upstream's
+    handling, and with several models configured upstream still moves to
+    the next one instead.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/llm_core.py b/src/llm_core.py
+index c563469..efb5b34 100644
+--- a/src/llm_core.py
++++ b/src/llm_core.py
+@@ -4081,6 +4081,9 @@ async def _stream_candidate_with_context_recovery(
+     capability_recovery_attempted = False
+     degenerate_recovery_attempted = False
+     availability_recovery_attempted = False
++    # Wings: retries for rate limits and overloads (wings/backoff.py).
++    from wings import backoff as _wings_backoff
++    _wings_backoff_attempts = 0
+ 
+     while True:
+         emitted = False
+@@ -4186,6 +4189,31 @@ async def _stream_candidate_with_context_recovery(
+                     retry = True
+                     break
+ 
++                # Wings: 429 rate limits and 503/529 overloads are retried with
++                # exponential backoff before any output (upstream retried them
++                # once after 0.5 s, and 429 never). 502 and 504 (gateway errors
++                # and timeouts) keep upstream's single retry below.
++                if (
++                    chunk.startswith("event: error")
++                    and not emitted
++                    and retry_transient_precontent
++                    and _stream_error_status(chunk) in {429, 503, 529}
++                    and _stream_error_fallback_override(chunk) is not False
++                    and _wings_backoff_attempts < _wings_backoff.max_attempts()
++                ):
++                    _wings_backoff_attempts += 1
++                    availability_recovery_attempted = True
++                    _wings_wait = _wings_backoff.wait_for(
++                        _wings_backoff_attempts, _stream_error_status(chunk), _stream_error_text(chunk))
++                    logger.warning(
++                        "[availability-recovery] model=%s HTTP %s, retry %s of %s in %.1fs",
++                        model, _stream_error_status(chunk), _wings_backoff_attempts,
++                        _wings_backoff.max_attempts(), _wings_wait,
++                    )
++                    await asyncio.sleep(_wings_wait)
++                    retry = True
++                    break
++
+                 if (
+                     chunk.startswith("event: error")
+                     and not emitted

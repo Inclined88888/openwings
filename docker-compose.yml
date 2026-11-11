@@ -109,6 +109,8 @@ services:
       - WINGS_RUN_MAX_USD=${WINGS_RUN_MAX_USD:-}
       - WINGS_DAY_MAX_TOKENS=${WINGS_DAY_MAX_TOKENS:-}
       - WINGS_DAY_MAX_USD=${WINGS_DAY_MAX_USD:-}
+      # Model retries on 429/503/529 before a reply starts (patch 0016).
+      - WINGS_MODEL_RETRIES=${WINGS_MODEL_RETRIES:-3}
       # Default workspace for chats in the web UI (admins). Without one,
       # upstream refuses every file and code tool in an ordinary chat.
       - ODYSSEUS_WORKSPACE_DEFAULT=${ODYSSEUS_WORKSPACE_DEFAULT:-/workspaces/default}

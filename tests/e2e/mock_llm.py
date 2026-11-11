@@ -16,6 +16,8 @@ Behaviour, keyed off the LAST message in the request:
       -> reply "TOOL_RESULT: <first 300 chars of the result>".
   * anything else
       -> reply "[<model>] <first 200 chars of the user text>".
+  * model "mock-ratelimited" (list it in MOCK_MODELS)
+      -> HTTP 429 "try again in 0.4s" twice per conversation, then as above.
 
 Every request is appended to $MOCK_LOG (default /tmp/mock_llm.jsonl) as
 {"model", "stream", "tools": [names], "last_role", "last_text"} so tests can
@@ -24,6 +26,7 @@ assert exactly which tools a turn was offered.
 from __future__ import annotations
 
 import json
+import threading
 import os
 import re
 import sys
@@ -33,6 +36,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODELS = [m for m in os.environ.get("MOCK_MODELS", "mock-alpha,mock-beta").split(",") if m]
 LOG = os.environ.get("MOCK_LOG", "/tmp/mock_llm.jsonl")
+_RATE_SEEN: dict = {}
+_RATE_LOCK = threading.Lock()
 CALL_RE = re.compile(r"WINGS_CALL\s+([A-Za-z0-9_.:-]+)\s*(\{.*\})?", re.S)
 
 
@@ -121,6 +126,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "bad json"})
         if not self.path.rstrip("/").endswith("/chat/completions"):
             return self._json(404, {"error": "not found"})
+        # Rate limit drill: this model answers 429 twice per conversation
+        # text, then normally (checks the app's retry with backoff).
+        if body.get("model") == "mock-ratelimited":
+            key = json.dumps(body.get("messages") or [])[-400:]
+            with _RATE_LOCK:
+                _RATE_SEEN[key] = _RATE_SEEN.get(key, 0) + 1
+                count = _RATE_SEEN[key]
+            if count <= 2:
+                return self._json(429, {"error": {"message": "Rate limit reached. Please try again in 0.4s.",
+                                                  "type": "rate_limit_error"}})
         decision = _decide(body)
         msgs = body.get("messages") or []
         try:

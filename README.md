@@ -129,6 +129,8 @@ llama.cpp `llama-server`, vLLM, LM Studio and other OpenAI compatible servers wo
 
 Rough sizing for local chat models: a 4B model at 4 bit needs about 4 GB of free RAM or VRAM; an 8B model about 6 to 8 GB. On CPU only, expect a few tokens per second. For agents (tool calling), research and email drafting, a hosted model or a local model of 14B or more works far better than small ones.
 
+**Rate limits**: when a hosted provider answers "rate limited" (429) or "overloaded" (503, 529) before a reply starts, Wings waits and retries up to 3 times (patch 0016), as long as the provider asks or 2, 4 and 8 seconds, never more than 20 seconds per wait; upstream showed an error instead. `WINGS_MODEL_RETRIES=0` turns this off. With more than one model set up for a chat, upstream's switch to the next model still applies.
+
 **Compare models**: sidebar **Compare**. Sends one prompt to up to 8 models side by side, blind by default, with voting and a scoreboard.
 
 **Embeddings** (file search and memory) use a built in FastEmbed model, downloaded once on first start. To use Ollama instead, set `EMBEDDING_URL=http://ollama:11434/v1/embeddings` and `EMBEDDING_MODEL=nomic-embed-text` in `.env` (pull that model first).
@@ -384,6 +386,7 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0013](patches/0013-run-budget.patch) | Hard token and spend caps per reply and per person per day |
 | [0014](patches/0014-runner-background-marker.patch) | Long commands upstream would start as detached jobs (which always failed in Docker) run in the runner instead |
 | [0015](patches/0015-render-javascript-pages.patch) | Web fetch and deep research read pages that need JavaScript in the stateless renderer |
+| [0016](patches/0016-model-retry-backoff.patch) | Model rate limits and overloads are retried with backoff before a reply starts |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 
