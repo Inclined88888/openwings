@@ -102,6 +102,8 @@ ensure_secret SEARXNG_SECRET gen_searxng
 ensure_secret WINGS_BROWSER_TOKEN gen_searxng
 # Shared secret between the app and the code runner (profile runner).
 ensure_secret WINGS_RUNNER_TOKEN gen_searxng
+# Shared secret between the app and the stateless page renderer (profile browser).
+ensure_secret WINGS_RENDERER_TOKEN gen_searxng
 
 # Upstream silently skips creating the admin for passwords under 8 characters
 # and leaves the web setup page open to whoever reaches it first.

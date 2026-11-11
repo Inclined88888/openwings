@@ -22,6 +22,7 @@ ALWAYS_SCRUB = frozenset({
     "DATABASE_URL",
     "WINGS_BROWSER_TOKEN",
     "WINGS_RUNNER_TOKEN",
+    "WINGS_RENDERER_TOKEN",
 })
 
 # Anything that looks like a credential by name.

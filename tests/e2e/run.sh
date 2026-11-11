@@ -48,6 +48,8 @@ case ",$(env_get COMPOSE_PROFILES)," in
         python -m http.server 8000 >/dev/null
       created="$created ${project}-testsite"
     fi
+    # The stateless page renderer reads the same pages from its own network.
+    docker network connect --alias testsite "${project}_renderer" "${project}-testsite" >/dev/null 2>&1 || true
     ;;
 esac
 [ -z "$created" ] || sleep 8

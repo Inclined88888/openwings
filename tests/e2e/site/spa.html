@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Loading</title></head>
+<body><div id="root"></div>
+<script>
+// The text exists only after this script runs, like a single page app.
+setTimeout(() => {
+  document.title = 'Quarterly report';
+  document.getElementById('root').innerHTML =
+    '<h1>Quarterly report</h1><p>Revenue grew 12 percent to 4.2 million.</p>' +
+    '<table><tr><th>Region</th><th>Revenue</th></tr><tr><td>North</td><td>2.5</td></tr><tr><td>South</td><td>1.7</td></tr></table>';
+}, 300);
+</script></body></html>

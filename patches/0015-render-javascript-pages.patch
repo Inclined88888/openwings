@@ -1,0 +1,78 @@
+Wings patch 0015: read pages that need JavaScript in web_fetch and research
+
+Upstream's web_fetch returns nothing for pages that build their text with
+JavaScript (single page apps, many news, shop and dashboard sites), and
+deep research's browser fallback calls private_browser "read", which
+upstream retired (it always answers page_unavailable), so research could
+not read those pages at all. OpenManus reads them with a headless browser
+(crawl4ai and browser-use).
+
+  * src/agent_tools/web_tools.py: when the plain fetch got no text, an
+    empty body, a bot challenge or HTTP 403, or only a JavaScript app's
+    shell, web_fetch reads the page in the Wings renderer and says so.
+  * src/research_navigator.py: the research browser fallback uses the
+    renderer.
+
+The renderer (wings/render.py, compose service `renderer`) is a stateless
+copy of the browser container: no profile volume, so no logins, cookies or
+downloads; a fresh browser context per read; its own network and secret,
+so a hostile page there cannot reach the signed in browser. The browser's
+URL rules and egress proxy (no private addresses) apply.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/agent_tools/web_tools.py b/src/agent_tools/web_tools.py
+index 627ed6c..95e3dc7 100644
+--- a/src/agent_tools/web_tools.py
++++ b/src/agent_tools/web_tools.py
+@@ -774,6 +774,17 @@ class WebFetchTool:
+         text = (result.get("linked_content") or result.get("content") or "").strip()
+         title = result.get("title") or ""
+ 
++        # Wings: pages that build their text with JavaScript are read in the
++        # stateless renderer (no logins, fresh context; wings/render.py).
++        render_note = ""
++        from wings import render as _wings_render
++        if _wings_render.enabled() and _wings_render.worth_rendering(result, text):
++            rendered = await _wings_render.render(url)
++            if rendered.get("success") and len(rendered["content"]) > len(text):
++                text, title = rendered["content"], rendered.get("title") or title
++                result = {**result, "truncated": False, "page_entries": []}
++                render_note = "[read in a browser because the page builds its text with JavaScript]\n\n"
++
+         if not text:
+             if err:
+                 arxiv_hint = _arxiv_listing_api_hint(url, str(err))
+@@ -807,7 +818,7 @@ class WebFetchTool:
+         header = (f"# {title}\n" if title else "") + f"Source: {url}\n\n"
+         if query:
+             text = self._focused_passages(text, query, MAX_OUTPUT_CHARS - len(header) - 500)
+-        output = size_note + header + text
++        output = size_note + render_note + header + text
+         if len(output) > MAX_OUTPUT_CHARS:
+             output = output[:MAX_OUTPUT_CHARS] + (
+                 "\n\n[...truncated; re-call web_fetch with query terms to retrieve matching passages]"
+diff --git a/src/research_navigator.py b/src/research_navigator.py
+index 5738e0d..fc1db00 100644
+--- a/src/research_navigator.py
++++ b/src/research_navigator.py
+@@ -209,6 +209,18 @@ class ResearchNavigator:
+ 
+         if self._progress:
+             self._progress({"phase": "navigating", "url": url, "title": url})
++        # Wings: upstream's private_browser no longer reads pages, so this
++        # fallback always failed. The Wings renderer reads them in a stateless
++        # browser with no logins (wings/render.py).
++        from wings import render as _wings_render
++        if _wings_render.enabled():
++            rendered = await _wings_render.render(url, timeout_s=timeout)
++            if not rendered.get("success"):
++                return ResearchPage(url=url, success=False, retrieval="browser",
++                                    error=rendered.get("error") or "browser returned no readable content")
++            self.browser_fetches += 1
++            return ResearchPage(url=url, title=rendered.get("title") or url,
++                                content=rendered["content"][:MAX_OUTPUT_CHARS], success=True, retrieval="browser")
+         tool = PrivateBrowserTool()
+         result = await tool.execute(
+             json.dumps({"action": "read", "url": url, "timeout_ms": int(timeout * 1000)}),

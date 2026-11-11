@@ -14,6 +14,8 @@ APP_KEY: str | None = None
 BROWSER_TOKEN: str | None = None
 # Same for the code runner container (WINGS_RUNNER_TOKEN).
 RUNNER_TOKEN: str | None = None
+# Same for the stateless page renderer container (WINGS_RENDERER_TOKEN).
+RENDERER_TOKEN: str | None = None
 
 
 def with_key(env: dict) -> dict:

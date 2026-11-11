@@ -101,6 +101,9 @@ services:
       # Code runner (profile: runner, patch 0009): where python and bash run.
       - WINGS_RUNNER_TOKEN=${WINGS_RUNNER_TOKEN:-}
       - WINGS_RUNNER_MAX_TIMEOUT=${WINGS_RUNNER_MAX_TIMEOUT:-300}
+      # Page renderer (profile: browser, patch 0015): reads pages that need
+      # JavaScript for web_fetch and deep research.
+      - WINGS_RENDERER_TOKEN=${WINGS_RENDERER_TOKEN:-}
       # Token and spend caps (patch 0013, wings/budget.py); empty = off.
       - WINGS_RUN_MAX_TOKENS=${WINGS_RUN_MAX_TOKENS:-}
       - WINGS_RUN_MAX_USD=${WINGS_RUN_MAX_USD:-}
@@ -184,6 +187,8 @@ services:
       browser:
       # Shared only with the code runner; that network has no internet.
       runner:
+      # Shared only with the page renderer.
+      renderer:
     logging: *logging
     restart: unless-stopped
 
@@ -382,6 +387,42 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  renderer:
+    # Stateless twin of `browser` (profile: browser, patch 0015), used only
+    # to read pages that need JavaScript for web_fetch and deep research. It
+    # has no profile volume, so it holds no logins, cookies or downloads; its
+    # profile lives in memory and is gone on restart, and every read uses a
+    # fresh browser context. Its own network and its own secret: even a page
+    # that took it over could not reach the signed in browser.
+    profiles: ["browser"]
+    image: wings/browser:${WINGS_BROWSER_IMAGE_TAG:-156.0.8078.79-w1}
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: docker/browser/Dockerfile
+      args:
+        WINGS_BROWSER_BASE_IMAGE: ${WINGS_BROWSER_BASE_IMAGE:-docker.io/selenium/standalone-chromium:156.0.8078.79-20261101@sha256:b211549a4c35f11826bc1a7559b9f23ff055198517f8cb7d49ef74df01c5e38d}
+    tmpfs:
+      - /home/seluser/wings-profile:size=512m,mode=0700,uid=1200,gid=1201
+      - /home/seluser/Downloads:size=16m,mode=0700,uid=1200,gid=1201
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - WINGS_BROWSER_LANG=${WINGS_BROWSER_LANG:-en-US}
+      - WINGS_BROWSER_SCREEN=1280x900
+      - WINGS_BROWSER_CLIENTS=odysseus
+      - WINGS_BROWSER_TOKEN=${WINGS_RENDERER_TOKEN:-}
+      - WINGS_BROWSER_ALLOW_PRIVATE=${WINGS_BROWSER_ALLOW_PRIVATE:-0}
+    shm_size: 512mb
+    mem_limit: ${WINGS_RENDERER_MEMORY:-1536m}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      renderer:
+    logging: *logging
+    restart: unless-stopped
+
   runner:
     # Optional isolated code runner (profile: runner). Upstream's python and
     # bash tools run here instead of in the app: no network at all, no
@@ -429,6 +470,8 @@ networks:
   # Separate bridge for the browser: it needs the internet, but nothing on it
   # but the app should be able to reach the browser.
   browser:
+  # Same for the page renderer, kept apart from the browser.
+  renderer:
   wings:
     ipam:
       config:
