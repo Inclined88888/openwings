@@ -2152,6 +2152,13 @@ async def _execute_tool_block_impl(
     # monitor re-invokes the agent with the full output when the job finishes.
     if tool == "bash" and session_id and (backend is None or isinstance(backend.resource, NativeBackendResource)):
         _is_bg, _bg_cmd = _split_bg_marker(content)
+        # Wings: detached jobs need bubblewrap containment, which Docker does
+        # not allow, so this path always failed. With the code runner on, the
+        # command runs there in the foreground instead (the marker is a bash
+        # comment), with the runner's full time limit; see wings/runner.py.
+        from wings import runner as _wings_runner
+        if _is_bg and _bg_cmd and _wings_runner.enabled():
+            _is_bg = False
         if _is_bg and _bg_cmd:
             from src import bg_jobs
             mark_dispatch()

@@ -55,6 +55,18 @@ def relative_cwd(cwd: str) -> str | None:
     return None
 
 
+def is_background_marked(code: str) -> bool:
+    """First non-empty line is upstream's background marker (#!bg)."""
+    for line in str(code or "").splitlines():
+        if line.strip():
+            try:
+                from src.tool_execution import _BG_MARKERS
+            except Exception:
+                _BG_MARKERS = ("#!bg",)
+            return line.strip().lower() in _BG_MARKERS
+    return False
+
+
 def _endpoint() -> tuple[str, int]:
     raw = os.environ.get("WINGS_RUNNER_URL", "runner:8790").strip() or "runner:8790"
     host, sep, port = raw.rpartition(":")
@@ -146,6 +158,14 @@ async def run_owned(command, ctx: dict, *, tool: str, timeout: int, argv: bool =
         code = cwd
     cap = int(os.environ.get("WINGS_RUNNER_MAX_TIMEOUT", "300") or 300)
     wall = max(5, min(int(timeout or 60), cap))
+    # A bash command marked #!bg asked to run detached; Docker has no detached
+    # jobs, so it runs now with the runner's full time limit (patch 0014).
+    background_asked = tool == "bash" and is_background_marked(code)
+    if background_asked:
+        wall = cap
+        lines = code.splitlines()
+        first = next(i for i, line in enumerate(lines) if line.strip())
+        code = "\n".join(lines[:first] + lines[first + 1:])
     try:
         result = await _post({"language": tool, "code": code, "cwd": rel, "timeout": wall}, timeout=wall + 20)
     except (OSError, RuntimeError, asyncio.TimeoutError) as exc:
@@ -166,6 +186,9 @@ async def run_owned(command, ctx: dict, *, tool: str, timeout: int, argv: bool =
     if result.get("timed_out"):
         return {"error": f"{tool}: timed out after {wall}s; the runner stopped it.", "exit_code": 124, "timed_out": True,
                 "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr + note, MAX_OUTPUT_CHARS)}
+    if background_asked:
+        note += (f"\nRan in the foreground in the code runner (background jobs are not available in this "
+                 f"install), with a {wall}s time limit. No follow-up will arrive; this is the full result.")
     output = stdout
     if stderr:
         output = (output + "\nSTDERR: " + stderr).strip()

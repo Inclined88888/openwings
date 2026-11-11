@@ -1,0 +1,37 @@
+Wings patch 0014: long commands marked #!bg run in the code runner
+
+Upstream's bash prompt asks the model to start anything over about 20
+seconds with a #!bg line, which launches a detached job. Detached jobs
+need bubblewrap containment, which Docker does not allow, so in a Docker
+install every such command failed with "containment unavailable", even
+with the Wings code runner on.
+
+  * src/tool_execution.py: with the runner enabled, a #!bg command skips
+    the detached job path and goes through the normal bash path to the
+    runner. wings/runner.py drops the marker line, gives the command the
+    runner's full time limit (WINGS_RUNNER_MAX_TIMEOUT) and tells the
+    model it ran in the foreground, so it does not wait for a follow-up.
+
+Without the runner, upstream behaviour is unchanged.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/tool_execution.py b/src/tool_execution.py
+index f8aec9a..13250b9 100644
+--- a/src/tool_execution.py
++++ b/src/tool_execution.py
+@@ -2152,6 +2152,13 @@ async def _execute_tool_block_impl(
+     # monitor re-invokes the agent with the full output when the job finishes.
+     if tool == "bash" and session_id and (backend is None or isinstance(backend.resource, NativeBackendResource)):
+         _is_bg, _bg_cmd = _split_bg_marker(content)
++        # Wings: detached jobs need bubblewrap containment, which Docker does
++        # not allow, so this path always failed. With the code runner on, the
++        # command runs there in the foreground instead (the marker is a bash
++        # comment), with the runner's full time limit; see wings/runner.py.
++        from wings import runner as _wings_runner
++        if _is_bg and _bg_cmd and _wings_runner.enabled():
++            _is_bg = False
+         if _is_bg and _bg_cmd:
+             from src import bg_jobs
+             mark_dispatch()

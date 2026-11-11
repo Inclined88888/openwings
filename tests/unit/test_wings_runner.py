@@ -99,3 +99,27 @@ def test_server_runs_code_with_clean_env_and_reports_files(monkeypatch, tmp_path
     assert out["timed_out"] and out["exit_code"] == -9
     status, out = asyncio.run(srv.run_code({"language": "ruby", "cwd": "default", "code": "1"}))
     assert status == 400
+
+
+def test_background_marker_runs_in_the_foreground_with_the_full_limit(runner, monkeypatch, tmp_path):
+    import src.tool_execution as te
+    root = tmp_path / "ws"
+    (root / "default").mkdir(parents=True)
+    monkeypatch.setenv("WINGS_RUNNER_ROOT", str(root))
+    monkeypatch.setenv("WINGS_RUNNER_MAX_TIMEOUT", "240")
+    monkeypatch.setattr(te, "agent_cwd", lambda: str(root / "default"))
+    sent = {}
+
+    async def fake_post(payload, timeout):
+        sent.update(payload)
+        return {"stdout": "done", "stderr": "", "exit_code": 0, "files_changed": []}
+
+    monkeypatch.setattr(runner, "_post", fake_post)
+    assert runner.is_background_marked("\n#!bg\nsleep 1")
+    assert runner.is_background_marked("@background\nmake")
+    assert not runner.is_background_marked("echo #!bg")
+    out = asyncio.run(runner.run_owned("@background\npip download x", {}, tool="bash", timeout=30))
+    assert sent["timeout"] == 240 and sent["code"] == "pip download x"
+    assert "Ran in the foreground" in out["output"] and out["exit_code"] == 0
+    out = asyncio.run(runner.run_owned("echo hi", {}, tool="bash", timeout=30))
+    assert sent["timeout"] == 30 and "foreground" not in out["output"]
