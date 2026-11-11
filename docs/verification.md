@@ -199,6 +199,66 @@ Not verified here (no internet in the test environment): any public website,
 bot detection and CAPTCHAs, real logins, downloads, and the agent's decisions
 with a real model. The mock model only replays the tool calls a test names.
 
+## Patches 0009 to 0017 (2026-11-11)
+
+All checks below ran against the same stand in image, with the mock model,
+the code runner and both browser containers running.
+
+* **Code runner (0009)**, through the real chat API with one approval:
+  pandas and matplotlib ran, the total printed was right (358), the chart was
+  shown in the chat, an `.xlsx` downloaded and opened with openpyxl. No
+  secret looking variable was visible to the code, `/app/data` was not
+  visible, and outbound network failed. A path escape and an unsigned
+  request to the download route were refused. `tests/e2e/wings_e2e.py`
+  `runner_checks`: 14 checks pass.
+* **Upstream bug found on the way**: `RequestAuthority.intersect` marked a
+  request's own authority as inherited, so `require_process_admission`
+  refused every approved code run ("Producer operation has no request
+  admission or exact claim"). Found by instrumenting the check; fixed in
+  0009.
+* **File transfer (0010)**: an upload by `fill` with `path=` was classified
+  `external_side_effect` and `read_workspace` (so the approval gate asks), and
+  the page saw the file's content; paths outside the workspace and the app
+  database were refused; a download appeared in both the app's and the
+  runner's workspace.
+* **Pointer actions (0011)**: a canvas click landed at the computed point
+  ("Canvas clicked at 25,41"); a drag from a draggable item onto a drop zone
+  named by its visible text fired the page's HTML5 drop handler (the first
+  version did not: Playwright needs a small first move to start an HTML5
+  drag, now done); a pointer click on "Pay now" was handed to the person; a
+  point outside the page was refused. `read` returned the page's table as a
+  pipe table and its heading as `#`. Screenshots carry ref labels, removed
+  before the next capture.
+* **Plan continuation (0012)**, `tests/e2e/ui/plan_continuation.js` in
+  Chromium with the chat stream answered by the script: Continue resends the
+  approved plan with its ticks; the step limit continues on its own exactly
+  3 times and then shows the normal "not finished" label; Stop here cancels
+  it; an unrelated message, a finished plan and another chat's plan are
+  never sent. PASS.
+* **Token and spend caps (0013)**: with `WINGS_RUN_MAX_TOKENS=100` an agent
+  turn stopped with "Run token limit reached (859 of 100 tokens)" before its
+  tool ran; with `WINGS_DAY_MAX_TOKENS=1500` a turn stopped midway and the
+  next message got HTTP 429 with the reason; the ledger recorded 1,718
+  tokens for the day.
+* **`#!bg` commands (0014)**: a marked command ran in the runner after
+  approval, wrote its file and returned "Ran in the foreground in the code
+  runner" (upstream returned "containment unavailable").
+* **Renderer (0015)**: a page whose text exists only after its script runs
+  came back with its table intact through the renderer, through
+  `web_fetch` (with the note that it was read in a browser) and through the
+  research `browser_read` fallback (which upstream answers with
+  `page_unavailable`); a 404 and a `file:` URL were refused; no browser
+  context was left open. Through the chat API the test site's private
+  address is refused by upstream's fetcher before the renderer is reached,
+  so `web_fetch` was driven directly with the fetcher stubbed to return an
+  app shell.
+* **Retries (0016)**: the mock model's `mock-ratelimited` answered 429 twice
+  with "try again in 0.4s"; the app logged two retries with about 0.4 s
+  waits and the reply arrived after 2.9 s.
+* **MCP server notes (0017)**: a FastMCP stdio server with instructions,
+  connected through upstream's MCP manager, had its notes (zero width
+  character removed) shown above its tool in the prompt catalog.
+
 ## Operations
 
 * `setup.sh`: fresh `.env`, secrets generated, mode 600, CalDAV user bcrypt
