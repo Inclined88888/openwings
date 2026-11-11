@@ -14,6 +14,7 @@
 #   ollama  bundled Ollama server for local models (CPU; add compose/ollama-nvidia.yml for GPU)
 #   caldav  bundled Radicale CalDAV server, a private calendar your phone can sync
 #   https   Caddy reverse proxy with automatic Let's Encrypt TLS for WINGS_DOMAIN
+#   browser real Chromium the agent drives for web tasks, with a live view at /wings/browser
 
 name: ${COMPOSE_PROJECT_NAME:-wings}
 
@@ -43,6 +44,9 @@ services:
       - odysseus-ssh:/app/.ssh
       - odysseus-hf-cache:/app/.cache/huggingface
       - odysseus-local:/app/.local
+      # Files the agent browser downloaded (profile browser), read-only here:
+      # the agent can read them and you can save them from the live view.
+      - browser-downloads:/browser-downloads:ro
     extra_hosts:
       # Reach services on the Docker host, e.g. a native Ollama at
       # http://host.docker.internal:11434 (the right choice on macOS, where
@@ -70,9 +74,22 @@ services:
       # so an always-open tab can stop schedules from ever running. Off by
       # default here; set true if scheduled jobs slow a single local GPU.
       - BACKGROUND_TASK_FOREGROUND_GATE=${BACKGROUND_TASK_FOREGROUND_GATE:-false}
-      # Browser automation is not functional in this upstream build; do not
-      # download an unpinned @playwright/mcp@latest from npm at every start.
+      # Upstream's own Playwright MCP path is not used (Wings drives the browser
+      # container instead); do not download an unpinned @playwright/mcp@latest
+      # from npm at every start.
       - ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=${ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE:-1}
+      # Browser automation (profile: browser, patch 0008). The app turns it on
+      # when "browser" is in COMPOSE_PROFILES. See .env.example for each switch.
+      - WINGS_COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
+      - WINGS_BROWSER_USERS=${WINGS_BROWSER_USERS:-}
+      - WINGS_BROWSER_CONFIRM_RISKY=${WINGS_BROWSER_CONFIRM_RISKY:-1}
+      - WINGS_BROWSER_ALLOW_PRIVATE=${WINGS_BROWSER_ALLOW_PRIVATE:-0}
+      - WINGS_BROWSER_ALLOW_EVAL=${WINGS_BROWSER_ALLOW_EVAL:-0}
+      - WINGS_BROWSER_ALLOWED_DOMAINS=${WINGS_BROWSER_ALLOWED_DOMAINS:-}
+      - WINGS_BROWSER_MAX_TABS=${WINGS_BROWSER_MAX_TABS:-10}
+      # Shared secret the browser container requires on every connection.
+      # [generated] by setup.sh; held in memory only (wings.keyholder).
+      - WINGS_BROWSER_TOKEN=${WINGS_BROWSER_TOKEN:-}
       # Accounts and auth
       - AUTH_ENABLED=true
       - LOCALHOST_BYPASS=false
@@ -144,6 +161,8 @@ services:
         condition: service_started
     networks:
       wings:
+      # Shared only with the browser container, which admits this app alone.
+      browser:
     logging: *logging
     restart: unless-stopped
 
@@ -302,7 +321,50 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  browser:
+    # Optional real browser for the agent (profile: browser). Headful Chromium
+    # on a virtual screen; the agent drives it over the DevTools protocol and
+    # you watch or take over at <your Wings address>/wings/browser. No host
+    # ports: it is reachable only from the odysseus container, through a
+    # guard that refuses every other address. Logins you make in the live
+    # view persist in the browser-profile volume.
+    profiles: ["browser"]
+    image: wings/browser:${WINGS_BROWSER_IMAGE_TAG:-156.0.8078.79-w1}
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: docker/browser/Dockerfile
+      args:
+        WINGS_BROWSER_BASE_IMAGE: ${WINGS_BROWSER_BASE_IMAGE:-docker.io/selenium/standalone-chromium:156.0.8078.79-20261101@sha256:b211549a4c35f11826bc1a7559b9f23ff055198517f8cb7d49ef74df01c5e38d}
+    volumes:
+      - browser-profile:/home/seluser/wings-profile
+      - browser-downloads:/home/seluser/Downloads
+    environment:
+      # Websites see this time zone and language.
+      - TZ=${TZ:-Etc/UTC}
+      - WINGS_BROWSER_LANG=${WINGS_BROWSER_LANG:-en-US}
+      - WINGS_BROWSER_SCREEN=${WINGS_BROWSER_SCREEN:-1440x900}
+      - WINGS_BROWSER_CLIENTS=odysseus
+      # Without the token the guard refuses every connection (fail closed).
+      - WINGS_BROWSER_TOKEN=${WINGS_BROWSER_TOKEN:-}
+      # The egress proxy in the container refuses private and local
+      # destinations for every request Chromium makes, unless this is 1.
+      - WINGS_BROWSER_ALLOW_PRIVATE=${WINGS_BROWSER_ALLOW_PRIVATE:-0}
+    shm_size: 1gb
+    mem_limit: ${WINGS_BROWSER_MEMORY:-3g}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      browser:
+    logging: *logging
+    restart: unless-stopped
+
 networks:
+  # Separate bridge for the browser: it needs the internet, but nothing on it
+  # but the app should be able to reach the browser.
+  browser:
   wings:
     ipam:
       config:
@@ -324,3 +386,5 @@ volumes:
   radicale-data:      # your CalDAV calendars and contacts
   caddy-data:         # TLS certificates
   caddy-config:
+  browser-profile:    # the agent browser's cookies and logins (sensitive; not in backups)
+  browser-downloads:  # files the agent browser downloaded

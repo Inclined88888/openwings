@@ -21,4 +21,8 @@ source for a Wings deployment.
 Third party container images used by `docker-compose.yml` keep their own
 licenses: ChromaDB (Apache-2.0), SearXNG (AGPL-3.0), ntfy (Apache-2.0 /
 GPL-2.0), Ollama (MIT), Radicale (GPL-3.0) via tomsquest/docker-radicale,
-Caddy (Apache-2.0). The e2e tests start GreenMail (Apache-2.0).
+Caddy (Apache-2.0). The optional browser container is built on
+selenium/standalone-chromium (Apache-2.0; Chromium BSD-3-Clause and others,
+noVNC MPL-2.0, x11vnc GPL-2.0). The Wings image adds Playwright for Python
+(Apache-2.0), greenlet (MIT/PSF), pyee (MIT) and websockets (BSD-3-Clause).
+The e2e tests start GreenMail (Apache-2.0).

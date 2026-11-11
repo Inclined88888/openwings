@@ -1,0 +1,29 @@
+{
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "PasswordManagerEnabled": false,
+  "AutofillCreditCardEnabled": false,
+  "AutofillAddressEnabled": false,
+  "MetricsReportingEnabled": false,
+  "TranslateEnabled": false,
+  "DefaultNotificationsSetting": 2,
+  "DefaultGeolocationSetting": 2,
+  "DefaultSensorsSetting": 2,
+  "DefaultSerialGuardSetting": 2,
+  "DefaultWebBluetoothGuardSetting": 2,
+  "DefaultWebUsbGuardSetting": 2,
+  "AudioCaptureAllowed": false,
+  "VideoCaptureAllowed": false,
+  "ScreenCaptureAllowed": false,
+  "PromptForDownloadLocation": false,
+  "DownloadDirectory": "/home/seluser/Downloads",
+  "SafeBrowsingProtectionLevel": 1,
+  "ExtensionInstallBlocklist": [
+    "*"
+  ],
+  "URLBlocklist": [
+    "file://*"
+  ],
+  "CommandLineFlagSecurityWarningsEnabled": false,
+  "WebRtcIPHandling": "disable_non_proxied_udp"
+}
