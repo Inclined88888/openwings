@@ -543,6 +543,22 @@ Unit tests: 187 passed. Volume names (`odysseus-data` and so on) and the
 `ODYSSEUS_*` settings keep their names: they hold existing data and are
 read by upstream.
 
+## Quiet, question free install (2026-11-11)
+
+The installer asks nothing and setup runs with `--quiet` from it: one line
+per step, dots while Docker works, then the address, user and password;
+Docker's output goes to `install.log` (mode 600) and only this run's part is
+shown if a step fails. Checked here: a quiet setup over the running install
+(58 seconds, healthy); a failing step shows Docker's own error. A simulated
+Mac (stand ins for uname, colima, docker and brew, under bash 3.2): Colima
+stopped at 2 GB starts once at 4 GB; Colima running at 2 GB restarts once at
+4 GB; Colima at 8 GB is left alone; no Docker with Homebrew installs Colima,
+docker and Compose and starts at 4 GB; no Docker and no Homebrew opens the
+Docker Desktop page and stops with one instruction. The simulation found a
+silent exit on a Mac that had never run Colima (a failed read inside a pipe
+under strict mode); fixed, with every piped read in the installer guarded.
+Not run on a real Mac.
+
 ## Not verified: please check on your server
 
 1. Build on the real upstream image: `./scripts/setup.sh`, then

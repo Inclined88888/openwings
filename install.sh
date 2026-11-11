@@ -6,16 +6,18 @@
 # Setup options go after "bash -s --", for example:
 #   curl -fsSL https://raw.githubusercontent.com/Inclined88888/openwings/main/install.sh | bash -s -- --with-browser --with-runner
 #
-# What it does: puts the code in ~/openwings (or updates it there), makes sure
-# Docker is installed and running (it asks before installing anything), then
-# runs scripts/setup.sh, which builds and starts OpenWings and prints how to
-# sign in. Running it again updates the code and restarts; your data and .env
-# are kept.
+# What it does, without asking anything: puts the code in ~/openwings (or
+# updates it there), makes sure Docker is installed, running and has enough
+# memory, then runs scripts/setup.sh, which starts OpenWings and prints how to
+# sign in. Docker's own output goes to ~/openwings/install.log. The only
+# prompt you may see is your computer's password, from sudo or Homebrew, when
+# Docker has to be installed. Running it again updates the code and restarts;
+# your data and .env are kept.
 #
 # Settings (environment variables):
 #   OPENWINGS_DIR          where to install (default ~/openwings)
 #   OPENWINGS_REF          branch or tag to install (default main once it holds OpenWings)
-#   OPENWINGS_YES=1        answer yes to the install questions (unattended installs)
+#   OPENWINGS_VERBOSE=1    show Docker's full output instead of one line per step
 #   OPENWINGS_NO_OPEN=1    do not open the browser at the end
 #   OPENWINGS_DOCKER_WAIT  seconds to wait for Docker to start (default 300)
 #
@@ -35,25 +37,11 @@ openwings_install() {
   local WAIT="${OPENWINGS_DOCKER_WAIT:-300}"
   local OS USE_SG=0 SUDO="" arg no_start=0
 
-  local B="" G="" Y="" R="" N=""
-  if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'; fi
+  local G="" Y="" R="" N=""
+  if [ -t 1 ]; then G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'; fi
   say()  { printf '%s==>%s %s\n' "$G" "$N" "$*"; }
   warn() { printf '%s!!%s  %s\n' "$Y" "$N" "$*" >&2; }
   die()  { printf '%sxx%s  %s\n' "$R" "$N" "$*" >&2; exit 1; }
-  # Questions are read from the terminal, not from the piped script. Each
-  # one is something the install cannot go on without, so Enter means yes.
-  # With no terminal to ask (unattended), the answer is no unless
-  # OPENWINGS_YES=1.
-  ask() {
-    local answer=""
-    if [ "${OPENWINGS_YES:-}" = "1" ]; then return 0; fi
-    if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-      printf '%s%s%s [Y/n] ' "$B" "$1" "$N" > /dev/tty
-      read -r answer < /dev/tty || answer="n"
-      case "$answer" in ''|y|Y|yes|Yes|YES) return 0 ;; esac
-    fi
-    return 1
-  }
   need() { command -v "$1" >/dev/null 2>&1 || die "$1 is needed and was not found. Install it, then run this again."; }
 
   case "$(uname -s)" in
@@ -127,7 +115,7 @@ openwings_install() {
   if [ -d "$DIR/.git" ]; then
     has_git || die "$DIR is a git checkout, but git does not work here. Install git (on macOS: xcode-select --install), then run this again."
     is_openwings_repo || die "$DIR is a git checkout of something other than OpenWings. Choose another folder: OPENWINGS_DIR=/path/to/folder"
-    say "Updating OpenWings in $DIR ($REF)"
+    say "Updating OpenWings in $DIR"
     if [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no)" ]; then
       die "$DIR has local changes to OpenWings' own files. Commit or undo them (git -C \"$DIR\" status), then run this again."
     fi
@@ -148,19 +136,23 @@ openwings_install() {
       die "Could not fetch $REF from GitHub."
     fi
   elif [ -f "$DIR/scripts/setup.sh" ] && [ -f "$DIR/upstream.lock" ]; then
-    say "Updating OpenWings in $DIR ($REF)"
+    say "Updating OpenWings in $DIR"
     fetch_tarball
   elif [ -e "$DIR" ] && { [ ! -d "$DIR" ] || [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; }; then
     die "$DIR already exists and is not OpenWings. Choose another folder: OPENWINGS_DIR=/path/to/folder"
   elif has_git; then
-    say "Downloading OpenWings to $DIR ($REF)"
+    say "Downloading OpenWings to $DIR"
     git clone --quiet --branch "$REF" "${REPO}.git" "$DIR" || die "Could not download OpenWings from GitHub."
   else
-    say "Downloading OpenWings to $DIR ($REF)"
+    say "Downloading OpenWings to $DIR"
     fetch_tarball
   fi
 
   # 3. Docker ------------------------------------------------------------
+  local LOGF="$DIR/install.log" min_gb
+  ( umask 077; : >> "$LOGF" )
+  printf '\n==== %s install\n' "$(date)" >> "$LOGF"
+  min_gb="$( { sed -n 's/^WINGS_MIN_MEM_GB=//p' "$DIR/scripts/lib.sh" 2>/dev/null || true; } | head -n 1)"; min_gb="${min_gb:-4}"
   docker_ok() { docker info >/dev/null 2>&1; }
   # On Linux the daemon can be running while this user may not use it yet.
   # (The output is matched, not piped: under pipefail docker's own failure
@@ -181,11 +173,15 @@ openwings_install() {
     local id=""
     case "$OS" in
       mac)
-        if command -v brew >/dev/null 2>&1 && ask "Docker is not installed. Install Docker Desktop with Homebrew now?"; then
-          brew install --cask docker-desktop || brew install --cask docker || die "Homebrew could not install Docker Desktop."
+        # Colima: Docker without a desktop app, nothing to click through.
+        if command -v brew >/dev/null 2>&1; then
+          say "Installing Docker (Colima) with Homebrew. This takes a few minutes"
+          brew install colima docker docker-compose >> "$LOGF" 2>&1 || die "Homebrew could not install Docker. Details: $LOGF"
+          mkdir -p "$HOME/.docker/cli-plugins"
+          ln -sfn "$(brew --prefix)/opt/docker-compose/bin/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
         else
           open "https://www.docker.com/products/docker-desktop/" 2>/dev/null || true
-          die "Docker is not installed. Install Docker Desktop (https://www.docker.com/products/docker-desktop/), then run this command again."
+          die "Docker is not installed. Install Docker Desktop (the page is open), start it once, then run this command again."
         fi ;;
       linux)
         if [ -n "$SUDO" ] && ! command -v sudo >/dev/null 2>&1; then
@@ -196,12 +192,9 @@ openwings_install() {
           ubuntu|debian|raspbian|fedora|centos|rhel) ;;
           *) die "Docker is not installed. Install Docker Engine and its Compose plugin for your system (https://docs.docker.com/engine/install/), then run this again." ;;
         esac
-        if ask "Docker is not installed. Install Docker Engine now with Docker's official script (get.docker.com, needs sudo)?"; then
-          curl -fsSL https://get.docker.com | $SUDO sh || die "Docker's install script failed."
-          if [ -d /run/systemd/system ]; then $SUDO systemctl enable --now docker || true; fi
-        else
-          die "Docker is needed. Install Docker Engine (https://docs.docker.com/engine/install/), then run this again."
-        fi ;;
+        say "Installing Docker with Docker's official script (get.docker.com). This takes a few minutes"
+        curl -fsSL https://get.docker.com | $SUDO sh >> "$LOGF" 2>&1 || die "Docker's install script failed. Details: $LOGF"
+        if [ -d /run/systemd/system ]; then $SUDO systemctl enable --now docker >> "$LOGF" 2>&1 || true; fi ;;
       wsl)
         die "Docker is not available in this WSL terminal. Install Docker Desktop for Windows, turn on Settings > Resources > WSL integration for this distribution, then run this again." ;;
     esac
@@ -215,7 +208,16 @@ openwings_install() {
         elif [ -d /Applications/OrbStack.app ] || [ -d "$HOME/Applications/OrbStack.app" ]; then
           say "Starting OrbStack"; open -a OrbStack
         elif command -v colima >/dev/null 2>&1; then
-          say "Starting Colima"; colima start
+          # Start it with enough memory straight away (its default is 2 GB).
+          local conf cur
+          conf="${COLIMA_HOME:-$HOME/.colima}/default/colima.yaml"
+          cur="$( { sed -n 's/^memory: *\([0-9][0-9]*\).*/\1/p' "$conf" 2>/dev/null || true; } | head -n 1)"
+          say "Starting Docker (Colima)"
+          if [ -z "$cur" ] || [ "$cur" -lt "$min_gb" ]; then
+            colima start --memory "$min_gb" >> "$LOGF" 2>&1 || die "Colima did not start. Details: $LOGF"
+          else
+            colima start >> "$LOGF" 2>&1 || die "Colima did not start. Details: $LOGF"
+          fi
         else
           die "Docker is installed but no Docker app was found to start. Start your Docker engine, then run this again."
         fi ;;
@@ -273,32 +275,24 @@ openwings_install() {
     fi
     if ! docker_ok && docker_needs_group; then
       local me; me="$(id -un)"
-      if ask "Your user ($me) may not use Docker yet. Add it to the docker group (needs sudo)?"; then
-        $SUDO usermod -aG docker "$me" || die "Could not add $me to the docker group."
-        command -v sg >/dev/null 2>&1 || die "Added $me to the docker group. Log out and back in, then run this again."
-        USE_SG=1
-      else
-        die "Docker refused this user. Add it to the docker group (sudo usermod -aG docker $me), log out and back in, then run this again."
-      fi
+      say "Letting your user ($me) use Docker (adds it to the docker group)"
+      $SUDO usermod -aG docker "$me" || die "Could not add $me to the docker group."
+      command -v sg >/dev/null 2>&1 || die "Added $me to the docker group. Log out and back in, then run this again."
+      USE_SG=1
     fi
     # Colima's default machine has 2 GB, too little for OpenWings to start.
     if [ "$OS" = "mac" ] && command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1 \
        && [ "$(docker context show 2>/dev/null)" = "colima" ]; then
-      local min_gb mem_bytes mem_gb
-      min_gb="$(sed -n 's/^WINGS_MIN_MEM_GB=//p' "$DIR/scripts/lib.sh" 2>/dev/null | head -n 1)"; min_gb="${min_gb:-4}"
+      local mem_bytes mem_gb
       mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
       case "$mem_bytes" in ''|*[!0-9]*) mem_bytes=0 ;; esac
       mem_gb=$(( (mem_bytes + 536870912) / 1073741824 ))
       if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$min_gb" ]; then
-        if ask "Docker (Colima) has only ${mem_gb} GB of memory and OpenWings needs ${min_gb} GB to start. Restart Colima with ${min_gb} GB? (Anything else running in Colima restarts too.)"; then
-          say "Restarting Colima with ${min_gb} GB"
-          if ! { colima stop && colima start --memory "$min_gb"; }; then
-            die "Colima did not restart. Run: colima stop && colima start --memory ${min_gb}"
-          fi
-          wait_docker || die "Docker did not come back within ${WAIT} seconds after restarting Colima."
-        else
-          warn "Continuing with ${mem_gb} GB; OpenWings may be stopped for lack of memory while starting."
+        say "Giving Docker (Colima) ${min_gb} GB of memory instead of ${mem_gb} GB; Colima restarts once"
+        if ! { colima stop >> "$LOGF" 2>&1 && colima start --memory "$min_gb" >> "$LOGF" 2>&1; }; then
+          die "Colima did not restart. Run: colima stop && colima start --memory ${min_gb}"
         fi
+        wait_docker || die "Docker did not come back within ${WAIT} seconds after restarting Colima."
       fi
     fi
     if [ "$USE_SG" -eq 1 ]; then
@@ -314,13 +308,18 @@ openwings_install() {
   if [ "$USE_SG" -eq 1 ]; then
     # sg hands one command line to /bin/sh: quote each option for sh.
     local cmd="./scripts/setup.sh" q
+    [ "${OPENWINGS_VERBOSE:-}" = "1" ] || cmd="$cmd --quiet"
     for arg in ${1+"$@"}; do
       q="$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")"
       cmd="$cmd '$q'"
     done
     sg docker -c "$cmd" < /dev/null
   else
-    ./scripts/setup.sh ${1+"$@"} < /dev/null
+    if [ "${OPENWINGS_VERBOSE:-}" = "1" ]; then
+      ./scripts/setup.sh ${1+"$@"} < /dev/null
+    else
+      ./scripts/setup.sh --quiet ${1+"$@"} < /dev/null
+    fi
   fi
 
   # 5. Open it -----------------------------------------------------------
@@ -330,8 +329,8 @@ openwings_install() {
     prev="$arg"
   done
   if [ -z "$url" ]; then
-    bind="$(sed -n 's/^APP_BIND=//p' .env 2>/dev/null | tail -n 1)"; bind="${bind:-127.0.0.1}"
-    port="$(sed -n 's/^APP_PORT=//p' .env 2>/dev/null | tail -n 1)"; port="${port:-7011}"
+    bind="$( { sed -n 's/^APP_BIND=//p' .env 2>/dev/null || true; } | tail -n 1)"; bind="${bind:-127.0.0.1}"
+    port="$( { sed -n 's/^APP_PORT=//p' .env 2>/dev/null || true; } | tail -n 1)"; port="${port:-7011}"
     [ "$bind" = "0.0.0.0" ] && bind="localhost"
     url="http://${bind}:${port}"
   fi
@@ -345,7 +344,7 @@ openwings_install() {
   if [ "$USE_SG" -eq 1 ]; then
     say "Installed in $DIR. Log out and back in once so this user can use Docker directly."
   else
-    say "Installed in $DIR. Start it again later with: cd \"$DIR\" && docker compose up -d"
+    say "Installed in $DIR. Stop: cd \"$DIR\" && docker compose stop   Start again: cd \"$DIR\" && docker compose up -d"
   fi
 }
 

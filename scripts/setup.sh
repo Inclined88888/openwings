@@ -32,12 +32,13 @@ Options:
   --port N               Host port for the web UI (default 7011)
   --no-start             Write .env and config only; do not build or start anything
   --no-agents            Do not add the starter agents on first install
+  --quiet                One line per step; Docker's output goes to install.log
   -h, --help             Show this help
 EOF
 }
 
 DOMAIN=""; ACME_EMAIL=""; WITH_OLLAMA=0; OLLAMA_GPU=""; OLLAMA_MODEL=""
-WITH_CALDAV=0; CALDAV_USER="wings"; BIND=""; PORT=""; START=1; SEED_AGENTS=1; WITH_BROWSER=0; WITH_RUNNER=0
+WITH_CALDAV=0; CALDAV_USER="wings"; BIND=""; PORT=""; START=1; SEED_AGENTS=1; WITH_BROWSER=0; WITH_RUNNER=0; QUIET=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -54,6 +55,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="${2:?--port needs a value}"; shift 2 ;;
     --no-start) START=0; shift ;;
     --no-agents) SEED_AGENTS=0; shift ;;
+    --quiet) QUIET=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
   esac
@@ -78,16 +80,17 @@ case "$PORT" in ''|*[!0-9]*) [ -z "$PORT" ] || die "--port must be a number";; e
 umask 077
 if [ ! -f "$ENV_FILE" ]; then
   cp "$WINGS_ROOT/.env.example" "$ENV_FILE"
-  info "Created .env from .env.example"
+  [ "$QUIET" -eq 1 ] || info "Created .env from .env.example"
 fi
 chmod 600 "$ENV_FILE"
 
-NEW_ADMIN_PASSWORD=0
+NEW_ADMIN_PASSWORD=0; NEW_SECRETS=0
 ensure_secret() {
   local key="$1" generator="$2"
   if [ -z "$(env_get "$key")" ]; then
     env_set "$key" "$($generator)"
-    case "$key" in
+    NEW_SECRETS=$((NEW_SECRETS + 1))
+    [ "$QUIET" -eq 1 ] || case "$key" in
       ODYSSEUS_APP_KEY) ok "generated the encryption key" ;;
       ODYSSEUS_ADMIN_PASSWORD) ok "generated the admin password" ;;
       SEARXNG_SECRET) ok "generated the web search secret" ;;
@@ -112,6 +115,7 @@ ensure_secret WINGS_BROWSER_TOKEN gen_searxng
 ensure_secret WINGS_RUNNER_TOKEN gen_searxng
 # Shared secret between the app and the stateless page renderer (profile browser).
 ensure_secret WINGS_RENDERER_TOKEN gen_searxng
+if [ "$QUIET" -eq 1 ] && [ "$NEW_SECRETS" -gt 0 ]; then ok "Created your admin password and keys (kept in .env)"; fi
 
 # Upstream silently skips creating the admin for passwords under 8 characters
 # and leaves the web setup page open to whoever reaches it first.
@@ -218,11 +222,23 @@ if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$WINGS_MIN_MEM_GB" ]; then
   warn "Docker has about ${mem_gb} GB of memory; OpenWings needs at least ${WINGS_MIN_MEM_GB} GB and may be stopped while starting."
   warn "  Colima: colima stop && colima start --memory ${WINGS_MIN_MEM_GB}   Docker Desktop: Settings > Resources > Memory"
 fi
-info "Building the OpenWings image and starting the stack (the first run downloads several GB of images)"
-dc up -d --build --remove-orphans
-
-info "Waiting for OpenWings to start (first boot also downloads the embedding model)"
-if ! wait_healthy openwings 900; then
+LOG="$WINGS_ROOT/install.log"
+if [ "$QUIET" -eq 1 ]; then
+  printf '\n==== %s setup\n' "$(date)" >> "$LOG"
+  log_start=$(wc -l < "$LOG")
+  info "Downloading and starting OpenWings. The first time takes 5 to 15 minutes; details go to install.log"
+  if ! with_dots dc up -d --build --remove-orphans; then
+    warn "Starting OpenWings failed. What Docker said:"
+    tail -n +"$((log_start + 1))" "$LOG" | tail -n 25 >&2
+    die "Fix the cause above, then run this again (your data and settings are kept). Full log: $LOG"
+  fi
+  info "Waiting for OpenWings to finish starting"
+else
+  info "Building the OpenWings image and starting the stack (the first run downloads several GB of images)"
+  dc up -d --build --remove-orphans
+  info "Waiting for OpenWings to start (first boot also downloads the embedding model)"
+fi
+if ! { if [ "$QUIET" -eq 1 ]; then with_dots wait_healthy openwings 900; else wait_healthy openwings 900; fi; }; then
   explain_unhealthy openwings
   die "OpenWings did not start. Fix the cause above, then run setup again (it keeps your data and settings)."
 fi
@@ -239,8 +255,12 @@ fi
 
 # Starter agents, first install only (re-run ./scripts/seed-agents.sh any time).
 if [ "$NEW_ADMIN_PASSWORD" -eq 1 ] && [ "$SEED_AGENTS" -eq 1 ]; then
-  info "Adding starter agents"
-  "$WINGS_ROOT/scripts/seed-agents.sh" || warn "could not add starter agents; run ./scripts/seed-agents.sh later"
+  if [ "$QUIET" -eq 1 ]; then
+    "$WINGS_ROOT/scripts/seed-agents.sh" >> "$LOG" 2>&1 || warn "could not add starter agents; run ./scripts/seed-agents.sh later"
+  else
+    info "Adding starter agents"
+    "$WINGS_ROOT/scripts/seed-agents.sh" || warn "could not add starter agents; run ./scripts/seed-agents.sh later"
+  fi
 fi
 
 # 4. Summary -------------------------------------------------------------

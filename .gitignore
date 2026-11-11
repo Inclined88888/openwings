@@ -4,6 +4,7 @@
 !.env.example
 config/radicale/users
 backups/
+install.log
 *.tar.gz
 *.age
 *.gpg

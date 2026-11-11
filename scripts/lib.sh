@@ -155,6 +155,21 @@ explain_unhealthy() {
   esac
 }
 
+# Run a command with its output appended to $LOG, printing a dot every 10
+# seconds so a long step visibly moves. Returns the command's status.
+with_dots() {
+  local pid rc=0 n=0
+  "$@" >> "$LOG" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 1; n=$((n + 1))
+    if [ $((n % 10)) -eq 0 ]; then printf '.'; fi
+  done
+  wait "$pid" || rc=$?
+  if [ "$n" -ge 10 ]; then printf '\n'; fi
+  return "$rc"
+}
+
 # Random secrets with no shell-special characters.
 rand_token() { head -c "${1:-24}" /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
 # A Fernet key: 32 random bytes, URL-safe base64, padded (44 chars).

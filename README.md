@@ -60,7 +60,7 @@ Requirements:
 curl -fsSL https://raw.githubusercontent.com/Inclined88888/openwings/main/install.sh | bash
 ```
 
-That is the whole install, on a Mac, on Linux and in a WSL2 terminal on Windows. [`install.sh`](install.sh) puts OpenWings in `~/openwings` (or updates it there), makes sure Docker is installed and running (it starts Docker Desktop, OrbStack or Colima on a Mac and the Docker service on Linux, and asks before installing Docker), then runs `scripts/setup.sh` and opens the app in your browser. Run the same command again to update; your data and `.env` are kept. Setup options go after `bash -s --`, for example `| bash -s -- --with-browser --with-runner`. Other folder: `OPENWINGS_DIR=/path` before `bash`.
+That is the whole install, on a Mac, on Linux and in a WSL2 terminal on Windows. [`install.sh`](install.sh) puts OpenWings in `~/openwings` (or updates it there), makes sure Docker is installed, running and has enough memory (on a Mac it starts Docker Desktop, OrbStack or Colima, gives Colima 4 GB, and installs Colima with Homebrew when there is no Docker; on Linux it starts or installs the Docker service), then starts OpenWings and opens it in your browser. It asks nothing; the only prompt you may see is your computer's password when Docker has to be installed. You see one line per step; Docker's own output goes to `install.log` (`OPENWINGS_VERBOSE=1` shows it instead). Run the same command again to update; your data and `.env` are kept. Setup options go after `bash -s --`, for example `| bash -s -- --with-browser --with-runner`. Other folder: `OPENWINGS_DIR=/path` before `bash`.
 
 By hand, if you prefer:
 
