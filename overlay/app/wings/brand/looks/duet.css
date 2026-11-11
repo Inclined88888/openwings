@@ -42,6 +42,11 @@
   --dw-side-hover: #D0D9D6;
   --dw-code: #EEF2F1;
   --dw-code-text: #1D2A30;
+  --dw-error: #A8321F;          /* failures: 6.5 on paper, 5.5 on the desk */
+  --dw-ok: #2F6B45;
+  --dw-warn: #8A5A00;
+  --ow-palette: #1E5A68 #5B4B8A #A8321F #8A5A00 #6E621A #2F6B45 #4D5C60 #2E6E6A;
+  --ow-tints: #F6DDD6 #F5E4D2 #F3ECCF #DDEBDD #D6E6E8 #E6DEF0 #D3EAE6 #F3DCE3;
   --dw-shadow: 0 1px 2px rgba(29, 42, 46, 0.06), 0 10px 28px -12px rgba(29, 42, 46, 0.20);
   --dw-shadow-low: 0 1px 2px rgba(29, 42, 46, 0.10), 0 2px 6px -2px rgba(29, 42, 46, 0.08);
   --hl-bg: #EEF2F1 !important;
@@ -82,6 +87,11 @@
   --dw-side-hover: #22272A;
   --dw-code: #1E2325;
   --dw-code-text: #DDE6E8;
+  --dw-error: #F0A08F;          /* failures: 7.0 on paper */
+  --dw-ok: #8CC9A0;
+  --dw-warn: #E3B58C;
+  --ow-palette: #8FC6CF #B9A8E6 #F0A08F #E3B58C #D8C47A #8CC9A0 #A6B2B4 #8FD0C4;
+  --ow-tints: #4A3431 #4A3C2C #48432A #2F4434 #283B37 #3A3448 #2A403D #45313A;
   --dw-shadow: 0 1px 2px rgba(0, 0, 0, 0.30), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
   --dw-shadow-low: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 6px -2px rgba(0, 0, 0, 0.30);
   --hl-bg: #1E2325 !important;
@@ -97,12 +107,20 @@
 }
 
 /* ---------- shared tokens and upstream variables ---------- */
+/* No upstream font (patch 0023): theme.js sets --font-family inline to
+   upstream's Fira Code, and an !important rule here beats that normal inline
+   value, so everything that reads --font-family gets this look's sans.
+   --ow-font-sans and --ow-font-mono feed skins.css, which points upstream's
+   rules that name Fira Code or Inter directly at them. */
 :root[data-ow-skin="ow-duet"],
 
 :root[data-ow-skin="ow-duet-night"] {
   --dw-sans: 'OW duet Sans', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
   --dw-display: 'OW duet Display', 'OW duet Sans', system-ui, sans-serif;
   --dw-mono: 'OW duet Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --font-family: var(--dw-sans) !important;
+  --ow-font-sans: var(--dw-sans);
+  --ow-font-mono: var(--dw-mono);
   --dw-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --accent: var(--dw-ink) !important;
   --accent-primary: var(--dw-ink) !important;
@@ -123,6 +141,25 @@
   --color-muted: var(--dw-muted) !important;
   --color-muted-alt: var(--dw-muted) !important;
   --select-option-active-bg: var(--dw-ink-tint) !important;
+  /* upstream's named colours, in this look's inks (none of its cyan,
+     orange, neon green or iOS red shows here) */
+  --color-accent: var(--dw-link) !important;
+  --color-error: var(--dw-error) !important;
+  --color-error-light: var(--dw-error) !important;
+  --color-danger: var(--dw-error) !important;
+  --color-success: var(--dw-ok) !important;
+  --color-save-green: var(--dw-ok) !important;
+  --color-warning: var(--dw-warn) !important;
+  --warn: var(--dw-warn) !important;
+  --green: var(--dw-ok) !important;
+  --color-subheader: var(--dw-muted) !important;
+  --color-blind-orange: var(--dw-ink) !important;
+  --color-link-hover: var(--dw-ink-deep) !important;
+  --color-agent-active: var(--dw-ok) !important;
+  --color-recording: var(--dw-error) !important;
+  --color-recording-hover: var(--dw-error) !important;
+  --color-brand-blue: var(--dw-ink) !important;
+  --accent-warm: var(--dw-ink) !important;
   color-scheme: light !important;
 }
 :root[data-ow-skin="ow-duet-night"] { color-scheme: dark !important; }
@@ -1931,3 +1968,40 @@
 :root[data-ow-skin="ow-duet"] .sidebar .session-item,
 
 :root[data-ow-skin="ow-duet-night"] .sidebar .session-item { padding-left: 14px !important; }
+
+/* ================= OpenWings' own pages: Live browser, Workspace files, web search, sign-in result, not found ================= */
+/* They draw with their own --bg, --panel, --text, --muted, --line, --accent
+   and state colours, which follow the system light or dark setting. Under
+   this look they take its inks, by day and by night, so muted text, table
+   heads and buttons keep their contrast whatever the system says. */
+:root[data-ow-skin="ow-duet"] :is(body.ow-page, body:has(> header.bar > a.back)),
+:root[data-ow-skin="ow-duet-night"] :is(body.ow-page, body:has(> header.bar > a.back)) {
+  --bg: var(--dw-desk); --panel: var(--dw-paper); --text: var(--dw-text); --muted: var(--dw-muted); --line: var(--dw-rule);
+  --accent: var(--dw-ink); --on-accent: var(--dw-on-ink); --ok: var(--dw-ok); --warn: var(--dw-warn); --bad: var(--dw-error); --on-state: var(--dw-on-ink);
+}
+:root[data-ow-skin="ow-duet"] :is(body.ow-page, body:has(> header.bar > a.back)) .back,
+:root[data-ow-skin="ow-duet-night"] :is(body.ow-page, body:has(> header.bar > a.back)) .back { color: var(--dw-link) !important; }
+:root[data-ow-skin="ow-duet"] :is(body.ow-page, body:has(> header.bar > a.back)) button,
+:root[data-ow-skin="ow-duet-night"] :is(body.ow-page, body:has(> header.bar > a.back)) button { background: var(--dw-ink) !important; color: var(--dw-on-ink) !important; filter: none !important; }
+:root[data-ow-skin="ow-duet"] :is(body.ow-page, body:has(> header.bar > a.back)) button:hover,
+:root[data-ow-skin="ow-duet-night"] :is(body.ow-page, body:has(> header.bar > a.back)) button:hover { background: var(--dw-ink-deep) !important; }
+:root[data-ow-skin="ow-duet"] :is(body.ow-page, body:has(> header.bar > a.back)) :is(input[type="text"], input[type="password"], input[type="search"]),
+:root[data-ow-skin="ow-duet-night"] :is(body.ow-page, body:has(> header.bar > a.back)) :is(input[type="text"], input[type="password"], input[type="search"]) {
+  background: var(--dw-paper) !important; color: var(--dw-text) !important; border: 1px solid var(--dw-edge) !important;
+}
+:root[data-ow-skin="ow-duet"] :is(body.ow-page, body:has(> header.bar > a.back)) #screen,
+:root[data-ow-skin="ow-duet-night"] :is(body.ow-page, body:has(> header.bar > a.back)) #screen { background: var(--dw-fill) !important; }
+
+
+/* Settings > System's log console: the look's code surface and state inks
+   (upstream's near-black terminal took the look's dark greens and reds). */
+:root[data-ow-skin="ow-duet"] #log-console-container,
+:root[data-ow-skin="ow-duet-night"] #log-console-container { background: var(--dw-code) !important; color: var(--dw-code-text) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-duet"] #log-console-container .log-line-info,
+:root[data-ow-skin="ow-duet-night"] #log-console-container .log-line-info { color: var(--dw-ok) !important; }
+:root[data-ow-skin="ow-duet"] #log-console-container .log-line-warning,
+:root[data-ow-skin="ow-duet-night"] #log-console-container .log-line-warning { color: var(--dw-warn) !important; }
+:root[data-ow-skin="ow-duet"] #log-console-container :is(.log-line-error, .log-line-critical),
+:root[data-ow-skin="ow-duet-night"] #log-console-container :is(.log-line-error, .log-line-critical) { color: var(--dw-error) !important; }
+:root[data-ow-skin="ow-duet"] #log-console-container :is(.log-line-debug, .log-line-default),
+:root[data-ow-skin="ow-duet-night"] #log-console-container :is(.log-line-debug, .log-line-default) { color: var(--dw-code-text) !important; }

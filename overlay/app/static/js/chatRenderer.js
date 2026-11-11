@@ -432,7 +432,16 @@ function _toolDisplayInfo(tool, command, data = null) {
       commandHtml: q ? `<div class="agent-thread-summary">${uiModule.esc(q)}</div>` : '',
     };
   }
-  return { label: '', commandHtml: '' };
+  return { label: _owToolName(rawTool), commandHtml: '' };
+}
+
+// OpenWings: a tool with no label of its own shows its name in words, not
+// the raw identifier ("mcp__email__draft_email" reads "Draft email").
+function _owToolName(raw) {
+  const name = String(raw || '');
+  if (!name.includes('_')) return '';
+  const words = name.split('__').pop().replace(/[_-]+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
 }
 
 function _suppressRawToolOutput(tool, ok) {
@@ -1048,9 +1057,9 @@ export function modelRouteLabel(
     if (!routeChanged) return model;
     const from = shortEndpointLabel(requestedEndpointLabel || 'Selected route');
     const to = shortEndpointLabel(actualEndpointLabel || actualEndpointId);
-    return model + ' (' + from + ' -> ' + to + ')';
+    return model + ' (' + from + '\u00a0\u2192 ' + to + ')';
   }
-  return shortModel(requested) + ' -> ' + shortModel(actual);
+  return shortModel(requested) + '\u00a0\u2192 ' + shortModel(actual);
 }
 
 export function replyModelPair(modelName, metadata) {

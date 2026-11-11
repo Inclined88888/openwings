@@ -2071,7 +2071,7 @@ class YouTubeTool:
         url = f"https://www.googleapis.com/youtube/v3/commentThreads?{params}"
 
         def _fetch() -> dict:
-            req = urllib.request.Request(url, headers={"User-Agent": "odysseus-ui/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "OpenWings/1.0"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return json.loads(resp.read().decode("utf-8", errors="replace"))
 

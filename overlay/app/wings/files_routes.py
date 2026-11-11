@@ -137,6 +137,7 @@ async def files_page(request: Request):
     body = "\n".join(rows) or '<tr><td colspan="3" class="muted">No files yet. Files the agent writes appear here.</td></tr>'
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Workspace files · OpenWings</title>
+<link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks4">
 <style>
 :root {{ --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#5b6474; --line:#dfe3ea; --accent:#2f6fec; }}
 @media (prefers-color-scheme: dark) {{ :root {{ --bg:#0f1218; --panel:#171b23; --text:#e6e9ef; --muted:#9aa3b2; --line:#2a303b; --accent:#6d9bff; }} }}
@@ -159,5 +160,7 @@ table.files th {{ color:var(--muted); font-weight:600; }}
 async def files_js(request: Request):
     if not _allowed(request):
         return PlainTextResponse("", status_code=403)
-    js = "for (const el of document.querySelectorAll('td.t')) el.textContent = new Date(+el.dataset.t * 1000).toLocaleString();\n"
+    js = ("try { const t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null'); const n = (t && t.name) || 'ow-sage';"
+          " if (/^ow-/.test(n)) document.documentElement.setAttribute('data-ow-skin', n); } catch (_) {}\n"
+          "for (const el of document.querySelectorAll('td.t')) el.textContent = new Date(+el.dataset.t * 1000).toLocaleString();\n")
     return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-cache"})

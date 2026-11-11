@@ -49,6 +49,10 @@
   --hu-error: #B42318;         /* failures only: 6.4 down, 5.5 page, white on it 6.6 */
   --hu-on-error: #FFFFFF;
   --hu-error-tint: rgba(180, 35, 24, 0.08);
+  --hu-ok: #3E6B4A;            /* success: 6.0 down */
+  --hu-warn: #8A5A10;          /* attention: 5.7 down */
+  --ow-palette: #3F5873 #6A4C86 #B42318 #8A5A10 #6A6420 #3E6B4A #605A56 #2F6662;
+  --ow-tints: #F2DCD9 #F1E3D3 #F0EAD2 #DCE8DD #DAE3EC #E7DDEC #D6E8E5 #F2DDE3;
   --hu-field: #FCFBFA;         /* form fields rest on the card colour */
   --hu-field-line: #8A847E;    /* field edge: 3.6 on the card (WCAG 1.4.11) */
   --hu-code: #F3F1ED;
@@ -108,6 +112,10 @@
   --hu-error: #F08A7E;         /* 6.3 down, 7.1 page, umber on it 7.1 */
   --hu-on-error: #1C1A19;
   --hu-error-tint: rgba(240, 138, 126, 0.10);
+  --hu-ok: #94C7A2;            /* 7.9 down */
+  --hu-warn: #E2B47A;          /* 8.0 down */
+  --ow-palette: #9FB6D3 #C2A8DE #F08A7E #E2B47A #D2C77E #94C7A2 #A69F99 #8DCCC4;
+  --ow-tints: #4A3431 #4A3C2C #48432A #2F4434 #2B3A47 #3A3448 #2A403D #45313A;
   --hu-field: #211F1D;
   --hu-field-line: #857D77;    /* 3.8 on the card, 4.1 on the field */
   --hu-code: #151312;
@@ -143,10 +151,18 @@
 }
 
 /* ---------- shared tokens and upstream variables ---------- */
+/* No upstream font (patch 0023): theme.js sets --font-family inline to
+   upstream's Fira Code, and an !important rule here beats that normal inline
+   value, so everything that reads --font-family gets this look's sans.
+   --ow-font-sans and --ow-font-mono feed skins.css, which points upstream's
+   rules that name Fira Code or Inter directly at them. */
 :root[data-ow-skin="ow-hush"],
 :root[data-ow-skin="ow-hush-night"] {
   --hu-sans: 'OW hush Readex Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --hu-mono: 'OW hush Red Hat Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-family: var(--hu-sans) !important;
+  --ow-font-sans: var(--hu-sans);
+  --ow-font-mono: var(--hu-mono);
   --hu-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --accent: var(--hu-rose) !important;
   --accent-primary: var(--hu-rose) !important;
@@ -170,6 +186,21 @@
   --color-error: var(--hu-error) !important;
   --color-error-light: var(--hu-error) !important;
   --color-danger: var(--hu-error) !important;
+  /* upstream's other named colours, in this look's inks */
+  --color-accent: var(--hu-rose) !important;
+  --color-success: var(--hu-ok) !important;
+  --color-save-green: var(--hu-ok) !important;
+  --color-warning: var(--hu-warn) !important;
+  --warn: var(--hu-warn) !important;
+  --green: var(--hu-ok) !important;
+  --color-subheader: var(--hu-muted) !important;
+  --color-blind-orange: var(--hu-rose) !important;
+  --color-link-hover: var(--hu-rose-deep) !important;
+  --color-agent-active: var(--hu-ok) !important;
+  --color-recording: var(--hu-error) !important;
+  --color-recording-hover: var(--hu-error) !important;
+  --color-brand-blue: var(--hu-rose) !important;
+  --accent-warm: var(--hu-rose) !important;
 }
 
 :root[data-ow-skin="ow-hush"] body,
@@ -1925,3 +1956,39 @@
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
 }
+
+/* ================= OpenWings' own pages: Live browser, Workspace files, web search, sign-in result, not found ================= */
+/* They draw with their own --bg, --panel, --text, --muted, --line, --accent
+   and state colours, which follow the system light or dark setting. Under
+   this look they take its inks, by day and by night. */
+:root[data-ow-skin="ow-hush"] :is(body.ow-page, body:has(> header.bar > a.back)),
+:root[data-ow-skin="ow-hush-night"] :is(body.ow-page, body:has(> header.bar > a.back)) {
+  --bg: var(--hu-page); --panel: var(--hu-down); --text: var(--hu-ink); --muted: var(--hu-muted); --line: var(--hu-line);
+  --accent: var(--hu-rose); --on-accent: var(--hu-on-rose); --ok: var(--hu-ok); --warn: var(--hu-warn); --bad: var(--hu-error); --on-state: var(--hu-on-rose);
+}
+:root[data-ow-skin="ow-hush"] :is(body.ow-page, body:has(> header.bar > a.back)) .back,
+:root[data-ow-skin="ow-hush-night"] :is(body.ow-page, body:has(> header.bar > a.back)) .back { color: var(--hu-ink) !important; text-decoration: underline !important; text-underline-offset: 3px !important; }
+:root[data-ow-skin="ow-hush"] :is(body.ow-page, body:has(> header.bar > a.back)) button,
+:root[data-ow-skin="ow-hush-night"] :is(body.ow-page, body:has(> header.bar > a.back)) button { background: var(--hu-rose) !important; color: var(--hu-on-rose) !important; filter: none !important; }
+:root[data-ow-skin="ow-hush"] :is(body.ow-page, body:has(> header.bar > a.back)) button:hover,
+:root[data-ow-skin="ow-hush-night"] :is(body.ow-page, body:has(> header.bar > a.back)) button:hover { background: var(--hu-rose-deep) !important; }
+:root[data-ow-skin="ow-hush"] :is(body.ow-page, body:has(> header.bar > a.back)) :is(input[type="text"], input[type="password"], input[type="search"]),
+:root[data-ow-skin="ow-hush-night"] :is(body.ow-page, body:has(> header.bar > a.back)) :is(input[type="text"], input[type="password"], input[type="search"]) {
+  background: var(--hu-field) !important; color: var(--hu-ink) !important; border: 1px solid var(--hu-field-line) !important;
+}
+:root[data-ow-skin="ow-hush"] :is(body.ow-page, body:has(> header.bar > a.back)) #screen,
+:root[data-ow-skin="ow-hush-night"] :is(body.ow-page, body:has(> header.bar > a.back)) #screen { background: var(--hu-fill) !important; }
+
+
+/* Settings > System's log console: the look's code surface and state inks
+   (upstream's near-black terminal took the look's dark greens and roses). */
+:root[data-ow-skin="ow-hush"] #log-console-container,
+:root[data-ow-skin="ow-hush-night"] #log-console-container { background: var(--hu-code) !important; color: var(--hu-code-ink) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-hush"] #log-console-container .log-line-info,
+:root[data-ow-skin="ow-hush-night"] #log-console-container .log-line-info { color: var(--hu-ok) !important; }
+:root[data-ow-skin="ow-hush"] #log-console-container .log-line-warning,
+:root[data-ow-skin="ow-hush-night"] #log-console-container .log-line-warning { color: var(--hu-warn) !important; }
+:root[data-ow-skin="ow-hush"] #log-console-container :is(.log-line-error, .log-line-critical),
+:root[data-ow-skin="ow-hush-night"] #log-console-container :is(.log-line-error, .log-line-critical) { color: var(--hu-error) !important; }
+:root[data-ow-skin="ow-hush"] #log-console-container :is(.log-line-debug, .log-line-default),
+:root[data-ow-skin="ow-hush-night"] #log-console-container :is(.log-line-debug, .log-line-default) { color: var(--hu-code-ink) !important; }

@@ -851,36 +851,45 @@ def _oauth_authorize_page(
 
 
 def _oauth_result_page(title: str, message: str, success: bool = False, neutral: bool = False) -> str:
-    """Generate a simple HTML page for the OAuth result (Wings: in OpenWings'
-    own plain style, light or dark with the system)."""
+    """Generate a simple HTML page for the OAuth result (Wings: an OpenWings
+    page in the user's look; static/openwings/look.js picks it before the
+    first paint, and without a look it is plain light or dark)."""
     safe_title = html.escape(title)
     safe_message = html.escape(message)
     if success:
-        color, icon = "#2f7d4f", "&#10003;"
+        state, icon = "ok", "&#10003;"
     elif neutral:
-        color, icon = "#6b7280", "&#8617;"
+        state, icon = "neutral", "&#8617;"
     else:
-        color, icon = "#b4413c", "&#10007;"
+        state, icon = "bad", "&#10007;"
     return f"""<!DOCTYPE html>
-<html><head>
+<html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{safe_title} · OpenWings</title>
+<link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
+<script src="/static/openwings/look.js?v=owlooks4"></script>
+<link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks4">
 <style>
-  :root {{ color-scheme: light dark; --bg: #f5f5f2; --card: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d8dad3; }}
-  @media (prefers-color-scheme: dark) {{ :root {{ --bg: #17181a; --card: #222326; --fg: #e8e8e6; --muted: #a4a7ab; --line: #34363a; }} }}
-  body {{ margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg);
+  :root {{ color-scheme: light dark; --bg: #f5f5f2; --panel: #ffffff; --text: #1f2328; --muted: #57606a; --line: #d8dad3;
+    --ok: #2f7d4f; --bad: #b4413c; --on-state: #ffffff; }}
+  @media (prefers-color-scheme: dark) {{ :root {{ --bg: #17181a; --panel: #222326; --text: #e8e8e6; --muted: #a4a7ab; --line: #34363a;
+    --ok: #5fbf86; --bad: #f08a7e; --on-state: #17181a; }} }}
+  body {{ margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text);
     display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; box-sizing: border-box; }}
-  .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    padding: 28px 28px 24px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.06); }}
+  .ow-result {{ background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 28px 28px 24px; max-width: 420px; width: 100%; text-align: center; }}
   .icon {{ display: inline-flex; width: 44px; height: 44px; border-radius: 50%; align-items: center; justify-content: center;
-    font-size: 22px; color: #fff; background: {color}; margin-bottom: 12px; }}
-  h2 {{ margin: 0 0 8px; font-size: 18px; font-weight: 600; }}
-  p {{ margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }}
-  .brand {{ margin-top: 18px; font-size: 12px; color: var(--muted); }}
+    font-size: 22px; color: var(--on-state); background: var(--muted); margin-bottom: 12px; }}
+  .ow-result[data-state="ok"] .icon {{ background: var(--ok); }}
+  .ow-result[data-state="bad"] .icon {{ background: var(--bad); }}
+  h2 {{ margin: 0 0 8px; font-size: 19px; font-weight: 600; }}
+  p {{ margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }}
+  .brand {{ display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; font-size: 14px; color: var(--muted); }}
+  .brand img {{ width: 20px; height: 20px; }}
 </style></head>
-<body><div class="card">
+<body class="ow-page"><main class="ow-result" data-state="{state}">
   <div class="icon" aria-hidden="true">{icon}</div>
   <h2>{safe_title}</h2>
   <p>{safe_message}</p>
-  <div class="brand">OpenWings</div>
-</div></body></html>"""
+  <div class="brand"><img src="/static/openwings/openwings-tile.svg" alt="">OpenWings</div>
+</main></body></html>"""

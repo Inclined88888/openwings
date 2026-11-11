@@ -135,6 +135,10 @@ services:
       # User-Agent. Off by default: accounts used that way can be closed.
       # ChatGPT plans have an official way in: Continue with ChatGPT.
       - WINGS_ALLOW_UNOFFICIAL_SIGNIN=${WINGS_ALLOW_UNOFFICIAL_SIGNIN:-}
+      # 1 = also list upstream's classic themes in the theme picker. Off by
+      # default: the picker shows the OpenWings looks only (a classic theme
+      # someone already chose keeps working either way).
+      - WINGS_SHOW_CLASSIC_THEMES=${WINGS_SHOW_CLASSIC_THEMES:-}
       # Models. Providers are normally added in Settings; these are optional
       # bootstrap values for hosts without a browser at hand.
       - LLM_HOST=${LLM_HOST:-localhost}

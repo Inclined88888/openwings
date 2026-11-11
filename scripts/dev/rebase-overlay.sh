@@ -47,11 +47,12 @@ patches=("$ROOT"/patches/*.patch)
 
 # Files touched by any patch, relative to the upstream root.
 files="$(for p in "${patches[@]}"; do git -C "$src" apply --numstat "$p" | awk '{print $3}'; done | sort -u)"
-# Upstream's image leaves documentation out (its .dockerignore drops docs/,
-# website/ and *.md). Patches may update those files for anyone applying them
-# to a source checkout, but they are not in the image, so they are neither
-# checksummed nor overlaid (the checksum guard would fail on a missing file).
-files="$(printf '%s\n' "$files" | grep -Ev '^(docs|dev-docs|website)/|\.md$' || true)"
+# Upstream's image leaves documentation and tests out (its .dockerignore
+# drops docs/, website/, tests/ and *.md). Patches may update those files for
+# anyone applying them to a source checkout, but they are not in the image,
+# so they are neither checksummed nor overlaid (the checksum guard would fail
+# on a missing file, and tests do not belong in the image).
+files="$(printf '%s\n' "$files" | grep -Ev '^(docs|dev-docs|website|tests)/|\.md$' || true)"
 
 # Hash the pristine upstream versions before patching.
 sums="$work/UPSTREAM_SHA256SUMS"
@@ -67,14 +68,27 @@ for p in "${patches[@]}"; do
   git -C "$src" apply --whitespace=nowarn "$p"
 done
 
-# Replace the generated part of the overlay.
+# Replace the generated part of the overlay. A file a patch deletes cannot be
+# overlaid; it is listed in overlay/UPSTREAM_DELETED and the image build
+# removes it (its upstream checksum is still checked first).
 find "$ROOT/overlay/app" -mindepth 1 -maxdepth 1 ! -name wings ! -name .gitkeep -exec rm -rf {} +
+deleted="$work/UPSTREAM_DELETED"
+: > "$deleted"
 for f in $files; do
+  if [ ! -e "$src/$f" ]; then
+    grep -q "  $f\$" "$sums" && printf '%s\n' "$f" >> "$deleted"
+    continue
+  fi
   [ -f "$src/$f" ] || continue
   mkdir -p "$ROOT/overlay/app/$(dirname "$f")"
   cp "$src/$f" "$ROOT/overlay/app/$f"
 done
 sort -k2 "$sums" > "$ROOT/overlay/UPSTREAM_SHA256SUMS"
+sort "$deleted" > "$ROOT/overlay/UPSTREAM_DELETED"
 
 echo "overlay regenerated for ${ODYSSEUS_COMMIT}:"
 sed 's/^/  /' "$ROOT/overlay/UPSTREAM_SHA256SUMS"
+if [ -s "$ROOT/overlay/UPSTREAM_DELETED" ]; then
+  echo "removed from the image:"
+  sed 's/^/  /' "$ROOT/overlay/UPSTREAM_DELETED"
+fi

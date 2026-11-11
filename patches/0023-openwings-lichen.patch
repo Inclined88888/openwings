@@ -1,0 +1,1121 @@
+OpenWings patch 0023: Lichen, the default look, and nothing of upstream's look under it
+
+Lichen (theme key ow-sage) is a mid-tone sage look in one mode for
+everyone: moss ink, one deep ochre accent, Sofia Sans, no dark variant.
+Its stylesheet, design tokens and motion live in wings/brand/ (looks/
+sage.css, tokens.css, tokens.json, motion.js); this patch wires them in
+and keeps upstream's own look out of sight while any OpenWings look is on.
+
+  * static/js/theme.js: Lichen in THEMES (first) with the display name
+    Lichen; it is the default with nothing saved, and as a one-mode look
+    it never gets a -night suffix. The theme picker lists only the
+    OpenWings looks (Lichen, Duet, Duet night, Hush, Hush night); upstream's
+    themes stay in the code, a saved one keeps working and stays listed
+    while it is active, and all of them are listed when the deployment
+    sets WINGS_SHOW_CLASSIC_THEMES=1. static/js/slashCommands.js: /theme
+    and /setup theme list the same names.
+  * src/app_helpers.py, static/index.html: the server fills index.html's
+    data-ow-classic-themes from WINGS_SHOW_CLASSIC_THEMES.
+  * static/index.html, static/login.html: the boot scripts default to
+    Lichen; skins.css is a parser-inserted stylesheet (it holds the first
+    layout; it has its own cache-bust token, owlooks<N>, used by every page
+    that links it and by static/sw.js PRECACHE, bumped with CACHE_NAME when
+    a look changes), and Fira Code is preloaded only for an upstream
+    theme, so no upstream font is requested under a look. index.html loads
+    /static/openwings/motion.js (defer), which does nothing under any
+    other theme. Both pages, and static/manifest.json (the installed
+    app's splash and title bar), use Lichen's page colour #C7CFC1 as the
+    theme colour instead of upstream's dark slate. login.html: "Remember
+    me" is a labelled row under the password, not an unlabelled dot.
+  * static/js/theme.js: the look swatches are a radio group the keyboard
+    can reach (Tab to the current look, arrows to move, Enter or Space to
+    wear one); the locked Customize fields show the look's accent and
+    light or dark mode, not upstream's red and Dark.
+  * Pages outside the app shell wear the look (static/openwings/look.js or
+    the same inline line marks it before the first paint): the web search
+    results page (routes/search/search_routes.py, still one nonce'd
+    script) and the MCP sign-in result page (routes/mcp/mcp_routes.py).
+  * Things upstream colours by category take the look's palette
+    (--ow-palette and --ow-tints in each look): calendar tags, calendars
+    left on upstream's default blue, the event colour swatches and the
+    custom swatch (static/js/calendar.js, calendar/utils.js), and Cookbook
+    servers without a colour of their own (static/js/cookbook.js).
+  * static/js/chatRenderer.js, static/js/chat.js: a model route reads
+    "mock-beta (Selected route → Mock)" with the arrow kept with its word,
+    and a tool without a label of its own shows its name in words
+    ("Draft email", not "mcp__email__draft_email").
+  * static/js/spinner.js: under a look, the whirlpool and sine-wave
+    canvases and the ASCII wave become one neutral mark (three dots that
+    breathe, styled in skins.css, which also hides the ASCII waves the
+    chat, compaction, Compare, Cookbook and the start-up loader write).
+    Upstream themes keep upstream's spinners.
+  * src/theme_palette.py, src/ai_interaction.py, src/agent_loop.py,
+    src/tool_schemas.py: ow-sage is a known preset and the default the
+    model is told about; set_theme also takes the picker's names (Lichen,
+    Duet, Duet night, Hush, Hush night); static/js/theme.js
+    resolveThemeName does the same for the slash commands (patch 0024).
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/routes/mcp/mcp_routes.py b/routes/mcp/mcp_routes.py
+index f7dfbf9..4944199 100644
+--- a/routes/mcp/mcp_routes.py
++++ b/routes/mcp/mcp_routes.py
+@@ -851,36 +851,45 @@ def _oauth_authorize_page(
+ 
+ 
+ def _oauth_result_page(title: str, message: str, success: bool = False, neutral: bool = False) -> str:
+-    """Generate a simple HTML page for the OAuth result (Wings: in OpenWings'
+-    own plain style, light or dark with the system)."""
++    """Generate a simple HTML page for the OAuth result (Wings: an OpenWings
++    page in the user's look; static/openwings/look.js picks it before the
++    first paint, and without a look it is plain light or dark)."""
+     safe_title = html.escape(title)
+     safe_message = html.escape(message)
+     if success:
+-        color, icon = "#2f7d4f", "&#10003;"
++        state, icon = "ok", "&#10003;"
+     elif neutral:
+-        color, icon = "#6b7280", "&#8617;"
++        state, icon = "neutral", "&#8617;"
+     else:
+-        color, icon = "#b4413c", "&#10007;"
++        state, icon = "bad", "&#10007;"
+     return f"""<!DOCTYPE html>
+-<html><head>
++<html lang="en"><head>
+ <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>{safe_title} · OpenWings</title>
++<link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
++<script src="/static/openwings/look.js?v=owlooks4"></script>
++<link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks4">
+ <style>
+-  :root {{ color-scheme: light dark; --bg: #f5f5f2; --card: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d8dad3; }}
+-  @media (prefers-color-scheme: dark) {{ :root {{ --bg: #17181a; --card: #222326; --fg: #e8e8e6; --muted: #a4a7ab; --line: #34363a; }} }}
+-  body {{ margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg);
++  :root {{ color-scheme: light dark; --bg: #f5f5f2; --panel: #ffffff; --text: #1f2328; --muted: #57606a; --line: #d8dad3;
++    --ok: #2f7d4f; --bad: #b4413c; --on-state: #ffffff; }}
++  @media (prefers-color-scheme: dark) {{ :root {{ --bg: #17181a; --panel: #222326; --text: #e8e8e6; --muted: #a4a7ab; --line: #34363a;
++    --ok: #5fbf86; --bad: #f08a7e; --on-state: #17181a; }} }}
++  body {{ margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text);
+     display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; box-sizing: border-box; }}
+-  .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+-    padding: 28px 28px 24px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.06); }}
++  .ow-result {{ background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
++    padding: 28px 28px 24px; max-width: 420px; width: 100%; text-align: center; }}
+   .icon {{ display: inline-flex; width: 44px; height: 44px; border-radius: 50%; align-items: center; justify-content: center;
+-    font-size: 22px; color: #fff; background: {color}; margin-bottom: 12px; }}
+-  h2 {{ margin: 0 0 8px; font-size: 18px; font-weight: 600; }}
+-  p {{ margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }}
+-  .brand {{ margin-top: 18px; font-size: 12px; color: var(--muted); }}
++    font-size: 22px; color: var(--on-state); background: var(--muted); margin-bottom: 12px; }}
++  .ow-result[data-state="ok"] .icon {{ background: var(--ok); }}
++  .ow-result[data-state="bad"] .icon {{ background: var(--bad); }}
++  h2 {{ margin: 0 0 8px; font-size: 19px; font-weight: 600; }}
++  p {{ margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }}
++  .brand {{ display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; font-size: 14px; color: var(--muted); }}
++  .brand img {{ width: 20px; height: 20px; }}
+ </style></head>
+-<body><div class="card">
++<body class="ow-page"><main class="ow-result" data-state="{state}">
+   <div class="icon" aria-hidden="true">{icon}</div>
+   <h2>{safe_title}</h2>
+   <p>{safe_message}</p>
+-  <div class="brand">OpenWings</div>
+-</div></body></html>"""
++  <div class="brand"><img src="/static/openwings/openwings-tile.svg" alt="">OpenWings</div>
++</main></body></html>"""
+diff --git a/routes/search/search_routes.py b/routes/search/search_routes.py
+index a636076..2400c61 100644
+--- a/routes/search/search_routes.py
++++ b/routes/search/search_routes.py
+@@ -59,49 +59,52 @@ def setup_search_routes(config) -> APIRouter:
+             .replace(">", "\\u003e")
+             .replace("&", "\\u0026")
+         )
++        # Wings: the page wears the user's OpenWings look (static/openwings/
++        # skins.css styles html[data-ow-skin=...]; the look's "own pages"
++        # rules colour body:has(> header.bar > a.back)). Its one inline
++        # script sets the look before the first paint, then runs the search
++        # once the page has loaded. Without a look: a plain light/dark page.
+         page = f"""<!doctype html>
+-<html>
++<html lang="en">
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width,initial-scale=1">
+   <title>{title} - Odysseus Search</title>
++  <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
++  <link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks4">
+   <style>
+-    :root {{ color-scheme: dark; --bg:#111; --fg:#eee; --muted:#999; --border:#333; --accent:#e05252; }}
+-    body {{ margin:0; font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }}
+-    main {{ max-width:900px; margin:0 auto; padding:22px 18px 40px; }}
+-    form {{ display:flex; gap:8px; margin:0 0 16px; }}
+-    input {{ flex:1; min-width:0; height:34px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:#181818; color:var(--fg); font:inherit; }}
+-    button {{ height:34px; padding:0 13px; border:1px solid color-mix(in srgb,var(--accent) 45%,var(--border)); border-radius:7px; background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--fg); font:inherit; cursor:pointer; }}
+-    h1 {{ margin:0 0 14px; font-size:16px; font-weight:650; }}
+-    .status {{ color:var(--muted); font-size:12px; margin:8px 0 14px; }}
+-    .result {{ display:block; padding:11px 0; border-top:1px solid var(--border); text-decoration:none; color:inherit; }}
+-    .result-title {{ color:var(--fg); font-weight:650; }}
+-    .result-url {{ margin-top:3px; color:color-mix(in srgb,var(--accent) 78%,var(--fg)); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+-    .result-snippet {{ margin-top:5px; color:color-mix(in srgb,var(--fg) 72%,transparent); font-size:13px; }}
++    :root {{ color-scheme: light dark; --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#5b6474; --line:#dfe3ea; --accent:#2f6fec; --on-accent:#fff; }}
++    @media (prefers-color-scheme: dark) {{ :root {{ --bg:#0f1218; --panel:#171b23; --text:#e6e9ef; --muted:#9aa3b2; --line:#2a303b; --accent:#6d9bff; --on-accent:#0f1218; }} }}
++    * {{ box-sizing:border-box; }}
++    body {{ margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }}
++    .bar {{ display:flex; gap:12px; align-items:center; padding:8px 14px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }}
++    .bar .title {{ font-size:15px; }}
++    .back {{ color:var(--accent); text-decoration:none; }}
++    main {{ max-width:860px; margin:0 auto; padding:20px 16px 40px; }}
++    form {{ display:flex; gap:8px; margin:0 0 12px; }}
++    input {{ flex:1; min-width:0; height:38px; padding:0 12px; border:1px solid var(--muted); border-radius:6px; background:var(--panel); color:var(--text); font:inherit; }}
++    button {{ height:38px; padding:0 16px; border:0; border-radius:6px; background:var(--accent); color:var(--on-accent); font:inherit; font-weight:600; cursor:pointer; }}
++    :focus-visible {{ outline:2px solid var(--accent); outline-offset:2px; }}
++    .status {{ color:var(--muted); font-size:14px; margin:8px 0 12px; }}
++    .result {{ display:block; padding:12px 0; border-top:1px solid var(--line); text-decoration:none; color:inherit; }}
++    .result-title {{ color:var(--text); font-weight:600; }}
++    .result:hover .result-title, .result:focus-visible .result-title {{ text-decoration:underline; text-underline-offset:3px; }}
++    .result-url {{ margin-top:2px; color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
++    .result-snippet {{ margin-top:4px; color:var(--text); font-size:14px; }}
+   </style>
+-</head>
+-<body>
+-  <main>
+-    <h1>Web Search</h1>
+-    <form id="search-form">
+-      <input id="query" value="{html.escape(safe_q, quote=True)}" autocomplete="off">
+-      <button type="submit">Search</button>
+-    </form>
+-    <div class="status" id="status">Loading...</div>
+-    <div id="results"></div>
+-  </main>
+   <script nonce="{nonce}">
++    try {{ const t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null'); const n = (t && t.name) || 'ow-sage';
++      if (/^ow-[a-z-]+$/.test(n)) document.documentElement.setAttribute('data-ow-skin', n); }} catch (_) {{}}
+     const initialQuery = {q_json};
+-    const input = document.getElementById('query');
+-    const statusEl = document.getElementById('status');
+-    const resultsEl = document.getElementById('results');
+     function esc(value) {{
+       return String(value || '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
+     }}
+     async function runSearch(query) {{
++      const statusEl = document.getElementById('status');
++      const resultsEl = document.getElementById('results');
+       query = String(query || '').trim();
+       if (!query) {{ statusEl.textContent = 'Enter a search query.'; resultsEl.innerHTML = ''; return; }}
+-      statusEl.textContent = 'Searching...';
++      statusEl.textContent = 'Searching…';
+       resultsEl.innerHTML = '';
+       const fd = new FormData();
+       fd.append('query', query);
+@@ -126,16 +129,30 @@ def setup_search_routes(config) -> APIRouter:
+         </a>`;
+       }}).join('');
+     }}
+-    document.getElementById('search-form').addEventListener('submit', ev => {{
+-      ev.preventDefault();
+-      const q = input.value.trim();
+-      const url = new URL(window.location.href);
+-      url.searchParams.set('q', q);
+-      history.replaceState(null, '', url);
+-      runSearch(q);
++    document.addEventListener('DOMContentLoaded', () => {{
++      const input = document.getElementById('query');
++      document.getElementById('search-form').addEventListener('submit', ev => {{
++        ev.preventDefault();
++        const q = input.value.trim();
++        const url = new URL(window.location.href);
++        url.searchParams.set('q', q);
++        history.replaceState(null, '', url);
++        runSearch(q);
++      }});
++      runSearch(initialQuery);
+     }});
+-    runSearch(initialQuery);
+   </script>
++</head>
++<body>
++  <header class="bar"><a class="back" href="/" title="Back to OpenWings">← OpenWings</a><strong class="title">Web search</strong></header>
++  <main>
++    <form id="search-form" role="search">
++      <input id="query" type="search" value="{html.escape(safe_q, quote=True)}" autocomplete="off" aria-label="Search the web">
++      <button type="submit">Search</button>
++    </form>
++    <div class="status" id="status" role="status" aria-live="polite">Loading…</div>
++    <div id="results"></div>
++  </main>
+ </body>
+ </html>"""
+         return HTMLResponse(page)
+diff --git a/src/agent_loop.py b/src/agent_loop.py
+index 28c5b2e..ecebb2b 100644
+--- a/src/agent_loop.py
++++ b/src/agent_loop.py
+@@ -1695,6 +1695,9 @@ def _parse_explicit_theme_change_request(text: str) -> Optional[tuple[str, str]]
+         value,
+     )
+     presets = (
++        # OpenWings looks by the names the theme picker shows (set_theme maps
++        # them to their keys, src/theme_palette.py THEME_ALIASES).
++        "lichen|duet night|duet|hush night|hush|"
+         "dark|light|midnight|paper|cyberpunk|retrowave|forest|ocean|ume|"
+         "copper|terminal|organs|lavender|gpt|claude|cute"
+     )
+@@ -8127,7 +8130,7 @@ If a calendar create/update request lacks a required date, time, or target event
+     "send_to_session": "- ```send_to_session``` — Send a message to another session. Line 1 = session_id, rest = message. Use for orchestrating work across sessions.",
+     "search_chats": "- ```search_chats``` — Search past session transcripts for direct conversation evidence. Use when user asks 'did we discuss X?', 'find the conversation about Y', or when prior chat context is more appropriate than persistent memory.",
+     "pipeline": "- ```pipeline``` — Run a multi-step AI pipeline. Args (JSON) with ordered steps, each specifying a model and prompt. Use for complex workflows.",
+-    "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook), `open_panel calendar month|week|year|agenda [YYYY-MM or YYYY-MM-DD]` (open calendar directly to a view/range), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open calendar\" / \"open schedule\" / \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open theme\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night. For any other vibe/name, use create_theme.",
++    "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook), `open_panel calendar month|week|year|agenda [YYYY-MM or YYYY-MM-DD]` (open calendar directly to a view/range), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open calendar\" / \"open schedule\" / \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open theme\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-sage (Lichen, the default), ow-duet, ow-duet-night, ow-hush, ow-hush-night. For any other vibe/name, use create_theme.",
+     "ask_user": "- ```ask_user``` — Ask the user a question when the task is genuinely ambiguous and the answer changes what you do next (pick an approach, confirm an assumption, choose a target). Args (JSON): {\"question\": \"...\", \"options\": [{\"label\": \"...\", \"description\": \"...\"?}, ...], \"multi\": false?}. 2-6 options. The user gets clickable buttons; calling this ENDS your turn and their choice comes back as your next message. For open-ended missing data such as an exact calendar date, include an \"Exact date\" option and ask the user to type the date; do not invent arbitrary choices. Prefer sensible defaults — only ask when you truly can't proceed well without their input.",
+     "update_plan": "- ```update_plan``` — While executing an approved plan, write the plan back: tick steps done or revise them. Args (JSON): {\"plan\": \"- [x] done step\\n- [ ] next step\"}. Always pass the COMPLETE checklist, not a diff. Call it after finishing each step (mark it `- [x]`) and whenever the user asks to change the plan. The user's docked plan window updates live. Does nothing if there's no active plan.",
+     "list_served_models": "- ```list_served_models``` — Show what the Cookbook (LLM-serving subsystem) is currently running. NO args. Use this for ANY 'what's running' / 'what's serving' / 'show my cookbook' / 'is anything up' query. DO NOT shell out (`ps aux`, `docker ps`, etc.) — this tool is the source of truth. Failed serve tasks include recent logs plus diagnosis/retry suggestions; use those suggestions to call `serve_model` again with an adjusted command when appropriate.",
+diff --git a/src/ai_interaction.py b/src/ai_interaction.py
+index d5f1c1c..1581020 100644
+--- a/src/ai_interaction.py
++++ b/src/ai_interaction.py
+@@ -709,7 +709,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
+       toggle <name> <on|off>  — Toggle a setting (web, bash, rag, research, incognito, document_editor)
+       set_mode <agent|chat>   — Switch between agent and chat mode
+       switch_model <model>    — Change the model for the current session
+-      set_theme <preset>      — Apply a built-in theme preset (dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night)
++      set_theme <preset>      — Apply a built-in theme preset (dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-sage (Lichen, the default), ow-duet, ow-duet-night, ow-hush, ow-hush-night)
+       create_theme <name> <bg> <fg> <panel> <border> <accent> [key=val ...] — Create custom theme. Optional key=val: advanced color overrides AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false
+       get_theme               — Return the last server-synchronized theme for this user
+       open_panel <name> [view] — Open a panel; Cookbook views are download/models, launch/serve, active/running, dependencies, settings
+@@ -817,6 +817,8 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
+ 
+     elif action == "set_theme":
+         theme_name = content.strip().partition(' ')[2].strip().lower().replace(' ', '-')
++        from src.theme_palette import THEME_ALIASES
++        theme_name = THEME_ALIASES.get(theme_name, theme_name)
+         # Theme colors are defined in static/js/theme.js on the frontend.
+         # We pass the name; the frontend looks it up from presets + custom themes.
+         # Also check user's custom themes stored in prefs.
+diff --git a/src/app_helpers.py b/src/app_helpers.py
+index 5dd7728..dc15239 100644
+--- a/src/app_helpers.py
++++ b/src/app_helpers.py
+@@ -48,6 +48,11 @@ def serve_html_with_nonce(request: Request, file_path: str) -> HTMLResponse:
+         raise HTTPException(500, "Internal server error")
+     nonce = getattr(request.state, "csp_nonce", "")
+     html = html.replace("{{CSP_NONCE}}", nonce)
++    # OpenWings: the theme picker lists only the OpenWings looks unless the
++    # deployment sets WINGS_SHOW_CLASSIC_THEMES=1 (static/js/theme.js reads
++    # index.html's data-ow-classic-themes).
++    classic = os.environ.get("WINGS_SHOW_CLASSIC_THEMES", "").strip().lower() in ("1", "true", "yes", "on")
++    html = html.replace("{{WINGS_CLASSIC_THEMES}}", "1" if classic else "0")
+     return HTMLResponse(html)
+ 
+ 
+diff --git a/src/theme_palette.py b/src/theme_palette.py
+index 5bad276..c315f37 100644
+--- a/src/theme_palette.py
++++ b/src/theme_palette.py
+@@ -1,11 +1,15 @@
+ """Normalize the small theme palette without discarding explicit choices."""
+ import re
+ 
+-THEME_PRESETS = ('ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night',
++THEME_PRESETS = ('ow-sage', 'ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night',
+                  'dark', 'light', 'midnight', 'cyberpunk', 'retrowave', 'forest',
+                  'ocean', 'ume', 'terminal', 'organs', 'gpt', 'claude', 'cute',
+                  'eclipse', 'porcelain', 'arcade', 'blueprint', 'monolith', 'yoyo')
+ 
++# OpenWings: the names people see in the theme picker, for set_theme.
++THEME_ALIASES = {'lichen': 'ow-sage', 'duet': 'ow-duet', 'duet-night': 'ow-duet-night',
++                 'hush': 'ow-hush', 'hush-night': 'ow-hush-night'}
++
+ BACKGROUND_PATTERNS = ('none', 'dots', 'synapse', 'rain', 'constellations',
+                        'perlin-flow', 'petals', 'sparkles', 'embers',
+                        'starfield-depth', 'ascii-fireflies')
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 3447d20..cc7c121 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -912,7 +912,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "ui_control",
+-            "description": "Control the user interface. Actions: toggle (turn tools on/off), open_panel (open a modal: documents/library, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook; calendar supports month/week/year/agenda plus a date; Cookbook supports models/download, launch/serve, active/running, dependencies, and settings views), open_email_reply (legacy UI-only reply opener; prefer email MCP draft_email_reply for assistant-written reply drafts so a normal document-backed email draft is created), set_mode, switch_model, set_theme (built-in presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night), create_theme (CREATE any custom theme with a name + colors object — pick distinctive, evocative hex colors that match the requested aesthetic, NOT generic defaults. The theme auto-applies after creation), get_theme, and get_toggles. When a user asks for ANY theme not in the built-in preset list, ALWAYS use create_theme.",
++            "description": "Control the user interface. Actions: toggle (turn tools on/off), open_panel (open a modal: documents/library, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook; calendar supports month/week/year/agenda plus a date; Cookbook supports models/download, launch/serve, active/running, dependencies, and settings views), open_email_reply (legacy UI-only reply opener; prefer email MCP draft_email_reply for assistant-written reply drafts so a normal document-backed email draft is created), set_mode, switch_model, set_theme (built-in presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-sage (Lichen, the default), ow-duet, ow-duet-night, ow-hush, ow-hush-night), create_theme (CREATE any custom theme with a name + colors object — pick distinctive, evocative hex colors that match the requested aesthetic, NOT generic defaults. The theme auto-applies after creation), get_theme, and get_toggles. When a user asks for ANY theme not in the built-in preset list, ALWAYS use create_theme.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+diff --git a/static/index.html b/static/index.html
+index 9ed45cd..18dc1f5 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -1,12 +1,12 @@
+ <!DOCTYPE html>
+-<html lang="en">
++<html lang="en" data-ow-classic-themes="{{WINGS_CLASSIC_THEMES}}">
+ <head>
+   <meta charset="UTF-8" />
+   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
+   <title>OpenWings</title>
+   <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
+   <link rel="manifest" href="/static/manifest.json">
+-  <meta name="theme-color" content="#282c34">
++  <meta name="theme-color" content="#C7CFC1">
+   <meta name="apple-mobile-web-app-capable" content="yes">
+   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+   <!-- Disable iOS / Android auto-linkifying of numbers (phone/date/address)
+@@ -14,6 +14,8 @@
+        browser-default styling that didn't match the Odysseus theme. -->
+   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
++  <!-- OpenWings: motion for the Lichen look (does nothing under any other theme) -->
++  <script src="/static/openwings/motion.js?v=2" defer></script>
+   <script nonce="{{CSP_NONCE}}">
+   window._odysseusLoadTime = Date.now();
+   // Stops iOS focus-zoom on every field; iOS still allows pinch-zoom, other platforms would not.
+@@ -26,14 +28,21 @@
+   (function(){
+     try {
+       var t = JSON.parse(localStorage.getItem('odysseus-theme'));
+-      // OpenWings: load its looks stylesheet and mark the chosen look before
+-      // the first paint (the stylesheet only styles html[data-ow-skin=...]).
+-      var owLink = document.createElement('link');
+-      owLink.rel = 'stylesheet';
+-      owLink.href = '/static/openwings/skins.css?v=2';
+-      document.head.appendChild(owLink);
+-      var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-duet' : 'ow-duet-night');
++      // OpenWings: mark the chosen look before the first paint (skins.css,
++      // linked right after this script, styles only html[data-ow-skin=...]).
++      var owName = (t && t.name) || 'ow-sage';
+       document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
++      // Upstream preloads Fira Code, its app font. The OpenWings looks bring
++      // their own fonts, so only an upstream theme on the mono font asks
++      // for it.
++      if (!/^ow-/.test(owName) && (!t || !t.font || /^(mono|gohu|GohuFont)$/.test(t.font))) {
++        ['FiraCode-Regular', 'FiraCode-SemiBold'].forEach(function (f) {
++          var pl = document.createElement('link');
++          pl.rel = 'preload'; pl.as = 'font'; pl.type = 'font/woff2'; pl.crossOrigin = '';
++          pl.href = '/static/fonts/' + f + '.woff2';
++          document.head.appendChild(pl);
++        });
++      }
+       if (t && t.colors) {
+         var s = document.documentElement.style;
+         var c = t.colors;
+@@ -129,6 +138,14 @@
+     } catch(e){}
+   })();
+   </script>
++  <!-- OpenWings looks. A parser-inserted stylesheet holds the first layout and
++       the scripts after it, so no upstream font is fetched before a look applies.
++       It has its own cache-bust token (owlooks<N>, the same on every OpenWings
++       page and in sw.js PRECACHE, bumped with CACHE_NAME when a look changes).
++       The href is page-relative (this page is only served at / and one-segment
++       paths, so it resolves to /static/openwings/...): upstream's split
++       stylesheets, linked as /static/..., keep sharing their one token. -->
++  <link rel="stylesheet" href="static/openwings/skins.css?v=owlooks4">
+   <!-- Per-route favicon. Bookmarking /calendar shows a calendar icon,
+        /notes a notes icon, etc. Each shape is rendered in the current
+        theme accent color. Falls back to the boat logo on the root path. -->
+@@ -254,15 +271,11 @@
+        ```mermaid fence. They used to load here from cdn.jsdelivr.net on every
+        page load, which cost ~985 KB on the wire, broke offline installs, and
+        announced every session to a third party. -->
+-  <!-- Preload the two faces first paint actually uses: Fira Code 400 and 600,
+-       the app font and the weight the sidebar and header text render at. They
+-       are declared in style.css, so without a hint they are only discovered
+-       after the stylesheet parses and then queue behind the module graph.
+-       crossorigin is required even though these are same-origin: fonts are
+-       always fetched in CORS mode, and a preload whose mode does not match the
+-       real request is discarded and the font fetched a second time. -->
+-  <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/FiraCode-Regular.woff2">
+-  <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/FiraCode-SemiBold.woff2">
++  <!-- Upstream preloaded Fira Code 400 and 600 here. OpenWings adds those
++       preloads from the boot script above, and only for an upstream theme
++       (its looks use their own fonts). crossorigin stays: fonts are always
++       fetched in CORS mode, and a preload whose mode does not match the real
++       request is discarded and the font fetched a second time. -->
+   <link rel="stylesheet" href="/static/css/00-tokens.css?v=20260929csssplit">
+   <link rel="stylesheet" href="/static/css/01-agent-chat.css?v=20260929csssplit">
+   <link rel="stylesheet" href="/static/css/02-compare.css?v=20260929csssplit">
+diff --git a/static/js/calendar.js b/static/js/calendar.js
+index ab25c3a..c6cd8d9 100644
+--- a/static/js/calendar.js
++++ b/static/js/calendar.js
+@@ -11,7 +11,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+ import { bindMenuDismiss } from './escMenuStack.js';
+ import {
+   WEEKDAYS, WEEKDAYS_SUN, MONTHS, MON_SHORT,
+-  CAL_PALETTE, CAL_COLORS, _CAL_CUSTOM_GRADIENT, _TYPE_PALETTE,
++  CAL_PALETTE, CAL_COLORS, _CAL_CUSTOM_GRADIENT, _TYPE_PALETTE, _owLookList,
+   _trashIcon, _moreIcon, _bellIcon,
+   _isCalBgImage, _calBgImageUrl, _calBgCss, _cssUrlEscape,
+   _calReadableTextColor,
+@@ -191,7 +191,14 @@ async function _fetchCalendars() {
+     const data = await res.json();
+     _calendars = data.calendars || [];
+     if (data.error) _calendarsError = data.error;
++    // OpenWings: under a look, calendars with no colour, or upstream's default
++    // blue, take the look's palette.
++    const lookPalette = _owLookList('--ow-palette');
+     _calendars.forEach((c, i) => {
++      if (lookPalette && (!c.color || c.color.startsWith('<') || c.color.toLowerCase() === '#5b8abf')) {
++        c.color = lookPalette[i % lookPalette.length];
++        return;
++      }
+       if (!c.color || c.color.startsWith('<')) c.color = CAL_PALETTE[i % CAL_PALETTE.length];
+     });
+   } catch (e) { _calendars = []; _calendarsError = e.message || 'Connection failed'; }
+@@ -3093,7 +3100,7 @@ if (typeof window !== 'undefined' && !window._calUndoBound) {
+ // ── Calendar Settings ──
+ 
+ function _calendarSettingsColor(color) {
+-  return /^#[0-9a-f]{6}$/i.test(String(color || '')) ? String(color).toLowerCase() : '#5b8abf';
++  return /^#[0-9a-f]{6}$/i.test(String(color || '')) ? String(color).toLowerCase() : ((_owLookList('--ow-palette') || ['#5b8abf'])[0]).toLowerCase();
+ }
+ 
+ async function _showCalSettings() {
+@@ -3101,7 +3108,7 @@ async function _showCalSettings() {
+   if (existing) { existing.remove(); return; }
+ 
+   const cals = _calendars;
+-  const COLORS = ['#5b8abf','#4caf50','#ff9800','#e91e63','#9c27b0','#00bcd4','#795548','#607d8b','#f44336','#7c4dff'];
++  const COLORS = _owLookList('--ow-palette') || ['#5b8abf','#4caf50','#ff9800','#e91e63','#9c27b0','#00bcd4','#795548','#607d8b','#f44336','#7c4dff'];
+ 
+   const overlay = document.createElement('div');
+   overlay.id = 'cal-settings-panel';
+@@ -3562,14 +3569,23 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+ 	      <div class="cal-form-row" style="align-items:center;gap:8px;">
+ 	        <label style="font-size:11px;opacity:0.5;">Color</label>
+ 	        <div class="note-color-picker" id="cal-f-colors">
+-          ${CAL_COLORS.map(c => {
++          ${(() => {
++            // OpenWings: under a look the swatches are the look's tints and the
++            // custom swatch is a ring of the look's palette.
++            const tints = _owLookList('--ow-tints');
++            const ring = _owLookList('--ow-palette');
++            const customRing = ring ? `conic-gradient(from 0deg, ${ring.join(', ')}, ${ring[0]})` : _CAL_CUSTOM_GRADIENT;
++            let tintIdx = 0;
++            return CAL_COLORS.map(c0 => (tints && c0.hex && c0.hex !== 'custom') ? { ...c0, hex: tints[tintIdx++ % tints.length] } : c0)
++              .map(c => ({ c, customRing }));
++          })().map(({ c, customRing }) => {
+             const cur = existing?.color || '';
+             const isCustom = c.hex === 'custom';
+             const isActive = isCustom ? _isCalBgImage(cur) : (cur === c.hex || (!cur && !c.hex));
+             let bg;
+             if (isCustom) {
+               const url = _calBgImageUrl(cur);
+-              bg = url ? `center/cover no-repeat url('${_cssUrlEscape(url)}')` : _CAL_CUSTOM_GRADIENT;
++              bg = url ? `center/cover no-repeat url('${_cssUrlEscape(url)}')` : customRing;
+             } else {
+               bg = c.hex || 'var(--border)';
+             }
+diff --git a/static/js/calendar/utils.js b/static/js/calendar/utils.js
+index a0743cc..49ca687 100644
+--- a/static/js/calendar/utils.js
++++ b/static/js/calendar/utils.js
+@@ -35,9 +35,29 @@ export const CAL_COLORS = [
+ 
+ export const _CAL_CUSTOM_GRADIENT = 'conic-gradient(from 0deg, #e06c75, #d19a66, #e5c07b, #98c379, #61afef, #c678dd, #e06c75)';
+ 
++// OpenWings: under a look its stylesheet lists a palette of solid colours
++// (--ow-palette: dots, tags, calendars) and of event tints (--ow-tints).
++// Returns that list, or null without a look (upstream's colours then).
++const _owLookCache = { key: null, lists: {} };
++export function _owLookList(name) {
++  try {
++    const skin = document.documentElement.getAttribute('data-ow-skin') || '';
++    if (!/^ow-/.test(skin)) return null;
++    if (_owLookCache.key !== skin) { _owLookCache.key = skin; _owLookCache.lists = {}; }
++    if (!(name in _owLookCache.lists)) {
++      const list = getComputedStyle(document.documentElement).getPropertyValue(name)
++        .split(/[\s,]+/).filter(v => /^#[0-9a-f]{6}$/i.test(v));
++      _owLookCache.lists[name] = list.length ? list : null;
++    }
++    return _owLookCache.lists[name];
++  } catch (_) { return null; }
++}
++// Which --ow-palette entry each event tag takes under a look.
++const _OW_TYPE_SLOT = { '!': 3, work: 0, personal: 1, health: 2, travel: 3, meal: 4, social: 5, admin: 6, other: 7, untagged: 6 };
++
+ // Per-event-type accent palette. Used by the colored dots in month/year
+ // grids and the chip stripe behind agenda rows.
+-export const _TYPE_PALETTE = {
++const _UPSTREAM_TYPE_PALETTE = {
+   '!':      '#e5a33a',  // important — amber, less harsh than red
+   work:     '#5b8abf',
+   personal: '#a07ae0',
+@@ -49,6 +69,15 @@ export const _TYPE_PALETTE = {
+   other:    '#6b9cb5',
+   untagged: '#555',
+ };
++export const _TYPE_PALETTE = new Proxy(_UPSTREAM_TYPE_PALETTE, {
++  get(target, key) {
++    if (typeof key === 'string' && key in _OW_TYPE_SLOT) {
++      const look = _owLookList('--ow-palette');
++      if (look) return look[_OW_TYPE_SLOT[key] % look.length];
++    }
++    return target[key];
++  },
++});
+ 
+ // SVG icon literals reused across the calendar UI.
+ export const _trashIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+diff --git a/static/js/chat.js b/static/js/chat.js
+index 5186b32..11a4554 100644
+--- a/static/js/chat.js
++++ b/static/js/chat.js
+@@ -3400,7 +3400,16 @@ import { invalidateSettings } from './appConfig.js';
+             commandHtml: q ? `<div class="agent-thread-summary">${uiModule.esc(q)}</div>` : '',
+           };
+         }
+-        return { label: '', commandHtml: '' };
++        return { label: _toolLabels[lower] ? '' : _owToolName(rawTool), commandHtml: '' };
++      }
++
++      // OpenWings: a tool with no label of its own shows its name in words,
++      // not the raw identifier ("mcp__email__draft_email" reads "Draft email").
++      function _owToolName(raw) {
++        const name = String(raw || '');
++        if (!name.includes('_')) return '';
++        const words = name.split('__').pop().replace(/[_-]+/g, ' ').trim();
++        return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
+       }
+ 
+       function _suppressRawToolOutput(tool, ok) {
+diff --git a/static/js/chatRenderer.js b/static/js/chatRenderer.js
+index f578416..1c3d39c 100644
+--- a/static/js/chatRenderer.js
++++ b/static/js/chatRenderer.js
+@@ -432,7 +432,16 @@ function _toolDisplayInfo(tool, command, data = null) {
+       commandHtml: q ? `<div class="agent-thread-summary">${uiModule.esc(q)}</div>` : '',
+     };
+   }
+-  return { label: '', commandHtml: '' };
++  return { label: _owToolName(rawTool), commandHtml: '' };
++}
++
++// OpenWings: a tool with no label of its own shows its name in words, not
++// the raw identifier ("mcp__email__draft_email" reads "Draft email").
++function _owToolName(raw) {
++  const name = String(raw || '');
++  if (!name.includes('_')) return '';
++  const words = name.split('__').pop().replace(/[_-]+/g, ' ').trim();
++  return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
+ }
+ 
+ function _suppressRawToolOutput(tool, ok) {
+@@ -1048,9 +1057,9 @@ export function modelRouteLabel(
+     if (!routeChanged) return model;
+     const from = shortEndpointLabel(requestedEndpointLabel || 'Selected route');
+     const to = shortEndpointLabel(actualEndpointLabel || actualEndpointId);
+-    return model + ' (' + from + ' -> ' + to + ')';
++    return model + ' (' + from + '\u00a0\u2192 ' + to + ')';
+   }
+-  return shortModel(requested) + ' -> ' + shortModel(actual);
++  return shortModel(requested) + '\u00a0\u2192 ' + shortModel(actual);
+ }
+ 
+ export function replyModelPair(modelName, metadata) {
+diff --git a/static/js/cookbook.js b/static/js/cookbook.js
+index 0788832..75c7a0f 100644
+--- a/static/js/cookbook.js
++++ b/static/js/cookbook.js
+@@ -185,6 +185,17 @@ const _SERVER_COLOR_CHOICES = [
+ ];
+ const _SERVER_AUTO_COLOR_VALUES = _SERVER_COLOR_CHOICES.slice(1).map(([value]) => value);
+ 
++// OpenWings: under a look, servers without a colour of their own take the
++// look's palette (--ow-palette in its stylesheet), not upstream's purple first.
++function _serverAutoColors() {
++  try {
++    if (!/^ow-/.test(document.documentElement.getAttribute('data-ow-skin') || '')) return _SERVER_AUTO_COLOR_VALUES;
++    const list = getComputedStyle(document.documentElement).getPropertyValue('--ow-palette')
++      .split(/[\s,]+/).filter(v => /^#[0-9a-fA-F]{6}$/.test(v));
++    return list.length ? list : _SERVER_AUTO_COLOR_VALUES;
++  } catch (_) { return _SERVER_AUTO_COLOR_VALUES; }
++}
++
+ function _serverColorValue(value) {
+   const v = String(value || '').trim();
+   return /^#[0-9a-fA-F]{6}$/.test(v) ? v : '';
+@@ -196,22 +207,23 @@ function _serverColor(s) {
+ 
+ function _serverColorLabel(color) {
+   const hit = _SERVER_COLOR_CHOICES.find(([value]) => value === color);
+-  return hit ? hit[1] : 'Auto';
++  return hit ? hit[1] : (color ? 'Look colour' : 'Auto');
+ }
+ 
+ function _autoServerColor(index) {
+   const servers = Array.isArray(_envState.servers) ? _envState.servers : [];
+   const explicit = new Set(servers.map(s => _serverColor(s)).filter(Boolean));
+   const used = new Set(explicit);
++  const autoColors = _serverAutoColors();
+   for (let j = 0; j <= index; j++) {
+     const s = servers[j] || {};
+     const explicitColor = _serverColor(s);
+     if (explicitColor) continue;
+-    const picked = _SERVER_AUTO_COLOR_VALUES.find(c => !used.has(c)) || _SERVER_AUTO_COLOR_VALUES[j % _SERVER_AUTO_COLOR_VALUES.length] || '';
++    const picked = autoColors.find(c => !used.has(c)) || autoColors[j % autoColors.length] || '';
+     if (j === index) return picked;
+     if (picked) used.add(picked);
+   }
+-  return _SERVER_AUTO_COLOR_VALUES[index % _SERVER_AUTO_COLOR_VALUES.length] || '';
++  return autoColors[index % autoColors.length] || '';
+ }
+ 
+ function _resolvedServerColor(s, index) {
+diff --git a/static/js/slashCommands.js b/static/js/slashCommands.js
+index 9652588..9f53958 100644
+--- a/static/js/slashCommands.js
++++ b/static/js/slashCommands.js
+@@ -1502,7 +1502,9 @@ async function _cmdTheme(args, ctx) {
+   const sub = (args[0] || '').toLowerCase();
+   const custom = tm && tm.getCustomThemes ? tm.getCustomThemes() : {};
+   const customNames = Object.keys(custom);
+-  const presetNames = tm && tm.THEMES ? Object.keys(tm.THEMES) : [];
++  // OpenWings: list what the theme picker lists (any preset still applies).
++  const _activeTheme = (tm && tm.getSaved && (tm.getSaved() || {}).name) || '';
++  const presetNames = tm && tm.THEMES ? (tm.pickerThemeNames ? tm.pickerThemeNames(_activeTheme) : Object.keys(tm.THEMES)) : [];
+   if (!sub || !tm || !tm.THEMES) {
+     const customLabel = customNames.length ? `\nCustom: ${customNames.join(', ')}` : '';
+     slashReply(`Usage:\n  /theme &lt;name&gt; — Apply a preset or custom theme\n  /theme save &lt;name&gt; — Save current colors as a custom theme\n  /theme delete &lt;name&gt; — Delete a custom theme\nPresets: ${presetNames.join(', ')}${customLabel}`);
+@@ -5191,7 +5193,8 @@ async function _cmdSetup(args, ctx) {
+ 
+     if (topic === 'theme' || topic === 'themes') {
+       const tm = themeModule;
+-      const presets = tm && tm.THEMES ? Object.keys(tm.THEMES) : [];
++      const _activeTheme = (tm && tm.getSaved && (tm.getSaved() || {}).name) || '';
++      const presets = tm && tm.THEMES ? (tm.pickerThemeNames ? tm.pickerThemeNames(_activeTheme) : Object.keys(tm.THEMES)) : [];
+       const customObj = tm && tm.getCustomThemes ? tm.getCustomThemes() : {};
+       const customKeys = Object.keys(customObj);
+ 
+diff --git a/static/js/spinner.js b/static/js/spinner.js
+index 0037aee..8591877 100644
+--- a/static/js/spinner.js
++++ b/static/js/spinner.js
+@@ -11,6 +11,23 @@
+ // never coming and the frames are drawing for nobody.
+ const UNATTACHED_GRACE_MS = 2000;
+ 
++// OpenWings: under its looks (html[data-ow-skin="ow-..."]) every busy state
++// shows one neutral mark, three small dots that breathe (opacity only, so it
++// keeps going under reduced motion; skins.css .ow-busy), instead of upstream's
++// sea-themed whirlpool and sine-wave canvases and its ASCII wave. Upstream
++// themes keep upstream's spinners. The look is checked when a spinner is
++// created, so a theme switch applies to the next one.
++function _owLook() {
++  try { return /^ow-/.test(document.documentElement.getAttribute('data-ow-skin') || ''); } catch (_) { return false; }
++}
++function _owBusyMark(size) {
++  const mark = document.createElement('span');
++  mark.className = 'ow-busy';
++  mark.setAttribute('aria-hidden', 'true');
++  if (size) mark.style.setProperty('--ow-busy-size', size + 'px');
++  return mark;
++}
++
+ class Spinner {
+   constructor(message = "AI is processing", style = "right", animation = "spinner") {
+     // Different animation frames
+@@ -21,6 +38,7 @@ class Spinner {
+ 
+     this.animation = animation;
+     this.frames = this.animations[animation] || this.animations.spinner;
++    this._ow = (animation === 'wave' || animation === 'sinewave' || animation === 'whirlpool') && _owLook();
+     this.message = message;
+     this.style = style; // "left", "right", or "clean"
+     this.isRunning = false;
+@@ -37,6 +55,9 @@ class Spinner {
+    * Create and return the spinner HTML element
+    */
+   createElement() {
++    if (this._ow && (this.animation === 'sinewave' || this.animation === 'whirlpool')) {
++      return this._createOwBusyElement();
++    }
+     if (this.animation === 'sinewave') {
+       return this._createSineWaveElement();
+     }
+@@ -45,12 +66,39 @@ class Spinner {
+     }
+     const span = document.createElement('span');
+     span.className = 'ai-spinner';
+-    span.style.cssText = 'font-family: monospace; white-space: pre;';
++    // Under a look the text keeps the look's font (the mark needs no mono).
++    span.style.cssText = this._ow ? 'white-space: pre;' : 'font-family: monospace; white-space: pre;';
+     this.element = span;
+     this.updateDisplay();
+     return span;
+   }
+ 
++  // OpenWings: the same layout as the whirlpool and sine-wave elements (and
++  // their class names, which upstream's CSS positions), with the neutral mark
++  // in place of the canvas. Nothing is drawn per frame.
++  _createOwBusyElement() {
++    const sine = this.animation === 'sinewave';
++    const wrapper = document.createElement('span');
++    wrapper.className = 'ai-spinner ' + (sine ? 'ai-spinner-sinewave' : 'ai-spinner-whirlpool') + ' ai-spinner-ow';
++    wrapper.style.cssText = 'white-space: pre; display: inline-flex; align-items: center; gap: 6px;';
++    const mark = _owBusyMark(sine ? 18 : (this._wpSize || 18));
++    const msgSpan = document.createElement('span');
++    msgSpan.textContent = this.message;
++    this._msgSpan = msgSpan;
++    if (this.style === 'left') {
++      wrapper.appendChild(mark);
++      wrapper.appendChild(msgSpan);
++    } else if (this.style === 'right') {
++      wrapper.appendChild(msgSpan);
++      wrapper.appendChild(mark);
++    } else {
++      wrapper.appendChild(sine ? msgSpan : mark);
++    }
++    this._owMark = mark;
++    this.element = wrapper;
++    return wrapper;
++  }
++
+   _createSineWaveElement() {
+     const wrapper = document.createElement('span');
+     wrapper.className = 'ai-spinner ai-spinner-sinewave';
+@@ -318,6 +366,14 @@ class Spinner {
+   updateDisplay() {
+     if (!this.element) return;
+ 
++    if (this._ow) {
++      // One render: re-writing the mark every tick would restart its fade.
++      const mark = '<span class="ow-busy ow-busy-inline" aria-hidden="true"></span>';
++      this.element.innerHTML = this.style === 'left' ? `${mark} ${this.message}`
++        : (this.style === 'right' ? `${this.message} ${mark}` : this.message);
++      return;
++    }
++
+     const frame = this.frames[this.currentFrame % this.frames.length];
+ 
+     let display = '';
+@@ -339,6 +395,12 @@ class Spinner {
+     if (this.isRunning) return;
+     this.isRunning = true;
+ 
++    if (this._ow) {
++      // The mark animates in CSS; there is no frame loop to run.
++      if (this._owMark) this._owMark.classList.remove('ow-busy-stopped');
++      return;
++    }
++
+     if (this.animation === 'sinewave') {
+       this._wavePrev = performance.now();
+       this._armVisibilityPause();
+@@ -366,6 +428,7 @@ class Spinner {
+    */
+   stop() {
+     this.isRunning = false;
++    if (this._owMark) this._owMark.classList.add('ow-busy-stopped');
+     if (this.intervalId) {
+       clearInterval(this.intervalId);
+       this.intervalId = null;
+diff --git a/static/js/theme.js b/static/js/theme.js
+index c3b4e42..c1a8d67 100644
+--- a/static/js/theme.js
++++ b/static/js/theme.js
+@@ -11,6 +11,7 @@ import { snapModalToZone } from './tileManager.js?v=20260910responsivebounds1';
+ export const THEMES = {
+   // OpenWings looks: each also changes type, shapes and textures through
+   // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
++  'ow-sage':            { bg:'#C7CFC1', fg:'#1B281C', panel:'#D6DCCF', border:'#A0A79A', red:'#7A4C13' },
+   'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
+   'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#9DC4BA' },
+   'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
+@@ -40,16 +41,50 @@ export const THEMES = {
+   yoyo:       { bg:'#211f23', fg:'#dfdbd7', panel:'#141415', border:'#3e5146', red:'#e09d6c' },
+ };
+ 
+-// OpenWings: with no saved choice, start in the default OpenWings look, in
+-// its day or night version per the operating system. A saved theme still wins.
+-const OW_DEFAULT_LOOK = 'ow-duet';
+-const DEFAULT_THEME = OW_DEFAULT_LOOK + ((typeof window !== 'undefined' && window.matchMedia
+-  && window.matchMedia('(prefers-color-scheme: light)').matches) ? '' : '-night');
++// OpenWings: with no saved choice, start in the default OpenWings look. A
++// look with a night version follows the operating system; Lichen (ow-sage)
++// has one mode for everyone, so it never gets a -night suffix. A saved
++// theme still wins.
++const OW_DEFAULT_LOOK = 'ow-sage';
++const OW_SINGLE_MODE_LOOKS = new Set(['ow-sage']);
++const DEFAULT_THEME = OW_DEFAULT_LOOK + (OW_SINGLE_MODE_LOOKS.has(OW_DEFAULT_LOOK) ? '' : ((typeof window !== 'undefined' && window.matchMedia
++  && window.matchMedia('(prefers-color-scheme: light)').matches) ? '' : '-night'));
+ const THEME_DISPLAY_NAMES = {
+   ocean: 'starfield',
+   'ow-duet': 'Duet', 'ow-duet-night': 'Duet night',
+   'ow-hush': 'Hush', 'ow-hush-night': 'Hush night',
++  'ow-sage': 'Lichen',
+ };
++// OpenWings: the theme picker lists only the OpenWings looks, in this order.
++// Upstream's themes stay in THEMES: a theme someone already saved keeps
++// working (and stays listed while it is the active one), /theme <name> still
++// applies one, and the server lists them all again with
++// WINGS_SHOW_CLASSIC_THEMES=1 (it fills index.html's data-ow-classic-themes).
++const OW_PICKER_ORDER = ['ow-sage', 'ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night'];
++export function showClassicThemes() {
++  try { return document.documentElement.getAttribute('data-ow-classic-themes') === '1'; } catch (_) { return false; }
++}
++export function pickerThemeNames(activeName) {
++  const names = OW_PICKER_ORDER.filter(n => THEMES[n]);
++  const classic = Object.keys(THEMES).filter(n => !names.includes(n));
++  if (showClassicThemes()) return names.concat(classic);
++  if (activeName && classic.includes(activeName)) names.push(activeName);
++  return names;
++}
++export function themeDisplayName(name) {
++  return name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : (THEME_DISPLAY_NAMES[name] || name));
++}
++// OpenWings: what people type ("Lichen", "duet night") to the theme key
++// ("ow-sage", "ow-duet-night"); keys and unknown names pass through. The
++// agent's set_theme does the same with src/theme_palette.py THEME_ALIASES.
++export function resolveThemeName(input) {
++  const typed = String(input || '').trim().toLowerCase().replace(/\s+/g, '-');
++  if (!typed || THEMES[typed]) return typed;
++  for (const name of Object.keys(THEMES)) {
++    if (themeDisplayName(name).toLowerCase().replace(/\s+/g, '-') === typed) return name;
++  }
++  return typed;
++}
+ const LS_KEY = 'odysseus-theme';
+ const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
+ 
+@@ -543,6 +578,24 @@ export function applyOpenWingsSkin(name) {
+   } catch (_) {}
+ }
+ 
++// OpenWings: aria-checked follows .active, and only the checked swatch (or
++// the first, when none is) is in the Tab order.
++function _syncSwatchRadios(grids) {
++  for (const g of grids) {
++    const all = [...g.querySelectorAll('.theme-swatch')];
++    const on = all.find(s => s.classList.contains('active'));
++    all.forEach((s, i) => {
++      if (s.getAttribute('role') !== 'radio') s.setAttribute('role', 'radio');
++      const checked = s === on ? 'true' : 'false';
++      if (s.getAttribute('aria-checked') !== checked) s.setAttribute('aria-checked', checked);
++      // The attribute, not the property: a <div> already reports tabIndex -1
++      // without one, and is only focusable once the attribute is there.
++      const ti = (s === on || (!on && i === 0)) ? '0' : '-1';
++      if (s.getAttribute('tabindex') !== ti) s.setAttribute('tabindex', ti);
++    });
++  }
++}
++
+ // OpenWings: a look sets its own colours and type, so while one is active the
+ // colour, colour harmony and font controls are locked behind a short note.
+ // Otherwise the first colour edit would save a plain custom theme and drop
+@@ -571,6 +624,24 @@ function _syncOwCustomizeLock() {
+   }
+   const font = document.getElementById('theme-font-select');
+   if (font) font.disabled = on;
++  // The locked fields show the look's own values, not upstream's defaults
++  // (a red accent and Dark mode).
++  const look = on ? THEMES[document.documentElement.getAttribute('data-ow-skin')] : null;
++  if (look) {
++    const accent = document.getElementById('harmony-accent');
++    const accentHex = document.getElementById('harmony-accent-hex');
++    const mode = document.getElementById('harmony-mode');
++    if (accent) accent.value = look.red;
++    if (accentHex) accentHex.textContent = look.red;
++    if (mode) mode.value = _isDarkColour(look.bg) ? 'dark' : 'light';
++  }
++}
++
++function _isDarkColour(hex) {
++  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
++  if (!m) return false;
++  const [r, g, b] = m.slice(1).map(x => parseInt(x, 16));
++  return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 128;
+ }
+ 
+ export function save(name, colors, opts) {
+@@ -748,7 +819,7 @@ export function initThemeUI() {
+   const customThemes = _loadCustomThemes();
+ 
+   // Render preset swatches
+-  grid.innerHTML = Object.entries(THEMES).map(([name, c]) => `
++  grid.innerHTML = pickerThemeNames(activeName).map(name => [name, THEMES[name]]).map(([name, c]) => `
+     <div class="theme-swatch${name === activeName ? ' active' : ''}" data-theme="${name}">
+       <div class="theme-swatch-colors">
+         <span style="background:${c.bg}"></span>
+@@ -756,7 +827,7 @@ export function initThemeUI() {
+         <span style="background:${c.fg}"></span>
+         <span style="background:${c.red}"></span>
+       </div>
+-      ${name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : (THEME_DISPLAY_NAMES[name] || name))}
++      ${themeDisplayName(name)}
+     </div>
+   `).join('');
+ 
+@@ -858,6 +929,23 @@ export function initThemeUI() {
+         save(name, colors, { font: f, density: d, bgPattern: p, bgEffectColor: ec, bgEffectIntensity: ei, bgEffectSize: sz, bgEffectSpeed: sp, frosted: fr });
+       });
+     });
++    // OpenWings: the swatches are a radio group the keyboard can reach. Tab
++    // lands on the current look; arrows move between looks and wear them,
++    // Enter or Space wears the focused one.
++    g.setAttribute('role', 'radiogroup');
++    if (!g.hasAttribute('aria-label')) g.setAttribute('aria-label', g === grid ? 'Looks' : 'Your themes');
++    g.querySelectorAll('.theme-swatch').forEach(sw => {
++      sw.addEventListener('keydown', (e) => {
++        if (e.target !== sw) return;
++        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sw.click(); return; }
++        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
++        if (!step) return;
++        e.preventDefault();
++        const all = [...g.querySelectorAll('.theme-swatch')];
++        const next = all[(all.indexOf(sw) + step + all.length) % all.length];
++        if (next) { next.focus(); next.click(); }
++      });
++    });
+     g.querySelectorAll('.theme-delete-btn').forEach(btn => {
+       btn.addEventListener('click', async (e) => {
+         e.stopPropagation();
+@@ -870,6 +958,15 @@ export function initThemeUI() {
+     });
+   });
+ 
++  _syncSwatchRadios(allGrids);
++  if (!grid.dataset.owRadioWatch) {
++    // Other code (custom themes, Customize edits) moves the .active class:
++    // keep aria-checked and the tab stop on whichever swatch has it.
++    grid.dataset.owRadioWatch = '1';
++    const mo = new MutationObserver(() => _syncSwatchRadios([grid, document.getElementById('themeUserGrid')].filter(Boolean)));
++    [grid, userGrid].filter(Boolean).forEach(g => mo.observe(g, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] }));
++  }
++
+   // Init color pickers from current theme and apply syntax colors
+   const currentColors = saved ? saved.colors : THEMES[DEFAULT_THEME];
+   applyColors(currentColors);
+@@ -2340,7 +2437,7 @@ const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
+                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize, applyBgEffectSpeed,
+                        applyFrostedGlass,
+                        save, getSaved, saveCustomTheme, deleteCustomTheme,
+-                       getCustomThemes, DEFAULT_THEME };
++                       getCustomThemes, DEFAULT_THEME, pickerThemeNames, themeDisplayName, resolveThemeName };
+ 
+ export default themeModule;
+ 
+diff --git a/static/login.html b/static/login.html
+index e813496..d95b434 100644
+--- a/static/login.html
++++ b/static/login.html
+@@ -5,6 +5,7 @@
+ <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
+ <title>OpenWings — Login</title>
+ <link rel="icon" type="image/svg+xml" href="static/openwings/openwings-tile.svg">
++<meta name="theme-color" content="#C7CFC1">
+ <link rel="manifest" href="static/manifest.json">
+ <link rel="apple-touch-icon" href="static/icons/icon-192.png">
+ <script nonce="{{CSP_NONCE}}">
+@@ -44,13 +45,9 @@
+   try {
+     var t = JSON.parse(localStorage.getItem('odysseus-theme'));
+     var s = document.documentElement.style;
+-    // OpenWings: the chosen look (static/openwings/skins.css styles the
+-    // login card under html[data-ow-skin=...]).
+-    var owLink = document.createElement('link');
+-    owLink.rel = 'stylesheet';
+-    owLink.href = 'static/openwings/skins.css?v=2';
+-    document.head.appendChild(owLink);
+-    var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-duet' : 'ow-duet-night');
++    // OpenWings: mark the chosen look before the first paint (skins.css,
++    // linked right after this script, styles only html[data-ow-skin=...]).
++    var owName = (t && t.name) || 'ow-sage';
+     document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
+     if (t && t.colors) {
+       var c = t.colors;
+@@ -111,6 +108,9 @@
+   } catch(e){}
+ })();
+ </script>
++<!-- OpenWings looks. A parser-inserted stylesheet holds the first layout and
++     the scripts after it, so no upstream font is fetched before a look applies. -->
++<link rel="stylesheet" href="static/openwings/skins.css?v=owlooks4">
+ <style>
+   @font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-Regular.woff2') format('woff2'); }
+   @font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
+@@ -240,15 +240,10 @@
+   .pw-toggle:hover { color: var(--fg); background: none; }
+   .pw-toggle svg { display: block; }
+   .remember-toggle {
+-    position: absolute !important; right: 13px; top: 50%; transform: translateY(-50%);
+-    background: none; border: none; padding: 2px; cursor: pointer;
+-    width: 14px !important; height: 14px !important; display: flex !important;
+-    align-items: center; justify-content: center;
+-    font-size: 0; margin: 0; color: transparent;
++    position: relative; display: flex; align-items: center; gap: 8px; width: fit-content;
++    margin: -4px 0 1rem; padding: 2px 0; cursor: pointer; font-size: 0.85rem;
++    color: color-mix(in srgb, var(--fg) 75%, transparent);
+   }
+-  /* Visually hide the native checkbox but keep it in the accessibility tree
+-     and keyboard-focusable (display:none would drop it from tab order). It
+-     overlays the dot so a click/tap still toggles it. */
+   .remember-toggle .remember-check {
+     position: absolute; top: 0; left: 0;
+     width: 100%; height: 100%; margin: 0;
+@@ -296,10 +291,6 @@
+     <label for="username">Username</label>
+     <div class="pw-wrapper login-username-wrap">
+       <input id="username" name="username" type="text" required autofocus autocomplete="username">
+-      <label class="remember-toggle" id="rememberToggle" title="Remember me">
+-        <input type="checkbox" class="remember-check" id="remember" checked aria-label="Remember me">
+-        <span class="remember-dot" aria-hidden="true"></span>
+-      </label>
+     </div>
+ 
+     <label for="password">Password</label>
+@@ -309,6 +300,12 @@
+         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>
+       </button>
+     </div>
++    <!-- OpenWings: "Remember me" is a labelled row under the password, not an unlabelled dot in the username field. -->
++    <label class="remember-toggle" id="rememberToggle">
++      <input type="checkbox" class="remember-check" id="remember" checked>
++      <span class="remember-dot" aria-hidden="true"></span>
++      <span class="remember-text">Remember me</span>
++    </label>
+ 
+     <div id="confirmGroup" style="display:none">
+       <label for="confirmPassword">Confirm Password</label>
+diff --git a/static/manifest.json b/static/manifest.json
+index 69d92e3..350a4d1 100644
+--- a/static/manifest.json
++++ b/static/manifest.json
+@@ -6,8 +6,8 @@
+   "scope": "/",
+   "display": "standalone",
+   "orientation": "any",
+-  "background_color": "#282c34",
+-  "theme_color": "#282c34",
++  "background_color": "#C7CFC1",
++  "theme_color": "#C7CFC1",
+   "icons": [
+     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+diff --git a/static/sw.js b/static/sw.js
+index 1cc5c8a..4ea3653 100644
+--- a/static/sw.js
++++ b/static/sw.js
+@@ -7,7 +7,7 @@
+ //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
+ //   - API / non-GET: never cached.
+ // Bump CACHE_NAME whenever the precache list or SW logic changes.
+-const CACHE_NAME = 'odysseus-v659-notes-reference';
++const CACHE_NAME = 'odysseus-v661-openwings-looks4';
+ 
+ // KaTeX resolves these from its own stylesheet, so caching the CSS without them
+ // gives offline math fallback glyphs instead of proper typesetting.
+@@ -39,6 +39,9 @@ const KATEX_FONTS = [
+ // exact URL the browser requests, query string included.
+ const PRECACHE = [
+   '/',
++  // OpenWings: the looks stylesheet index.html links before the app's own,
++  // with its own cache-bust token (bump it, and CACHE_NAME, when a look changes).
++  '/static/openwings/skins.css?v=owlooks4',
+   '/static/css/00-tokens.css?v=20260929csssplit',
+   '/static/css/01-agent-chat.css?v=20260929csssplit',
+   '/static/css/02-compare.css?v=20260929csssplit',

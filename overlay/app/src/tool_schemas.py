@@ -332,7 +332,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Private quick web lookup through Odysseus' configured search backend, normally SearXNG. Use for open-ended web/search/lookup/latest/current questions. Do NOT navigate to Google/DuckDuckGo/Bing with the browser for search results. NOT for 'research X' / 'do research on X' — those are deep-research jobs; use trigger_research instead.",
+            "description": "Private quick web lookup through the configured search backend, normally SearXNG. Use for open-ended web/search/lookup/latest/current questions. Do NOT navigate to Google/DuckDuckGo/Bing with the browser for search results. NOT for 'research X' / 'do research on X' — those are deep-research jobs; use trigger_research instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -377,7 +377,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "pdf_extract",
-            "description": "Extract focused evidence from an online PDF URL or task-local /workspace/*.pdf using Odysseus' native document reader. Use this instead of Python requests, curl, pdftotext, or manual downloads. Supply the exact model, metric, and table terms in query. Treat only values visible in the returned passages as verified; never fill missing values from memory or estimates.",
+            "description": "Extract focused evidence from an online PDF URL or task-local /workspace/*.pdf using the built-in document reader. Use this instead of Python requests, curl, pdftotext, or manual downloads. Supply the exact model, metric, and table terms in query. Treat only values visible in the returned passages as verified; never fill missing values from memory or estimates.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -462,7 +462,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "extract_text",
-            "description": "Extract exact visible text and pixel coordinates from an owned uploaded image or local workspace image with Odysseus local OCR. Use for screenshots, scans, labels, numbers, receipts, forms, and text-location tasks; use inspect_media for general visual understanding.",
+            "description": "Extract exact visible text and pixel coordinates from an owned uploaded image or local workspace image with local OCR. Use for screenshots, scans, labels, numbers, receipts, forms, and text-location tasks; use inspect_media for general visual understanding.",
             "parameters": {
                 "type": "object",
                 "additionalProperties": False,
@@ -481,7 +481,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "transcribe_media",
-            "description": "Transcribe speech from a local workspace audio or video file with Odysseus local Whisper. Returns timestamped speech segments in [START --> END] TEXT form; the spoken text begins after the first '] '. For a request limited to a named chapter, question, scene, or topic, first locate that section and its next boundary, then use start/end or filter only that interval rather than matching the whole recording. This transcribes audio speech; use inspect_media for visually burned-in text or subtitles.",
+            "description": "Transcribe speech from a local workspace audio or video file with local Whisper. Returns timestamped speech segments in [START --> END] TEXT form; the spoken text begins after the first '] '. For a request limited to a named chapter, question, scene, or topic, first locate that section and its next boundary, then use start/end or filter only that interval rather than matching the whole recording. This transcribes audio speech; use inspect_media for visually burned-in text or subtitles.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -912,7 +912,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "ui_control",
-            "description": "Control the user interface. Actions: toggle (turn tools on/off), open_panel (open a modal: documents/library, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook; calendar supports month/week/year/agenda plus a date; Cookbook supports models/download, launch/serve, active/running, dependencies, and settings views), open_email_reply (legacy UI-only reply opener; prefer email MCP draft_email_reply for assistant-written reply drafts so a normal document-backed email draft is created), set_mode, switch_model, set_theme (built-in presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night), create_theme (CREATE any custom theme with a name + colors object — pick distinctive, evocative hex colors that match the requested aesthetic, NOT generic defaults. The theme auto-applies after creation), get_theme, and get_toggles. When a user asks for ANY theme not in the built-in preset list, ALWAYS use create_theme.",
+            "description": "Control the user interface. Actions: toggle (turn tools on/off), open_panel (open a modal: documents/library, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook; calendar supports month/week/year/agenda plus a date; Cookbook supports models/download, launch/serve, active/running, dependencies, and settings views), open_email_reply (legacy UI-only reply opener; prefer email MCP draft_email_reply for assistant-written reply drafts so a normal document-backed email draft is created), set_mode, switch_model, set_theme (built-in presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-sage (Lichen, the default), ow-duet, ow-duet-night, ow-hush, ow-hush-night), create_theme (CREATE any custom theme with a name + colors object — pick distinctive, evocative hex colors that match the requested aesthetic, NOT generic defaults. The theme auto-applies after creation), get_theme, and get_toggles. When a user asks for ANY theme not in the built-in preset list, ALWAYS use create_theme.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1052,7 +1052,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "manage_calendar",
-            "description": "Manage calendar events: list events in a date range, create, update, delete. Each event can carry a tag/category (event_type) and importance level. Resolve relative dates like today/tomorrow against the 'Current date and time' system context, then pass ISO 8601 datetimes in the user's local wall time; for all-day events set all_day=true and pass YYYY-MM-DD. If a create/update request lacks a required date, time, or target event, call ask_user once instead of guessing. For update_event, only pass event_type/tag/category/type when the user explicitly asks to tag, retag, categorize, or clear the event tag; otherwise omit it so manually tagged events keep their existing tag. For event reminders/alarms, pass reminder_minutes; the tool creates the Odysseus note reminder, so do not also call manage_notes for the same reminder. Do not set rrule for single-occurrence requests such as 'next Wednesday only'; use rrule only when the user explicitly wants recurrence.",
+            "description": "Manage calendar events: list events in a date range, create, update, delete. Each event can carry a tag/category (event_type) and importance level. Resolve relative dates like today/tomorrow against the 'Current date and time' system context, then pass ISO 8601 datetimes in the user's local wall time; for all-day events set all_day=true and pass YYYY-MM-DD. If a create/update request lacks a required date, time, or target event, call ask_user once instead of guessing. For update_event, only pass event_type/tag/category/type when the user explicitly asks to tag, retag, categorize, or clear the event tag; otherwise omit it so manually tagged events keep their existing tag. For event reminders/alarms, pass reminder_minutes; the tool creates the note reminder, so do not also call manage_notes for the same reminder. Do not set rrule for single-occurrence requests such as 'next Wednesday only'; use rrule only when the user explicitly wants recurrence.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1076,7 +1076,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "query": {"type": "string", "description": "Optional text filter for list_events. Use with explicit start/end when verifying whether a named event is present or absent; do not pass query by itself."},
                     "event_type": {"type": "string", "description": "Tag / category for the event. Common values: work, personal, health, travel, meal, social, admin, other. Aliases accepted: tag, category, type. For update_event, omit this unless the user explicitly asks to tag, retag, categorize, or clear the tag; omitting preserves manual tags."},
                     "importance": {"type": "string", "enum": ["low", "normal", "high", "critical"], "description": "Priority level (defaults to 'normal')"},
-                    "reminder_minutes": {"type": "integer", "description": "For create_event/update_event: create or replace the Odysseus reminder this many minutes before the event, e.g. 5 for 'reminder 5 min before'. For update_event, use reminder='off' to remove the reminder."},
+                    "reminder_minutes": {"type": "integer", "description": "For create_event/update_event: create or replace the reminder this many minutes before the event, e.g. 5 for 'reminder 5 min before'. For update_event, use reminder='off' to remove the reminder."},
                     "rrule": {"type": "string", "description": "Recurrence rule in iCalendar RRULE format, e.g. 'FREQ=WEEKLY;BYDAY=MO' for weekly on Monday, 'FREQ=MONTHLY;BYMONTHDAY=1' for the first day of each month, 'FREQ=MONTHLY;BYDAY=1MO,-1MO' for the first and last Monday of each month, 'FREQ=MONTHLY;BYDAY=2TH' for the second Thursday of each month, or 'FREQ=MONTHLY;BYDAY=-1SU' for the last Sunday of each month. Use with create_event or update_event. For update_event, pass an explicit empty string to remove recurrence and make the event single-occurrence."}
                 },
                 "required": ["action"]
@@ -1486,7 +1486,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "app_api",
-            "description": "Generic loopback to allowed internal Odysseus endpoints. Use this when there's no named tool for what the user wants. For 'best model for my hardware', call GET /api/hwfit/models with query {fit_only:true,limit:10,sort:'fit'}; it detects GPU/VRAM/RAM/CPU and returns ranked compatible models. Hits the same routes the UI buttons hit (cookbook, gallery, library/documents, memory, notes, calendar, tasks, settings, themes, research, compare, etc.). action='endpoints' returns the OpenAPI surface (use `filter` to narrow). action='call' (default) takes method+path+body. Sensitive auth/user/admin/shell paths and host-control Cookbook mutation routes are blocked for safety. Do not use for shell commands; use named command tooling instead. Do not use for package installs, engine rebuilds, PID signalling, or email account discovery; use list_email_accounts for email accounts because /api/email/accounts is owner-filtered in tool context.",
+            "description": "Generic loopback to allowed internal app endpoints. Use this when there's no named tool for what the user wants. For 'best model for my hardware', call GET /api/hwfit/models with query {fit_only:true,limit:10,sort:'fit'}; it detects GPU/VRAM/RAM/CPU and returns ranked compatible models. Hits the same routes the UI buttons hit (cookbook, gallery, library/documents, memory, notes, calendar, tasks, settings, themes, research, compare, etc.). action='endpoints' returns the OpenAPI surface (use `filter` to narrow). action='call' (default) takes method+path+body. Sensitive auth/user/admin/shell paths and host-control Cookbook mutation routes are blocked for safety. Do not use for shell commands; use named command tooling instead. Do not use for package installs, engine rebuilds, PID signalling, or email account discovery; use list_email_accounts for email accounts because /api/email/accounts is owner-filtered in tool context.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1617,7 +1617,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "send_email",
-            "description": "Send a new email immediately. Use only when the user explicitly says to send now, deliver now, or approve/send without further review. For normal 'send/write/email someone saying X' requests, use draft_email so Odysseus opens a reviewable email document. Use resolve_contact first if you only have a name and need to find the email address. If multiple accounts exist, pass account from list_email_accounts.",
+            "description": "Send a new email immediately. Use only when the user explicitly says to send now, deliver now, or approve/send without further review. For normal 'send/write/email someone saying X' requests, use draft_email so the app opens a reviewable email document. Use resolve_contact first if you only have a name and need to find the email address. If multiple accounts exist, pass account from list_email_accounts.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1634,7 +1634,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "draft_email",
-            "description": "Create a new Odysseus email draft document for review. This does not send. Use this as the default for normal 'send/write/email someone saying X' requests so the user sees the composed message in the document editor and can edit/send it from there.",
+            "description": "Create a new email draft document for review. This does not send. Use this as the default for normal 'send/write/email someone saying X' requests so the user sees the composed message in the document editor and can edit/send it from there.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1643,7 +1643,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "body": {"type": "string", "description": "Draft body text"},
                     "cc": {"type": "string", "description": "Optional CC recipients"},
                     "bcc": {"type": "string", "description": "Optional BCC recipients"},
-                    "title": {"type": "string", "description": "Optional Odysseus document title"},
+                    "title": {"type": "string", "description": "Optional document title"},
                     "account": {"type": "string", "description": "Optional account name/email/id from list_email_accounts, e.g. Gmail or user@example.com"},
                 },
                 "required": ["to", "subject", "body"]
@@ -1654,7 +1654,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "draft_email_reply",
-            "description": "Create a threaded Odysseus reply draft document by email UID. This does not send. Use this for normal 'reply/write back/send them X' requests so the user sees the reply in the document editor before sending.",
+            "description": "Create a threaded reply draft document by email UID. This does not send. Use this for normal 'reply/write back/send them X' requests so the user sees the reply in the document editor before sending.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1662,7 +1662,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "body": {"type": "string", "description": "Reply draft body text"},
                     "folder": {"type": "string", "description": "IMAP folder (default: INBOX)"},
                     "reply_all": {"type": "boolean", "description": "Whether to reply all instead of replying only to sender"},
-                    "title": {"type": "string", "description": "Optional Odysseus document title"},
+                    "title": {"type": "string", "description": "Optional document title"},
                     "account": {"type": "string", "description": "Optional account name/email/id from list_email_accounts, especially when the UID came from a non-default mailbox"},
                 },
                 "required": ["uid", "body"]
@@ -1794,7 +1794,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "reply_to_email",
-            "description": "SEND a reply email immediately by UID. Do not use this when the user asks to write/draft/open/start a reply; use draft_email_reply so the user can review in the Odysseus document editor. Only use when the user explicitly says to send now. Use the exact UID from the latest read_email/list_emails result; never invent UID 1. Automatically threads with In-Reply-To/References headers.",
+            "description": "SEND a reply email immediately by UID. Do not use this when the user asks to write/draft/open/start a reply; use draft_email_reply so the user can review in the document editor. Only use when the user explicitly says to send now. Use the exact UID from the latest read_email/list_emails result; never invent UID 1. Automatically threads with In-Reply-To/References headers.",
             "parameters": {
                 "type": "object",
                 "properties": {

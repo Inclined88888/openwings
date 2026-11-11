@@ -566,7 +566,7 @@ function initializeEventListeners() {
       e.stopPropagation();
       exportMenu.classList.remove('open');
       const meta = sessionModule.getSessions().find(s => s.id === sessionModule.getCurrentSessionId());
-      const sessionName = meta ? meta.name : 'Odysseus Chat';
+      const sessionName = meta ? meta.name : 'OpenWings chat';
       const originalTitle = document.title;
       document.title = sessionName;
       const chatHistory = document.getElementById('chat-history');
@@ -2450,23 +2450,13 @@ function initializeEventListeners() {
 	    const textarea = el('message');
 	    const inputBottom = document.querySelector('.chat-input-bottom');
 	    const _isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-	    let _placeholderHintOn = false;
 
+	    // OpenWings: the placeholder stays "Message OpenWings..." on touch
+	    // screens too (upstream alternated it with a swipe hint every 5s,
+	    // which phones cut to "Swipe sideways for plan").
 	    function setComposerPlaceholder(width) {
 	      if (!textarea) return;
-	      if (_isMobile && _placeholderHintOn) {
-	        textarea.setAttribute('placeholder', 'Swipe sideways for plan mode');
-	        return;
-	      }
 	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message OpenWings...');
-	    }
-
-	    if (_isMobile && textarea && !textarea._odysseusPlanPlaceholderHint) {
-	      textarea._odysseusPlanPlaceholderHint = true;
-	      setInterval(() => {
-	        _placeholderHintOn = !_placeholderHintOn;
-	        setComposerPlaceholder(inputTop.clientWidth || window.innerWidth || 0);
-	      }, 5000);
 	    }
 
 		    function checkPickerOverflow() {

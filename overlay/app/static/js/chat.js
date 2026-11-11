@@ -3400,7 +3400,16 @@ import { invalidateSettings } from './appConfig.js';
             commandHtml: q ? `<div class="agent-thread-summary">${uiModule.esc(q)}</div>` : '',
           };
         }
-        return { label: '', commandHtml: '' };
+        return { label: _toolLabels[lower] ? '' : _owToolName(rawTool), commandHtml: '' };
+      }
+
+      // OpenWings: a tool with no label of its own shows its name in words,
+      // not the raw identifier ("mcp__email__draft_email" reads "Draft email").
+      function _owToolName(raw) {
+        const name = String(raw || '');
+        if (!name.includes('_')) return '';
+        const words = name.split('__').pop().replace(/[_-]+/g, ' ').trim();
+        return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
       }
 
       function _suppressRawToolOutput(tool, ok) {

@@ -15,9 +15,93 @@ html[data-ow-skin="ow-duet"]            { --bg: #E5EAE8; --fg: #1D2A2E; --panel:
 html[data-ow-skin="ow-duet-night"]      { --bg: #1B1F21; --fg: #E6E9E7; --panel: #252A2C; --border: #3A4346; --red: #9DC4BA; }
 html[data-ow-skin="ow-hush"]            { --bg: #ECEAE6; --fg: #23201F; --panel: #FCFBFA; --border: #DAD6D0; --red: #A3405A; }
 html[data-ow-skin="ow-hush-night"]      { --bg: #1C1A19; --fg: #ECE7E2; --panel: #282523; --border: #3B3633; --red: #D99AA5; }
+html[data-ow-skin="ow-sage"]            { --bg: #C7CFC1; --fg: #1B281C; --panel: #D6DCCF; --border: #A0A79A; --red: #7A4C13; }
 
 /* Theme panel, Customize tab: while a look is active its colour and font
    controls are locked (static/js/theme.js _syncOwCustomizeLock). */
 .ow-customize-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5;
   color: var(--fg); background: color-mix(in srgb, var(--red) 12%, transparent); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
 .ow-locked { opacity: .45; filter: saturate(.6); }
+
+/* No upstream font under a look (patch 0023). Each look sets --font-family,
+   --ow-font-sans and --ow-font-mono on its root (looks/*.css); these are the
+   upstream rules that name Fira Code or Inter directly instead of reading
+   --font-family, so the browser never asks for those fonts while a look is
+   on. :where() keeps the weight low, so a look's own font rule still wins. */
+:root[data-ow-skin^="ow-"] :where(pre, .code-runner-pre, .doc-diff-overlay, .doc-run-output, .doclib-card-preview,
+  .skills-summary-chip strong, .skill-duplicate-group, .skill-card-preview .skill-md-pre, .skills-audit-log,
+  .skill-test-log, .skill-md-editor, .cookbook-serve-preset-meta, .cookbook-cmd-preview, .cookbook-output-pre,
+  .cookbook-serve-dir-pill, .cookbook-saved-host, .hwfit-serve-cmd, .cookbook-task-session, .cookbook-task-server,
+  .cookbook-task-uptime, .cookbook-dl-repo, .hwfit-panel-cmd, .admin-tool-ctx, .hwfit-parser-tag,
+  .ge-dep-notice-text code, .cp-hex, .slash-ac-token, .slash-ac-usage, .slash-ac-empty code,
+  #log-console-container, .notification-log-body, .cookbook-modeldir-tag, .doc-version-diff,
+  .cmp-eval-expected-value, .cookbook-edit-textarea, .stream-done-indicator, .memory-item-uses, .skill-stats,
+  .research-timer, .research-synapse .rs-label, .research-synapse .rs-meta, .doc-md-preview, .doc-csv-preview) {
+  font-family: var(--ow-font-mono, ui-monospace, monospace) !important;
+}
+:root[data-ow-skin^="ow-"] :where(body, .preset-btn, .search-popup input#search-input, .cookbook-gpu-btn,
+  .cookbook-gpu-popup, .modal-content, .doc-version-panel, .doclib-card-action-btn, .notes-pane,
+  .notes-pane-title, main.card .logo span, .version-label) {
+  font-family: var(--ow-font-sans, system-ui, sans-serif) !important;
+}
+
+/* Busy mark (patch 0023). Under a look every busy state shows the same
+   neutral mark: three small dots that breathe, opacity only. It replaces
+   upstream's sea-themed graphics: the whirlpool and sine-wave canvases
+   (static/js/spinner.js builds .ow-busy instead while a look is on), the
+   ASCII waves that the chat, compaction, Compare, Cookbook and the start-up
+   loader write as text (hidden here, the mark drawn in their place), and the
+   spinning CSS rings. Upstream themes keep upstream's spinners. */
+.ow-busy {
+  --ow-dot: calc(var(--ow-busy-size, 18px) * .22);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--ow-busy-size, 18px); height: var(--ow-busy-size, 18px);
+  vertical-align: middle; flex: 0 0 auto;
+}
+.ow-busy.ow-busy-inline { --ow-busy-size: 1.1em; width: auto; height: 1em; }
+:root[data-ow-skin^="ow-"] :is(.agent-thread-wave, .compact-wave, .cookbook-task-wave, .compare-probe-spinner:not(.ok):not(.fail), #loader-wave):not(:empty), :root[data-ow-skin^="ow-"] .email-settings-loading-css-whirlpool {
+  font-size: 0 !important; line-height: 0 !important; letter-spacing: 0 !important;
+  border: 0 !important; border-radius: 0 !important; animation: none !important;
+  width: auto !important; height: auto !important; padding-top: 0 !important;
+  --ow-dot: 4px;
+}
+:root[data-ow-skin^="ow-"] #loader-wave { color: var(--fg) !important; }
+.ow-busy::before,
+:root[data-ow-skin^="ow-"] :is(.agent-thread-wave, .compact-wave, .cookbook-task-wave, .compare-probe-spinner:not(.ok):not(.fail), #loader-wave):not(:empty)::before,
+:root[data-ow-skin^="ow-"] .email-settings-loading-css-whirlpool::before {
+  content: ''; display: inline-block; flex: none; vertical-align: middle;
+  width: var(--ow-dot, 4px); height: var(--ow-dot, 4px); border-radius: 50%;
+  background: currentColor;
+  box-shadow: calc(var(--ow-dot, 4px) * 1.75) 0 0 currentColor, calc(var(--ow-dot, 4px) * 3.5) 0 0 currentColor;
+  margin-right: calc(var(--ow-dot, 4px) * 3.5);
+  animation: ow-busy-breathe 1.4s ease-in-out infinite;
+}
+.ow-busy.ow-busy-stopped::before { animation-play-state: paused; }
+@keyframes ow-busy-breathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+/* The dock's trash target spins a "whirlpool" ring upstream: still here. */
+:root[data-ow-skin^="ow-"] #dock-trash-zone .whirlpool,
+:root[data-ow-skin^="ow-"] #dock-trash-zone.dropping .whirlpool { animation: none !important; }
+
+/* Small fixes every look shares (patch 0023). */
+/* Settings > System: upstream writes "Delete everything" in an inline
+   #e55 (2.5:1 on a light page); under a look it takes the look's error ink. */
+:root[data-ow-skin^="ow-"] .admin-toggle-label[style*="#e55"] { color: var(--color-error) !important; }
+:root[data-ow-skin^="ow-"] hr[style*="#e55"] { border-top-color: color-mix(in srgb, var(--color-error) 35%, transparent) !important; }
+/* The theme picker's swatches are a radio group (static/js/theme.js): the
+   keyboard focus shows. */
+.theme-swatch:focus-visible { outline: 2px solid var(--accent, var(--red)); outline-offset: 2px; }
+/* Image editor > New project: upstream's global button { height: 32px }
+   squeezed the template buttons to their icons (the name and size were
+   there, at zero height). */
+.ge-canvas-preset { height: auto !important; min-height: 32px; }
+/* OpenWings' own Connect panels (static/js/wings-connect.js) fade their
+   small print with opacity; under a look it is the look's muted ink at full
+   strength instead. */
+:root[data-ow-skin^="ow-"] :is(.ow-choice-sub, .ow-app-about, .ow-app-note) { opacity: 1 !important; color: var(--fg-muted, currentColor) !important; }
+:root[data-ow-skin^="ow-"] .ow-choice-sub a { color: inherit !important; text-decoration: underline !important; }
+
+/* Compare writes "Sequential" in an inline amber (#e0a050, 1.6:1 on a light
+   page): under a look it takes the look's warning ink. */
+:root[data-ow-skin^="ow-"] span[style*="#e0a050"] { color: var(--color-warning) !important; }
+/* Settings' "Admin" group label is faded to 0.35 upstream (about 2:1). */
+:root[data-ow-skin^="ow-"] .settings-sidebar-label.admin-only { opacity: 1 !important; color: var(--fg-muted, currentColor) !important; }

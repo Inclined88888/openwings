@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ow-classic-themes="{{WINGS_CLASSIC_THEMES}}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
   <title>OpenWings</title>
   <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#282c34">
+  <meta name="theme-color" content="#C7CFC1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- Disable iOS / Android auto-linkifying of numbers (phone/date/address)
@@ -14,6 +14,8 @@
        browser-default styling that didn't match the Odysseus theme. -->
   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <!-- OpenWings: motion for the Lichen look (does nothing under any other theme) -->
+  <script src="/static/openwings/motion.js?v=2" defer></script>
   <script nonce="{{CSP_NONCE}}">
   window._odysseusLoadTime = Date.now();
   // Stops iOS focus-zoom on every field; iOS still allows pinch-zoom, other platforms would not.
@@ -26,14 +28,21 @@
   (function(){
     try {
       var t = JSON.parse(localStorage.getItem('odysseus-theme'));
-      // OpenWings: load its looks stylesheet and mark the chosen look before
-      // the first paint (the stylesheet only styles html[data-ow-skin=...]).
-      var owLink = document.createElement('link');
-      owLink.rel = 'stylesheet';
-      owLink.href = '/static/openwings/skins.css?v=2';
-      document.head.appendChild(owLink);
-      var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-duet' : 'ow-duet-night');
+      // OpenWings: mark the chosen look before the first paint (skins.css,
+      // linked right after this script, styles only html[data-ow-skin=...]).
+      var owName = (t && t.name) || 'ow-sage';
       document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
+      // Upstream preloads Fira Code, its app font. The OpenWings looks bring
+      // their own fonts, so only an upstream theme on the mono font asks
+      // for it.
+      if (!/^ow-/.test(owName) && (!t || !t.font || /^(mono|gohu|GohuFont)$/.test(t.font))) {
+        ['FiraCode-Regular', 'FiraCode-SemiBold'].forEach(function (f) {
+          var pl = document.createElement('link');
+          pl.rel = 'preload'; pl.as = 'font'; pl.type = 'font/woff2'; pl.crossOrigin = '';
+          pl.href = '/static/fonts/' + f + '.woff2';
+          document.head.appendChild(pl);
+        });
+      }
       if (t && t.colors) {
         var s = document.documentElement.style;
         var c = t.colors;
@@ -129,6 +138,14 @@
     } catch(e){}
   })();
   </script>
+  <!-- OpenWings looks. A parser-inserted stylesheet holds the first layout and
+       the scripts after it, so no upstream font is fetched before a look applies.
+       It has its own cache-bust token (owlooks<N>, the same on every OpenWings
+       page and in sw.js PRECACHE, bumped with CACHE_NAME when a look changes).
+       The href is page-relative (this page is only served at / and one-segment
+       paths, so it resolves to /static/openwings/...): upstream's split
+       stylesheets, linked as /static/..., keep sharing their one token. -->
+  <link rel="stylesheet" href="static/openwings/skins.css?v=owlooks4">
   <!-- Per-route favicon. Bookmarking /calendar shows a calendar icon,
        /notes a notes icon, etc. Each shape is rendered in the current
        theme accent color. Falls back to the boat logo on the root path. -->
@@ -254,15 +271,11 @@
        ```mermaid fence. They used to load here from cdn.jsdelivr.net on every
        page load, which cost ~985 KB on the wire, broke offline installs, and
        announced every session to a third party. -->
-  <!-- Preload the two faces first paint actually uses: Fira Code 400 and 600,
-       the app font and the weight the sidebar and header text render at. They
-       are declared in style.css, so without a hint they are only discovered
-       after the stylesheet parses and then queue behind the module graph.
-       crossorigin is required even though these are same-origin: fonts are
-       always fetched in CORS mode, and a preload whose mode does not match the
-       real request is discarded and the font fetched a second time. -->
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/FiraCode-Regular.woff2">
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fonts/FiraCode-SemiBold.woff2">
+  <!-- Upstream preloaded Fira Code 400 and 600 here. OpenWings adds those
+       preloads from the boot script above, and only for an upstream theme
+       (its looks use their own fonts). crossorigin stays: fonts are always
+       fetched in CORS mode, and a preload whose mode does not match the real
+       request is discarded and the font fetched a second time. -->
   <link rel="stylesheet" href="/static/css/00-tokens.css?v=20260929csssplit">
   <link rel="stylesheet" href="/static/css/01-agent-chat.css?v=20260929csssplit">
   <link rel="stylesheet" href="/static/css/02-compare.css?v=20260929csssplit">
@@ -1976,7 +1989,7 @@
               </label>
               <label class="vis-row">
                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg></span>
-                <span class="vis-label">Library</span>
+                <span class="vis-label">Files &amp; Docs</span>
                 <input type="checkbox" checked data-ui-key="tool-library"><span class="vis-switch"></span>
               </label>
               <label class="vis-row">

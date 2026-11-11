@@ -1,10 +1,14 @@
 """Normalize the small theme palette without discarding explicit choices."""
 import re
 
-THEME_PRESETS = ('ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night',
+THEME_PRESETS = ('ow-sage', 'ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night',
                  'dark', 'light', 'midnight', 'cyberpunk', 'retrowave', 'forest',
                  'ocean', 'ume', 'terminal', 'organs', 'gpt', 'claude', 'cute',
                  'eclipse', 'porcelain', 'arcade', 'blueprint', 'monolith', 'yoyo')
+
+# OpenWings: the names people see in the theme picker, for set_theme.
+THEME_ALIASES = {'lichen': 'ow-sage', 'duet': 'ow-duet', 'duet-night': 'ow-duet-night',
+                 'hush': 'ow-hush', 'hush-night': 'ow-hush-night'}
 
 BACKGROUND_PATTERNS = ('none', 'dots', 'synapse', 'rain', 'constellations',
                        'perlin-flow', 'petals', 'sparkles', 'embers',

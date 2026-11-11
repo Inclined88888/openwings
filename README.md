@@ -327,7 +327,7 @@ Every model call counts, where it reaches the provider: chat, agent rounds and t
 | Memory | Sidebar **Memory** (view, edit, delete, auto memory switch) |
 | Agents | Sidebar **Agents** |
 | Compare models | Sidebar **Compare** |
-| Theme | Sidebar **Theme**. Until you pick one, OpenWings starts in its Duet look, day or night to match your system setting. Duet and the quieter Hush (each with a night version) change type and shapes as well as colours; the upstream themes are still there |
+| Theme | Sidebar **Theme**. Everyone starts in Lichen, a calm sage look in one mode (no dark version); see [docs/design](docs/design/README.md). The picker also offers Duet and the quieter Hush, each with a night version; all three change type, shapes and motion as well as colours. Upstream's themes are hidden from the picker (a theme someone already chose keeps working); `WINGS_SHOW_CLASSIC_THEMES=1` lists them again |
 | Settings | Gear at the bottom of the sidebar |
 
 Keyboard: Ctrl/Cmd+K search chats, Ctrl/Cmd+Alt+N new chat, Ctrl/Cmd+/ focus the message box, Ctrl/Cmd+Alt+C calendar, Ctrl/Cmd+Alt+B sidebar, Ctrl/Cmd+, last tool window, Escape stops a reply, Ctrl/Cmd+Enter sends an email draft, Up/Down in an empty message box recalls earlier prompts. All are rebindable in **Settings → Shortcuts**.
@@ -358,6 +358,8 @@ Nightly backups with cron (`crontab -e`):
 ```
 
 **Upgrade**: `./scripts/upgrade.sh` takes a backup, `git pull`s this repository, creates any helper container secret a newer version added (the page renderer's, for one), rebuilds and restarts, and tells you how to roll back if the new version is unhealthy. OpenWings pins upstream by image digest; moving to a newer Odysseus is an OpenWings change (bump `upstream.lock`, run `scripts/dev/rebase-overlay.sh`, rebuild, run the tests). The image build refuses to run if any patched upstream file changed underneath the overlay.
+
+**Names that changed in 1.0.3**, in case your own mail rules, webhook receivers or authenticator app look for them: reminder emails are titled `Reminder (OpenWings): …` (was `Reminder (Odysseus): …`), webhooks arrive with the User-Agent `OpenWings-Webhook/1.0` (was `Odysseus-Webhook/1.0`), and two-factor sign-in set up from now on is listed as "OpenWings" in your authenticator (entries you already have keep their old name and keep working). The headers did not change, so filter on those instead: `X-Odysseus-Kind: reminder` on reminder emails, `X-Odysseus-Event` and `X-Odysseus-Signature` on webhooks.
 
 **Moving an existing Odysseus install** into OpenWings: restore its `data/` into the `odysseus-data` volume, then run `./scripts/adopt-key.sh --yes` to move its key file into `.env`.
 
@@ -402,6 +404,10 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0018](patches/0018-browser-batch-and-hover.patch) | Several browser actions in one call (per item or per page), each guarded as if alone; hover for menus |
 | [0019](patches/0019-openwings-branding.patch) | OpenWings name, logo and icons in the app, login page and installed app; a "Source code" link on the login page (AGPL 3.0 section 13) |
 | [0020](patches/0020-openwings-looks.patch) | OpenWings looks (Duet and Hush, each with a night version) in the theme picker, with their own type and shapes; new users start in Duet; plain wording for Incognito chats and the welcome line; an empty message box no longer opens a new chat |
+| [0021](patches/0021-openwings-connect.patch) | Connect your AI and your apps in one click (models on this computer, OpenRouter, a pasted key, Notion, Linear, Jira, Confluence); the upstream sign-ins that pose as another company's app are off unless `WINGS_ALLOW_UNOFFICIAL_SIGNIN=1` |
+| [0022](patches/0022-openwings-chatgpt-signin.patch) | Continue with ChatGPT: OpenAI's own sign-in lets a ChatGPT Plus or Pro plan power OpenWings |
+| [0023](patches/0023-openwings-lichen.patch) | Lichen is the default look, with its motion; the theme picker lists only the OpenWings looks and works from the keyboard; no upstream font, colour or sea-themed spinner under a look; the web search and sign-in result pages and the installed app wear the look |
+| [0024](patches/0024-openwings-wording.patch) | No upstream name or sea wording in what people see or receive, or in what the model is told about itself (except the short prompts sent only to upstream's own fine-tuned `odysseus-*` models, which keep the wording they were trained on); downloads named openwings; upstream's design test pages removed; window names that match the sidebar; the OpenWings version, icon and "page not found" page |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 

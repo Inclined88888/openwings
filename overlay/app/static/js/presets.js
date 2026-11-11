@@ -64,11 +64,12 @@ export const PROMPT_TEMPLATES = [
   },
   {
     id: 'odysseus',
-    name: 'Odysseus',
+    name: 'Strategist',
+    legacyNames: ['Odysseus'],
     temperature: 1.0,
     isPreset: true,
     isCharacter: true,
-    prompt: "You are Odysseus, king of Ithaca — subtle in counsel, disciplined in judgment, and unmatched in strategic cunning. You advise as a ruler, navigator, survivor, and architect of hard-won victory. Your task is to give clear, practical strategy, not mere performance. In every problem, first discern the true objective, the hidden constraints, the motives of others, and the costs that may arrive later. Favor leverage over force, patience over impulse, deception over wasteful struggle when honor permits, and endurance over fragile brilliance.\n\nWhen you respond, think like a strategist: What is the real aim? Who benefits, who fears, who deceives, and who delays? What is known, unknown, assumed, and deliberately concealed? Which path preserves strength while improving position? What happens next if the first move succeeds — or fails?\n\nGive counsel in a voice that is ancient, noble, and composed, yet intelligible to modern readers. Be eloquent but not flowery. Be wise but not vague. Compare options, judge tradeoffs, anticipate reactions, and recommend a course with contingencies. If needed, ask a few sharp questions before advising. Never be rash, sentimental, or simplistic. Speak as one who has weathered storms, outlived traps, and taken back his house by wit, timing, and resolve."
+    prompt: "You are a calm, practical strategist. First find the real goal, the hidden constraints, what the other people involved want, and the costs that may come later. Then compare the options, weigh risks and tradeoffs, and recommend a clear plan with a fallback if it goes wrong. If the goal is unclear, ask a few sharp questions before advising. Be direct and concrete: never vague, rash or long-winded."
   }
 ];
 
@@ -352,7 +353,7 @@ function _populateCharSelect() {
   }
 
   const hiddenPresets = loadStoredArray('odysseus-hidden-presets');
-  const builtins = PROMPT_TEMPLATES.filter(t => !savedNames.has(t.name) && !hiddenPresets.includes(t.name));
+  const builtins = PROMPT_TEMPLATES.filter(t => !savedNames.has(t.name) && !hiddenPresets.includes(t.name) && !(t.legacyNames || []).some(n => hiddenPresets.includes(n)));
   if (builtins.length) {
     const group = document.createElement('optgroup');
     group.label = 'Presets';
@@ -1167,11 +1168,18 @@ export function onSessionSwitch(sessionId) {
   if (charName) {
     // Find the template (saved or built-in)
     const tmpl = userTemplates.find(t => t.name === charName)
-      || PROMPT_TEMPLATES.find(t => t.name === charName);
+      || PROMPT_TEMPLATES.find(t => t.name === charName || (t.legacyNames || []).includes(charName));
     if (tmpl) {
+      // A chat saved under a persona's old name (legacyNames) restores
+      // under its current name, and the mapping is rewritten once.
+      const liveName = (tmpl.legacyNames || []).includes(charName) ? tmpl.name : charName;
+      if (liveName !== charName) {
+        charSessions[sessionId] = liveName;
+        try { localStorage.setItem('odysseus-char-sessions', JSON.stringify(charSessions)); } catch (_) {}
+      }
       presets.custom = {
         ...presets.custom,
-        character_name: charName,
+        character_name: liveName,
         system_prompt: tmpl.system_prompt || tmpl.prompt || '',
         temperature: tmpl.temperature ?? 1.0,
         max_tokens: tmpl.max_tokens || 0,
@@ -1186,7 +1194,7 @@ export function onSessionSwitch(sessionId) {
       fetch(`${API_BASE}/api/presets/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...presets.custom, name: charName, enabled: true }),
+        body: JSON.stringify({ ...presets.custom, name: liveName, enabled: true }),
       }).catch(() => {});
     }
     _syncCharIndicator();

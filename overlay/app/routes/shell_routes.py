@@ -336,7 +336,7 @@ def _package_status_note(name: str, probe: dict) -> str:
             return f"LaMa/MI-GAN Swift MLX runner: {next((p for p in found if p), 'available')}"
         if binaries.get("odysseus-mlx-inpaint") or binaries.get("mlx-lama-serve"):
             return "LaMa/MI-GAN Swift runner is installed, but mlx.metallib is missing next to the runner."
-        return "LaMa/MI-GAN inpainting models need an Odysseus-compatible mlx-lama-swift bridge on an Apple Silicon Mac."
+        return "LaMa/MI-GAN inpainting models need an OpenWings-compatible mlx-lama-swift bridge on an Apple Silicon Mac."
     if name == "mlx_ddcolor_swift":
         if _package_installed_from_probe(name, probe):
             found = [
@@ -346,7 +346,7 @@ def _package_status_note(name: str, probe: dict) -> str:
             return f"DDColor Swift MLX runner: {next((p for p in found if p), 'available')}"
         if binaries.get("odysseus-mlx-colorize") or binaries.get("mlx-ddcolor-serve"):
             return "DDColor Swift runner is installed, but mlx.metallib is missing next to the runner."
-        return "DDColor colorization models need an Odysseus-compatible mlx-ddcolor-swift bridge on an Apple Silicon Mac."
+        return "DDColor colorization models need an OpenWings-compatible mlx-ddcolor-swift bridge on an Apple Silicon Mac."
     if name in dists:
         return f"{name} {dists[name]}"
     return ""
@@ -370,7 +370,7 @@ def _package_pip_update_status(
 
     if pkg.get("kind") == "system" or not pkg.get("pip"):
         return PackageUpdateStatus(
-            False, "Update this system dependency outside Odysseus."
+            False, "Update this system dependency outside OpenWings."
         )
 
     name = pkg.get("name")
@@ -393,7 +393,7 @@ def _package_pip_update_status(
     if name == "vllm" and binaries.get("vllm") and not dists.get("vllm"):
         return PackageUpdateStatus(
             False,
-            "Using a vLLM CLI on PATH without Python package metadata; update it outside Odysseus.",
+            "Using a vLLM CLI on PATH without Python package metadata; update it outside OpenWings.",
         )
 
     return PackageUpdateStatus(
@@ -1591,7 +1591,7 @@ def setup_shell_routes() -> APIRouter:
                 "desc": "Swift MLX runtime for LaMa / MI-GAN inpainting and object removal",
                 "category": "Image",
                 "target": "remote",
-                "install_hint": "Build an Odysseus-compatible mlx-lama-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-inpaint or mlx-lama-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable image-edit CLI.",
+                "install_hint": "Build an OpenWings-compatible mlx-lama-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-inpaint or mlx-lama-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable image-edit CLI.",
             },
             {
                 "name": "mlx_ddcolor_swift",
@@ -1599,7 +1599,7 @@ def setup_shell_routes() -> APIRouter:
                 "desc": "Swift MLX runtime for DDColor automatic image colorization",
                 "category": "Image",
                 "target": "remote",
-                "install_hint": "Build an Odysseus-compatible mlx-ddcolor-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-colorize or mlx-ddcolor-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable colorize CLI.",
+                "install_hint": "Build an OpenWings-compatible mlx-ddcolor-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-colorize or mlx-ddcolor-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable colorize CLI.",
             },
             {
                 "name": "mlx_vlm",
@@ -1674,7 +1674,7 @@ def setup_shell_routes() -> APIRouter:
                 "kind": "system",
                 "system_prereqs": ["libreoffice"],
                 "install_cmd": "sudo apt install -y libreoffice || brew install --cask libreoffice",
-                "install_hint": "Install LibreOffice/soffice where Odysseus runs to open DOCX attachments as signable PDF previews. Without it, DOCX opens as readable Markdown.",
+                "install_hint": "Install LibreOffice/soffice where OpenWings runs to open DOCX attachments as signable PDF previews. Without it, DOCX opens as readable Markdown.",
             },
         ]
 

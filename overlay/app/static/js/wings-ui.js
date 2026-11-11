@@ -4,9 +4,37 @@
 // app.js, so this is the same presets instance the rest of the app uses.
 import presetsModule from './presets.js?v=20260908personaname1';
 
+// The window is upstream's "Prompt" editor. Opened from the sidebar's Agents
+// entry it is titled Agents, and goes back to Prompt once it closes (the
+// composer's Prompt menu item opens the same window).
+function setWindowTitle(text) {
+  const modal = document.getElementById('custom-preset-modal');
+  const h4 = modal && modal.querySelector('.modal-header h4');
+  if (!h4) return;
+  const label = [...h4.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+  if (label) label.textContent = text;
+  const box = modal.querySelector('.modal-content');
+  if (box) box.setAttribute('aria-label', text);
+  const close = document.getElementById('close-custom-preset');
+  if (close) close.setAttribute('aria-label', 'Close ' + text.toLowerCase());
+}
+
+let restoreWatch = null;
 function openAgents() {
   if (presetsModule && typeof presetsModule.openCustomPresetModal === 'function') {
     presetsModule.openCustomPresetModal('character');
+    setWindowTitle('Agents');
+    const modal = document.getElementById('custom-preset-modal');
+    if (modal && !restoreWatch) {
+      restoreWatch = new MutationObserver(() => {
+        if (modal.classList.contains('hidden')) {
+          setWindowTitle('Prompt');
+          restoreWatch.disconnect();
+          restoreWatch = null;
+        }
+      });
+      restoreWatch.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 }
 

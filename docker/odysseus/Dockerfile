@@ -27,7 +27,8 @@ RUN --mount=type=secret,id=ca,required=false \
 #    version the patches were written against. If the base image is bumped and
 #    upstream changed one of these files, the build stops here instead of
 #    silently reverting upstream fixes. Rebase with scripts/dev/rebase-overlay.sh.
-# 2. Copy the overlay into /app, and put the OpenWings icons where upstream's
+# 2. Copy the overlay into /app, remove the upstream files the patches delete
+#    (overlay/UPSTREAM_DELETED), and put the OpenWings icons where upstream's
 #    app, manifest, service worker and login page look for theirs.
 # 3. Fail the build on a syntax error in any overlaid Python file.
 RUN set -eu; \
@@ -37,6 +38,9 @@ RUN set -eu; \
       exit 1; \
     fi; \
     cp -R /tmp/wings/app/. /app/; \
+    if [ -s /tmp/wings/UPSTREAM_DELETED ]; then \
+      while IFS= read -r f; do if [ -n "$f" ]; then rm -f -- "/app/$f"; fi; done < /tmp/wings/UPSTREAM_DELETED; \
+    fi; \
     cp /app/wings/brand/icon-192.png /app/wings/brand/icon-512.png /app/wings/brand/icon-maskable-512.png /app/static/icons/; \
     cp /app/wings/brand/favicon.ico /app/static/icon.ico; \
     mkdir -p /app/static/openwings; \

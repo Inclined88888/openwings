@@ -76,7 +76,15 @@
 }
 
 /* ================= upstream variables, remapped ================= */
+/* No upstream font (patch 0023): theme.js sets --font-family inline to
+   upstream's Fira Code, and an !important rule here beats that normal inline
+   value, so everything that reads --font-family gets this look's sans.
+   --ow-font-sans and --ow-font-mono feed skins.css, which points upstream's
+   rules that name Fira Code or Inter directly at them. */
 :root[data-ow-skin="ow-sage"] {
+  --font-family: var(--font-sans) !important;
+  --ow-font-sans: var(--font-sans);
+  --ow-font-mono: var(--font-mono);
   --sg-wings: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Cg transform=%22translate(256 256) scale(0.84) translate(-256 -256)%22%3E%3Cpath fill=%22%231B281C%22 d=%22M250.8 403.1C239 401.6 228.2 398.9 217.8 392.7C185 373 172.6 330 189.9 295.8C192.9 289.7 196.8 284.1 201.5 279.1C205.1 275.1 209 271.5 211.8 266.8C221.1 251.7 220 234.5 212.4 219C195.9 185 165.4 161.6 135 140.6C120.6 130.6 106 120.9 90.8 112.1C80.1 105.8 69.3 99.7 58.1 94.3C56.3 93.4 48.7 89.2 47 91.5C46.1 95.2 52.1 108 53.5 111.5C61.5 131.3 69.8 150.4 84.6 166.1C110 193.1 133.9 220.7 151.7 253.4C160.8 270.1 168.7 286.3 169 305.7C168.7 287.3 159.8 272.7 149.4 258.2C132.3 234.7 111.7 213.9 91.9 192.7C84.2 184.4 76.5 176 68.1 168.2C66.7 166.9 61.7 161.2 59.5 163.5C57.7 166.9 58.7 172.7 58.9 176.3C59.6 187 61 197.7 63.2 208.2C68.1 231 77 245.5 87.8 265.7C93.8 276.8 99.5 288 105.6 299C113.8 313.6 122.3 327.9 130 342.7C122.1 327.8 112.1 314.6 102 301.2C92.4 288.5 83 275.8 73 263.4C68.3 257.6 63.8 251.7 58.6 246.4C56.9 244.7 54.1 241.5 51.7 243.7C45.7 251.9 44.1 282.2 44 292C43.9 303.1 44.8 314.5 48.6 325C54.5 341.5 71.1 359.7 83.9 371.3C126 410 182.8 427.1 239.3 425C245.5 424.2 250.5 422.9 251.4 416Z%22/%3E%3Cpath fill=%22%231B281C%22 transform=%22matrix(-1 0 0 1 512 0)%22 d=%22M250.8 403.1C239 401.6 228.2 398.9 217.8 392.7C185 373 172.6 330 189.9 295.8C192.9 289.7 196.8 284.1 201.5 279.1C205.1 275.1 209 271.5 211.8 266.8C221.1 251.7 220 234.5 212.4 219C195.9 185 165.4 161.6 135 140.6C120.6 130.6 106 120.9 90.8 112.1C80.1 105.8 69.3 99.7 58.1 94.3C56.3 93.4 48.7 89.2 47 91.5C46.1 95.2 52.1 108 53.5 111.5C61.5 131.3 69.8 150.4 84.6 166.1C110 193.1 133.9 220.7 151.7 253.4C160.8 270.1 168.7 286.3 169 305.7C168.7 287.3 159.8 272.7 149.4 258.2C132.3 234.7 111.7 213.9 91.9 192.7C84.2 184.4 76.5 176 68.1 168.2C66.7 166.9 61.7 161.2 59.5 163.5C57.7 166.9 58.7 172.7 58.9 176.3C59.6 187 61 197.7 63.2 208.2C68.1 231 77 245.5 87.8 265.7C93.8 276.8 99.5 288 105.6 299C113.8 313.6 122.3 327.9 130 342.7C122.1 327.8 112.1 314.6 102 301.2C92.4 288.5 83 275.8 73 263.4C68.3 257.6 63.8 251.7 58.6 246.4C56.9 244.7 54.1 241.5 51.7 243.7C45.7 251.9 44.1 282.2 44 292C43.9 303.1 44.8 314.5 48.6 325C54.5 341.5 71.1 359.7 83.9 371.3C126 410 182.8 427.1 239.3 425C245.5 424.2 250.5 422.9 251.4 416Z%22/%3E%3C/g%3E%3C/svg%3E%0A");
   --bg: var(--color-canvas) !important;
   --fg: var(--color-text) !important;
@@ -106,6 +114,24 @@
   --select-option-active-bg: var(--color-selection) !important;
   --color-danger: var(--color-error) !important;
   --color-error-light: var(--color-error) !important;
+  /* the rest of upstream's named colours: none of its blue, orange, neon
+     green or iOS red shows under the look */
+  --color-subheader: var(--color-text-muted) !important;
+  --color-blind-orange: var(--color-accent) !important;
+  --color-link-hover: var(--color-accent-hover) !important;
+  --color-agent-active: var(--color-success) !important;
+  --color-recording: var(--color-error) !important;
+  --color-recording-hover: var(--color-error) !important;
+  --color-brand-blue: var(--color-info) !important;
+  --color-save-green: var(--color-success) !important;
+  --accent-warm: var(--color-accent) !important;
+  --warn: var(--color-warning) !important;
+  /* the look's palette for things upstream colours by category: calendar
+     tags and calendars, Cookbook servers (static/js/calendar/utils.js and
+     cookbook.js read these two lists). Solid colours are >= 4.5:1 on the
+     page; tints carry moss ink at >= 9:1. */
+  --ow-palette: #304C59 #5E4466 #8F3222 #7A4C13 #5F5418 #385631 #454D40 #2F5A55;
+  --ow-tints: #D9C5BE #DACBB6 #D8D2B4 #C5D2BB #C0CDD1 #CEC5D0 #BFD1CB #D8C6CB;
   /* syntax on the paper code block, every colour >= 5.2:1 */
   --hl-bg: var(--color-surface-raised) !important;
   --hl-fg: var(--sg-sage-950) !important;
@@ -1256,32 +1282,34 @@
    and state colours (white and electric blue by default). Once a page
    carries data-ow-skin (see the integration patch), they take the look's
    values: the mid-tone page, paper bars, moss ink, ochre for actions. */
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) {
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) {
   --bg: var(--color-canvas); --panel: var(--color-surface-raised); --text: var(--color-text); --muted: var(--color-text-muted);
   --line: var(--color-rule); --accent: var(--color-accent); --ok: var(--color-success); --warn: var(--color-warning); --bad: var(--color-error);
+  --on-accent: var(--color-on-accent); --on-state: var(--color-on-accent);
   font-size: 15px !important; line-height: 1.5 !important;
 }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) .bar { background: var(--color-surface-raised) !important; border-bottom: var(--border-hairline) !important; }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) .bar .title {
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) .bar { background: var(--color-surface-raised) !important; border-bottom: var(--border-hairline) !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) .bar .title {
   font-family: var(--font-display) !important; font-weight: var(--font-weight-display) !important; font-size: 26px !important;
   line-height: var(--leading-display) !important; letter-spacing: var(--tracking-display) !important; text-transform: uppercase !important;
 }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) .back { color: var(--color-text) !important; text-decoration: underline !important; text-underline-offset: 3px !important; }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) button {
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) .back { color: var(--color-text) !important; text-decoration: underline !important; text-underline-offset: 3px !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) button {
   background: var(--color-accent) !important; color: var(--color-on-accent) !important; border-radius: var(--radius-2) !important;
   filter: none !important; font-weight: var(--font-weight-label) !important;
 }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) button:hover { background: var(--color-accent-hover) !important; filter: none !important; }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) :focus-visible { outline: var(--focus-ring) !important; outline-offset: 2px !important; }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) input[type="password"],
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) input[type="text"] { border: var(--border-control) !important; border-radius: var(--radius-1) !important; background: var(--color-surface-raised) !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) button:hover { background: var(--color-accent-hover) !important; filter: none !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) :focus-visible { outline: var(--focus-ring) !important; outline-offset: 2px !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) input[type="password"],
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) input[type="search"],
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) input[type="text"] { border: var(--border-control) !important; border-radius: var(--radius-1) !important; background: var(--color-surface-raised) !important; }
 /* the remote screen's letterbox: the sunk band, not a black box */
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) #screen { background: var(--color-surface-sunk) !important; }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) table.files th {
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) #screen { background: var(--color-surface-sunk) !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) table.files th {
   font-size: var(--font-size-label) !important; letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important;
   border-bottom: var(--border-control) !important;
 }
-:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) table.files td { font-variant-numeric: tabular-nums !important; }
+:root[data-ow-skin="ow-sage"] :is(body.ow-page, body:has(> header.bar > a.back)) table.files td { font-variant-numeric: tabular-nums !important; }
 
 /* ================= login: cardless, the wordmark is the focal point ================= */
 :root[data-ow-skin="ow-sage"] body:has(main.card) { background: var(--color-canvas) !important; background-image: none !important; }
@@ -1734,4 +1762,73 @@
   :root[data-ow-skin="ow-sage"] .modal-content textarea,
   :root[data-ow-skin="ow-sage"] .settings-panels input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   :root[data-ow-skin="ow-sage"] .settings-nav-search { font-size: var(--font-size-body) !important; }
+}
+
+/* ================= fix round: fields, small labels, odd windows ================= */
+/* Selects in windows grow with their text. Upstream fixes their heights for
+   its 11-12px type (Compare 30px, Agents > Group 24px); at the look's 14px
+   (16px on phones) the descenders were cut. */
+:root[data-ow-skin="ow-sage"] :is(.modal-content, #compare-model-overlay, .notes-pane) select:not([multiple]):not([size]) {
+  height: auto !important; min-height: calc(1.35em + 10px) !important; line-height: 1.35 !important;
+  padding-top: 4px !important; padding-bottom: 4px !important;
+}
+/* Compare's rows line up (upstream staircases them in Sequential mode) */
+:root[data-ow-skin="ow-sage"] #compare-model-overlay .cmp-model-row { margin-left: 0 !important; }
+
+/* Small labels: muted ink at full strength, never muted ink faded again by
+   opacity (that took them to 1.5-3:1). */
+:root[data-ow-skin="ow-sage"] :is(.slash-ac-usage, .slash-ac-cat, .task-log-time, .task-log-skipped-reason, .research-empty,
+  .skills-section-count, #settings-account-role, .admin-tool-cat-count, .cookbook-serve-dir-edit, .cookbook-srv-default-label,
+  .cookbook-dep-caret, .gallery-editor-template-option small, #gallery-editor-template-title, .gallery-editor-drafts-title,
+  .theme-adv-arrow, .search-group-header, .search-result-role, .ow-app-note, .ow-app-about) {
+  opacity: 1 !important; color: var(--color-text-muted) !important;
+}
+:root[data-ow-skin="ow-sage"] :is(.task-log-row, .skills-section-header, .skills-section-label, #group-add-btn, .cookbook-srv-default,
+  .theme-opacity-toggle, #doclib-modal .hwfit-loading span) { opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] :is(.theme-fd-label, .gallery-editor-landing p, .memory-item-title > span[style*="opacity"], #doclib-modal .hwfit-loading span,
+  :is(#settings-modal, .modal) span[style*="cursor:help"]) { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #doclib-modal .hwfit-loading a { color: var(--color-text) !important; opacity: 1 !important; }
+/* A section that is switched off stays readable: a dashed edge and muted
+   ink say "off", where upstream faded the whole card to 0.45-0.6 (text at
+   2-3.5:1). It still takes no clicks while off. */
+:root[data-ow-skin="ow-sage"] :is(#settings-modal, .modal) :is(.admin-card, .email-settings-section):is([style*="opacity: 0.4"], [style*="opacity: 0.5"], [style*="opacity: 0.6"], [style*="opacity:0.4"], [style*="opacity:0.5"], [style*="opacity:0.6"]),
+:root[data-ow-skin="ow-sage"] #memory-modal .memory-tab-panel[data-memory-panel="settings"] .admin-card:has(.admin-switch input:not(:checked)),
+:root[data-ow-skin="ow-sage"] .email-settings-section.is-disabled {
+  opacity: 1 !important; border-style: dashed !important;
+}
+:root[data-ow-skin="ow-sage"] .email-settings-section.is-disabled :is(span, label, textarea, input, select) { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #memory-modal .memory-tab-panel[data-memory-panel="settings"] .admin-card:has(.admin-switch input:not(:checked)) :is(h2, .admin-toggle-sub) { color: var(--color-text-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] :is(#settings-modal, .modal) :is(.admin-card, .email-settings-section):is([style*="opacity: 0.4"], [style*="opacity: 0.5"], [style*="opacity: 0.6"], [style*="opacity:0.4"], [style*="opacity:0.5"], [style*="opacity:0.6"]) :is(h2, h3, label, span, a, p, .admin-toggle-sub, .settings-label, textarea, input, select) {
+  color: var(--color-text-muted) !important;
+}
+:root[data-ow-skin="ow-sage"] :is(.theme-opacity-label, .cal-toolbar-arrow-glyph) { opacity: 1 !important; color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] :is(.slash-ac-usage, .slash-ac-cat) { font-size: 12.5px !important; }
+
+/* Settings > System's last row speaks in the error ink */
+:root[data-ow-skin="ow-sage"] .admin-toggle-label[style*="#e55"] { color: var(--color-error) !important; }
+
+/* Image editor > New project: the title sits on the content's edge */
+:root[data-ow-skin="ow-sage"] .ge-canvas-prompt .modal-header { padding-left: 0 !important; padding-right: 0 !important; }
+
+/* the scroll-to-latest button: the look's arrow, not a text caret */
+:root[data-ow-skin="ow-sage"] .scroll-nav-caret { font-size: 0 !important; line-height: 0 !important; display: inline-block !important; width: 16px !important; height: 16px !important; background: currentColor !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14'/%3E%3Cpath d='m19 12-7 7-7-7'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14'/%3E%3Cpath d='m19 12-7 7-7-7'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important; }
+
+/* message footers: no "|" left hanging between the speed and the actions */
+:root[data-ow-skin="ow-sage"] .metrics-divider { display: none !important; }
+:root[data-ow-skin="ow-sage"] .metrics-divider + .msg-actions,
+:root[data-ow-skin="ow-sage"] .msg-footer > .metrics-divider ~ .msg-actions { margin-left: 12px !important; }
+
+/* the Theme window closes like every other window, on phones too (upstream
+   hides its × there, leaving only the minimise "–") */
+:root[data-ow-skin="ow-sage"] #theme-popup .modal-header .close-btn { display: inline-flex !important; }
+
+/* the sign-in result page: a paper card with hairline, the look's corners */
+:root[data-ow-skin="ow-sage"] body.ow-page .ow-result { border: var(--border-hairline) !important; border-radius: var(--radius-2) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] body.ow-page .ow-result h2 { font-family: var(--font-display) !important; font-weight: var(--font-weight-display) !important; font-size: 30px !important; text-transform: uppercase !important; letter-spacing: var(--tracking-display) !important; line-height: var(--leading-display) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* the "Pro tip" card fades; it no longer slides */
+  :root[data-ow-skin="ow-sage"] .tour-hint { transition-property: opacity !important; transform: none !important; translate: none !important; }
 }

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
 <title>OpenWings — Login</title>
 <link rel="icon" type="image/svg+xml" href="static/openwings/openwings-tile.svg">
+<meta name="theme-color" content="#C7CFC1">
 <link rel="manifest" href="static/manifest.json">
 <link rel="apple-touch-icon" href="static/icons/icon-192.png">
 <script nonce="{{CSP_NONCE}}">
@@ -44,13 +45,9 @@
   try {
     var t = JSON.parse(localStorage.getItem('odysseus-theme'));
     var s = document.documentElement.style;
-    // OpenWings: the chosen look (static/openwings/skins.css styles the
-    // login card under html[data-ow-skin=...]).
-    var owLink = document.createElement('link');
-    owLink.rel = 'stylesheet';
-    owLink.href = 'static/openwings/skins.css?v=2';
-    document.head.appendChild(owLink);
-    var owName = (t && t.name) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'ow-duet' : 'ow-duet-night');
+    // OpenWings: mark the chosen look before the first paint (skins.css,
+    // linked right after this script, styles only html[data-ow-skin=...]).
+    var owName = (t && t.name) || 'ow-sage';
     document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
     if (t && t.colors) {
       var c = t.colors;
@@ -111,6 +108,9 @@
   } catch(e){}
 })();
 </script>
+<!-- OpenWings looks. A parser-inserted stylesheet holds the first layout and
+     the scripts after it, so no upstream font is fetched before a look applies. -->
+<link rel="stylesheet" href="static/openwings/skins.css?v=owlooks4">
 <style>
   @font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-Regular.woff2') format('woff2'); }
   @font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
@@ -240,15 +240,10 @@
   .pw-toggle:hover { color: var(--fg); background: none; }
   .pw-toggle svg { display: block; }
   .remember-toggle {
-    position: absolute !important; right: 13px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; padding: 2px; cursor: pointer;
-    width: 14px !important; height: 14px !important; display: flex !important;
-    align-items: center; justify-content: center;
-    font-size: 0; margin: 0; color: transparent;
+    position: relative; display: flex; align-items: center; gap: 8px; width: fit-content;
+    margin: -4px 0 1rem; padding: 2px 0; cursor: pointer; font-size: 0.85rem;
+    color: color-mix(in srgb, var(--fg) 75%, transparent);
   }
-  /* Visually hide the native checkbox but keep it in the accessibility tree
-     and keyboard-focusable (display:none would drop it from tab order). It
-     overlays the dot so a click/tap still toggles it. */
   .remember-toggle .remember-check {
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%; margin: 0;
@@ -296,10 +291,6 @@
     <label for="username">Username</label>
     <div class="pw-wrapper login-username-wrap">
       <input id="username" name="username" type="text" required autofocus autocomplete="username">
-      <label class="remember-toggle" id="rememberToggle" title="Remember me">
-        <input type="checkbox" class="remember-check" id="remember" checked aria-label="Remember me">
-        <span class="remember-dot" aria-hidden="true"></span>
-      </label>
     </div>
 
     <label for="password">Password</label>
@@ -309,6 +300,12 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>
       </button>
     </div>
+    <!-- OpenWings: "Remember me" is a labelled row under the password, not an unlabelled dot in the username field. -->
+    <label class="remember-toggle" id="rememberToggle">
+      <input type="checkbox" class="remember-check" id="remember" checked>
+      <span class="remember-dot" aria-hidden="true"></span>
+      <span class="remember-text">Remember me</span>
+    </label>
 
     <div id="confirmGroup" style="display:none">
       <label for="confirmPassword">Confirm Password</label>
@@ -339,7 +336,7 @@
     const vr = await fetch(appUrl('/api/version'));
     if (vr.ok) {
       const vd = await vr.json();
-      document.getElementById('version-label').textContent = 'v' + (vd.build || vd.version);
+      document.getElementById('version-label').textContent = 'v' + (vd.version || vd.build);
     }
   } catch(e) {}
 

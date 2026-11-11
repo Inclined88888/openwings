@@ -99,6 +99,26 @@ Use precise language. Show causal relationships explicitly. Quantify uncertainty
                     custom.setdefault("inject_prefix", "")
                     custom.setdefault("inject_suffix", "")
                     self.save(presets)
+            # OpenWings: the built-in persona once named Odysseus (id
+            # 'odysseus') is now Strategist. A custom slot still holding the
+            # old built-in persona, name and prompt, takes the new ones, so
+            # the persona chip and "Your name is ..." follow.
+            if (
+                isinstance(custom, dict)
+                and custom.get("character_name") == "Odysseus"
+                and str(custom.get("system_prompt") or "").startswith("You are Odysseus, king of Ithaca")
+            ):
+                custom["character_name"] = "Strategist"
+                if custom.get("name") == "Odysseus":
+                    custom["name"] = "Strategist"
+                custom["system_prompt"] = (
+                    "You are a calm, practical strategist. First find the real goal, the hidden "
+                    "constraints, what the other people involved want, and the costs that may come "
+                    "later. Then compare the options, weigh risks and tradeoffs, and recommend a clear "
+                    "plan with a fallback if it goes wrong. If the goal is unclear, ask a few sharp "
+                    "questions before advising. Be direct and concrete: never vague, rash or long-winded."
+                )
+                self.save(presets)
             # Heal a forward-incompatible file the same way the legacy `custom`
             # migration above does: fill in any built-in presets an older or
             # partial presets.json is missing, so they reach existing installs

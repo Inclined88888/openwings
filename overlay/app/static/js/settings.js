@@ -1452,7 +1452,7 @@ const SHORTCUT_LABELS = {
   open_cookbook:  'Open Cookbook',
   open_research:  'Open Deep Research',
   open_gallery:   'Open Gallery',
-  open_library:   'Open Library',
+  open_library:   'Open Files & Docs',
   open_memory:    'Open Memory',
   open_skills:    'Open Skills',
   open_notes:     'Open Notes',
@@ -3342,7 +3342,7 @@ async function initUnifiedIntegrations() {
         agentType = 'codex';
       }
       if (!agentType) continue;
-      const detail = `${tok.token_prefix || 'token'}... - ${scopes.join(', ') || 'chat'}`;
+      const detail = `${tok.token_prefix ? '••••' + String(tok.token_prefix).replace(/^ody_/, '') : 'token'} - ${scopes.join(', ') || 'chat'}`;
       items.push({ type: agentType, id: tok.id, name: tok.name || (agentType === 'claude' ? 'Claude Agent' : 'Codex Agent'), detail, enabled: true, data: tok });
     }
     // Vaultwarden removed as an integration option.
@@ -3860,7 +3860,7 @@ async function initUnifiedIntegrations() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = format === 'csv' ? 'odysseus-contacts.csv' : 'odysseus-contacts.vcf';
+        a.download = format === 'csv' ? 'openwings-contacts.csv' : 'openwings-contacts.vcf';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -4958,7 +4958,7 @@ async function initUnifiedIntegrations() {
       <div style="border:1px solid var(--border);border-radius:6px;padding:9px 10px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
           <input type="text" id="uf-codex-existing-rename" data-token-id="${esc(current.id)}" value="${esc(current.name || cfg.defaultName)}" style="font-size:12px;font-weight:600;padding:3px 6px;flex:1;background:transparent;border:1px solid transparent;border-radius:4px;" title="Click to rename">
-          <span style="font-size:10px;opacity:0.55;">${esc(current.token_prefix || 'token')}...${current.last_used_at ? ` · Last used ${new Date(current.last_used_at).toLocaleDateString()}` : ' · Never used'}</span>
+          <span style="font-size:10px;opacity:0.55;">${esc(current.token_prefix ? '••••' + String(current.token_prefix).replace(/^ody_/, '') : 'token')}${current.last_used_at ? ` · Last used ${new Date(current.last_used_at).toLocaleDateString()}` : ' · Never used'}</span>
         </div>
         <div style="font-size:11px;font-weight:600;opacity:0.62;margin-bottom:4px;">Permissions</div>
         ${scopeToggles(current)}

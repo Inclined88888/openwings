@@ -462,8 +462,8 @@ def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if provider == "openrouter":
-        headers.setdefault("HTTP-Referer", "https://github.com/odysseus-dev/odysseus")
-        headers.setdefault("X-OpenRouter-Title", "Odysseus")
+        headers.setdefault("HTTP-Referer", "https://github.com/Inclined88888/openwings")
+        headers.setdefault("X-OpenRouter-Title", "OpenWings")
     if _kimi_code_disguise(base):
         headers.setdefault("User-Agent", KIMI_CODE_USER_AGENT)
     return headers

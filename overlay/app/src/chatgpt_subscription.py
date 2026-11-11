@@ -108,7 +108,7 @@ def chatgpt_headers(access_token: Optional[str]) -> Dict[str, str]:
         "Accept": "application/json, text/event-stream",
         "Origin": "https://chatgpt.com",
         "Referer": "https://chatgpt.com/codex",
-        "User-Agent": "Odysseus ChatGPT Subscription",
+        "User-Agent": "OpenWings/1.0",
     }
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
@@ -510,7 +510,7 @@ def chatgpt_account_id_from_token(access_token: str) -> Optional[str]:
 def usage_request_headers(access_token: str) -> Dict[str, str]:
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Odysseus ChatGPT Subscription",
+        "User-Agent": "OpenWings/1.0",
         "Authorization": f"Bearer {access_token}",
     }
     account_id = chatgpt_account_id_from_token(access_token)

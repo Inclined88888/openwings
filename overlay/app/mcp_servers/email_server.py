@@ -3631,7 +3631,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="list_email_accounts",
             description=(
-                "List the email accounts configured in Odysseus. Returns each account's "
+                "List the email accounts configured in OpenWings. Returns each account's "
                 "name, email address, and whether it's the default. Use this first when "
                 "the user asks about a specific inbox by name (e.g. 'check work')."
             ),
@@ -3763,7 +3763,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Send a new email via SMTP. Provide recipient(s), subject, and body. "
                 "This sends immediately; for normal assistant-written email, prefer "
-                "draft_email so the user can review and send from Odysseus. "
+                "draft_email so the user can review and send from OpenWings. "
                 "For replying to an existing thread, use reply_to_email instead. "
                 "Pass `account` to send from a non-default mailbox."
             ),
@@ -3783,10 +3783,10 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="draft_email",
             description=(
-                "Create a new Odysseus email compose draft document. This DOES NOT send. "
+                "Create a new email compose draft document. This DOES NOT send. "
                 "Use this as the default way to write an email for the user: it opens "
                 "a reviewable email document with To/Cc/Bcc/Subject/body, and the user "
-                "can edit or press Send in Odysseus. "
+                "can edit or press Send in OpenWings. "
                 "For a reply to an existing email use draft_email_reply instead, preserving its thread. "
                 f"{_writing_style_guidance()}"
             ),
@@ -3798,7 +3798,7 @@ async def list_tools() -> list[Tool]:
                     "body": {"type": "string", "description": "Draft body"},
                     "cc": {"type": "string", "description": "CC address(es), comma-separated (optional)"},
                     "bcc": {"type": "string", "description": "BCC address(es), comma-separated (optional)"},
-                    "title": {"type": "string", "description": "Optional Odysseus document title"},
+                    "title": {"type": "string", "description": "Optional document title"},
                     **ACCOUNT_PROP,
                 },
                 "required": ["to", "subject", "body"],
@@ -3809,7 +3809,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Reply to an existing email by UID. This sends immediately. Do NOT use "
                 "for normal 'write/draft a reply saying X' requests; use "
-                "draft_email_reply so the user can review and send from Odysseus. "
+                "draft_email_reply so the user can review and send from OpenWings. "
                 "Only use this when the user explicitly says to send now. Automatically threads the reply with "
                 "In-Reply-To and References headers, prefixes 'Re:' on the subject, and "
                 "uses the original sender as the recipient. Set reply_all=true to also CC "
@@ -3831,7 +3831,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="draft_email_reply",
             description=(
-                "Create an Odysseus email reply draft document for an existing email UID. "
+                "Create an email reply draft document for an existing email UID. "
                 "This DOES NOT send. It threads the draft with In-Reply-To/References, "
                 "prefills the recipient and subject, and stores source email metadata so "
                 "the user can review and send from the normal email composer. "
@@ -3846,7 +3846,7 @@ async def list_tools() -> list[Tool]:
                     "body": {"type": "string", "description": "Draft reply body text"},
                     "folder": {"type": "string", "description": "IMAP folder (default: INBOX)", "default": "INBOX"},
                     "reply_all": {"type": "boolean", "description": "Reply to all recipients (default: false)", "default": False},
-                    "title": {"type": "string", "description": "Optional Odysseus document title"},
+                    "title": {"type": "string", "description": "Optional document title"},
                     **ACCOUNT_PROP,
                 },
                 "required": ["uid", "body"],
@@ -3855,7 +3855,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="ai_draft_email_reply",
             description=(
-                "Generate an AI reply using Odysseus' existing AI Reply behavior, "
+                "Generate an AI reply using the existing AI Reply behavior, "
                 "including Settings > Email > Writing Style, then create an email "
                 "compose document for review. This DOES NOT send and does NOT save "
                 "to the mailbox Drafts folder. Use this when the user asks you to "
@@ -3867,7 +3867,7 @@ async def list_tools() -> list[Tool]:
                     "uid": {"type": "string", "description": "Exact Email UID from list_emails/read_email; never invent UID 1"},
                     "folder": {"type": "string", "description": "IMAP folder (default: INBOX)", "default": "INBOX"},
                     "reply_all": {"type": "boolean", "description": "Reply to all recipients (default: false)", "default": False},
-                    "title": {"type": "string", "description": "Optional Odysseus document title"},
+                    "title": {"type": "string", "description": "Optional document title"},
                     **ACCOUNT_PROP,
                 },
                 "required": ["uid"],
@@ -4464,7 +4464,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     type="text",
                     text=(
                         f"Draft staged for approval (pending id: {result.get('pending_id')}). "
-                        "Nothing has been sent yet. Review and approve it in Odysseus before delivery."
+                        "Nothing has been sent yet. Review and approve it in OpenWings before it goes out."
                     ),
                 )]
             acct_note = f" (from {result['account']})" if result.get("account") else ""
@@ -4489,9 +4489,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=(
-                    f"Created Odysseus email draft [{result['title']}](#document-{result['doc_id']}) "
+                    f"Created email draft [{result['title']}](#document-{result['doc_id']}) "
                     f"(document ID: {result['doc_id']}){acct_note}. "
-                    "It has not been sent; open the document in Odysseus to review and send."
+                    "It has not been sent. Open it to review, then press Send."
                 ),
             )]
 
@@ -4560,9 +4560,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=(
-                    f"Created Odysseus reply draft [{result['title']}](#document-{result['doc_id']}) for UID {uid} "
+                    f"Created reply draft [{result['title']}](#document-{result['doc_id']}) for UID {uid} "
                     f"(document ID: {result['doc_id']}){acct_note}. "
-                    "It has not been sent; open the document in Odysseus to review and send."
+                    "It has not been sent. Open it to review, then press Send."
                 ),
             )]
 
@@ -4583,10 +4583,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=(
-                    f"Generated AI reply and created Odysseus compose draft "
+                    f"Generated an AI reply and created an email draft "
                     f"[{result['title']}](#document-{result['doc_id']}) for UID {uid} "
                     f"(document ID: {result['doc_id']}){acct_note}. "
-                    "It has not been sent; open the document in Odysseus to review and send."
+                    "It has not been sent. Open it to review, then press Send."
                 ),
             )]
 
@@ -4749,7 +4749,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             lines.append(f"Moved {result.get('moved_to_junk', 0)} current message(s) to Junk.")
             if result.get("moved_uids"):
                 lines.append("Moved UIDs: " + ", ".join(result["moved_uids"][:20]))
-            lines.append("Future matching fixture mail will appear in Junk; real IMAP routing depends on provider-side filters or Odysseus polling.")
+            lines.append("Future matching fixture mail will appear in Junk; real IMAP routing depends on provider-side filters or OpenWings polling.")
             return [TextContent(type="text", text="\n".join(lines))]
 
         else:

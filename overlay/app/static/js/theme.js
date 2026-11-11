@@ -11,6 +11,7 @@ import { snapModalToZone } from './tileManager.js?v=20260910responsivebounds1';
 export const THEMES = {
   // OpenWings looks: each also changes type, shapes and textures through
   // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
+  'ow-sage':            { bg:'#C7CFC1', fg:'#1B281C', panel:'#D6DCCF', border:'#A0A79A', red:'#7A4C13' },
   'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
   'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#9DC4BA' },
   'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
@@ -40,16 +41,50 @@ export const THEMES = {
   yoyo:       { bg:'#211f23', fg:'#dfdbd7', panel:'#141415', border:'#3e5146', red:'#e09d6c' },
 };
 
-// OpenWings: with no saved choice, start in the default OpenWings look, in
-// its day or night version per the operating system. A saved theme still wins.
-const OW_DEFAULT_LOOK = 'ow-duet';
-const DEFAULT_THEME = OW_DEFAULT_LOOK + ((typeof window !== 'undefined' && window.matchMedia
-  && window.matchMedia('(prefers-color-scheme: light)').matches) ? '' : '-night');
+// OpenWings: with no saved choice, start in the default OpenWings look. A
+// look with a night version follows the operating system; Lichen (ow-sage)
+// has one mode for everyone, so it never gets a -night suffix. A saved
+// theme still wins.
+const OW_DEFAULT_LOOK = 'ow-sage';
+const OW_SINGLE_MODE_LOOKS = new Set(['ow-sage']);
+const DEFAULT_THEME = OW_DEFAULT_LOOK + (OW_SINGLE_MODE_LOOKS.has(OW_DEFAULT_LOOK) ? '' : ((typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-color-scheme: light)').matches) ? '' : '-night'));
 const THEME_DISPLAY_NAMES = {
   ocean: 'starfield',
   'ow-duet': 'Duet', 'ow-duet-night': 'Duet night',
   'ow-hush': 'Hush', 'ow-hush-night': 'Hush night',
+  'ow-sage': 'Lichen',
 };
+// OpenWings: the theme picker lists only the OpenWings looks, in this order.
+// Upstream's themes stay in THEMES: a theme someone already saved keeps
+// working (and stays listed while it is the active one), /theme <name> still
+// applies one, and the server lists them all again with
+// WINGS_SHOW_CLASSIC_THEMES=1 (it fills index.html's data-ow-classic-themes).
+const OW_PICKER_ORDER = ['ow-sage', 'ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night'];
+export function showClassicThemes() {
+  try { return document.documentElement.getAttribute('data-ow-classic-themes') === '1'; } catch (_) { return false; }
+}
+export function pickerThemeNames(activeName) {
+  const names = OW_PICKER_ORDER.filter(n => THEMES[n]);
+  const classic = Object.keys(THEMES).filter(n => !names.includes(n));
+  if (showClassicThemes()) return names.concat(classic);
+  if (activeName && classic.includes(activeName)) names.push(activeName);
+  return names;
+}
+export function themeDisplayName(name) {
+  return name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : (THEME_DISPLAY_NAMES[name] || name));
+}
+// OpenWings: what people type ("Lichen", "duet night") to the theme key
+// ("ow-sage", "ow-duet-night"); keys and unknown names pass through. The
+// agent's set_theme does the same with src/theme_palette.py THEME_ALIASES.
+export function resolveThemeName(input) {
+  const typed = String(input || '').trim().toLowerCase().replace(/\s+/g, '-');
+  if (!typed || THEMES[typed]) return typed;
+  for (const name of Object.keys(THEMES)) {
+    if (themeDisplayName(name).toLowerCase().replace(/\s+/g, '-') === typed) return name;
+  }
+  return typed;
+}
 const LS_KEY = 'odysseus-theme';
 const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
 
@@ -232,7 +267,7 @@ const ADV_KEYS = [
   { key: 'aiBubbleBg',         css: '--ai-bubble-bg',      label: 'AI Chat Bubble',   group: 'Chat Bubbles' },
   { key: 'bubbleBorder',       css: '--bubble-border',     label: 'Border Chat Bubble', group: 'Chat Bubbles' },
   { key: 'sidebarBg',          css: '--sidebar-bg',        label: 'Sidebar Bg',       group: 'Sidebar' },
-  { key: 'brandColor',         css: '--brand-color',       label: 'Odysseus Logo',    group: 'Sidebar' },
+  { key: 'brandColor',         css: '--brand-color',       label: 'Logo',    group: 'Sidebar' },
   { key: 'brandMixTo',         css: '--brand-mix-to',      label: 'Logo Gradient End', group: 'Sidebar' },
   { key: 'hamburgerColor',     css: '--hamburger-color',   label: 'Hamburger Menu',   group: 'Sidebar' },
   { key: 'inputBg',            css: '--input-bg',          label: 'Input Bg',         group: 'Chat Input / Prompt Area' },
@@ -543,6 +578,24 @@ export function applyOpenWingsSkin(name) {
   } catch (_) {}
 }
 
+// OpenWings: aria-checked follows .active, and only the checked swatch (or
+// the first, when none is) is in the Tab order.
+function _syncSwatchRadios(grids) {
+  for (const g of grids) {
+    const all = [...g.querySelectorAll('.theme-swatch')];
+    const on = all.find(s => s.classList.contains('active'));
+    all.forEach((s, i) => {
+      if (s.getAttribute('role') !== 'radio') s.setAttribute('role', 'radio');
+      const checked = s === on ? 'true' : 'false';
+      if (s.getAttribute('aria-checked') !== checked) s.setAttribute('aria-checked', checked);
+      // The attribute, not the property: a <div> already reports tabIndex -1
+      // without one, and is only focusable once the attribute is there.
+      const ti = (s === on || (!on && i === 0)) ? '0' : '-1';
+      if (s.getAttribute('tabindex') !== ti) s.setAttribute('tabindex', ti);
+    });
+  }
+}
+
 // OpenWings: a look sets its own colours and type, so while one is active the
 // colour, colour harmony and font controls are locked behind a short note.
 // Otherwise the first colour edit would save a plain custom theme and drop
@@ -571,6 +624,24 @@ function _syncOwCustomizeLock() {
   }
   const font = document.getElementById('theme-font-select');
   if (font) font.disabled = on;
+  // The locked fields show the look's own values, not upstream's defaults
+  // (a red accent and Dark mode).
+  const look = on ? THEMES[document.documentElement.getAttribute('data-ow-skin')] : null;
+  if (look) {
+    const accent = document.getElementById('harmony-accent');
+    const accentHex = document.getElementById('harmony-accent-hex');
+    const mode = document.getElementById('harmony-mode');
+    if (accent) accent.value = look.red;
+    if (accentHex) accentHex.textContent = look.red;
+    if (mode) mode.value = _isDarkColour(look.bg) ? 'dark' : 'light';
+  }
+}
+
+function _isDarkColour(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return false;
+  const [r, g, b] = m.slice(1).map(x => parseInt(x, 16));
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 128;
 }
 
 export function save(name, colors, opts) {
@@ -748,7 +819,7 @@ export function initThemeUI() {
   const customThemes = _loadCustomThemes();
 
   // Render preset swatches
-  grid.innerHTML = Object.entries(THEMES).map(([name, c]) => `
+  grid.innerHTML = pickerThemeNames(activeName).map(name => [name, THEMES[name]]).map(([name, c]) => `
     <div class="theme-swatch${name === activeName ? ' active' : ''}" data-theme="${name}">
       <div class="theme-swatch-colors">
         <span style="background:${c.bg}"></span>
@@ -756,7 +827,7 @@ export function initThemeUI() {
         <span style="background:${c.fg}"></span>
         <span style="background:${c.red}"></span>
       </div>
-      ${name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : (THEME_DISPLAY_NAMES[name] || name))}
+      ${themeDisplayName(name)}
     </div>
   `).join('');
 
@@ -858,6 +929,23 @@ export function initThemeUI() {
         save(name, colors, { font: f, density: d, bgPattern: p, bgEffectColor: ec, bgEffectIntensity: ei, bgEffectSize: sz, bgEffectSpeed: sp, frosted: fr });
       });
     });
+    // OpenWings: the swatches are a radio group the keyboard can reach. Tab
+    // lands on the current look; arrows move between looks and wear them,
+    // Enter or Space wears the focused one.
+    g.setAttribute('role', 'radiogroup');
+    if (!g.hasAttribute('aria-label')) g.setAttribute('aria-label', g === grid ? 'Looks' : 'Your themes');
+    g.querySelectorAll('.theme-swatch').forEach(sw => {
+      sw.addEventListener('keydown', (e) => {
+        if (e.target !== sw) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sw.click(); return; }
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        if (!step) return;
+        e.preventDefault();
+        const all = [...g.querySelectorAll('.theme-swatch')];
+        const next = all[(all.indexOf(sw) + step + all.length) % all.length];
+        if (next) { next.focus(); next.click(); }
+      });
+    });
     g.querySelectorAll('.theme-delete-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -869,6 +957,15 @@ export function initThemeUI() {
       });
     });
   });
+
+  _syncSwatchRadios(allGrids);
+  if (!grid.dataset.owRadioWatch) {
+    // Other code (custom themes, Customize edits) moves the .active class:
+    // keep aria-checked and the tab stop on whichever swatch has it.
+    grid.dataset.owRadioWatch = '1';
+    const mo = new MutationObserver(() => _syncSwatchRadios([grid, document.getElementById('themeUserGrid')].filter(Boolean)));
+    [grid, userGrid].filter(Boolean).forEach(g => mo.observe(g, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] }));
+  }
 
   // Init color pickers from current theme and apply syntax colors
   const currentColors = saved ? saved.colors : THEMES[DEFAULT_THEME];
@@ -1419,7 +1516,7 @@ export function initThemeUI() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'odysseus_' + (obj.name || 'theme') + '.json';
+      a.download = 'openwings_' + (obj.name || 'theme') + '.json';
       a.click();
       URL.revokeObjectURL(url);
       newExp.innerHTML = '&#x2713; Downloaded!';
@@ -2340,7 +2437,7 @@ const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize, applyBgEffectSpeed,
                        applyFrostedGlass,
                        save, getSaved, saveCustomTheme, deleteCustomTheme,
-                       getCustomThemes, DEFAULT_THEME };
+                       getCustomThemes, DEFAULT_THEME, pickerThemeNames, themeDisplayName, resolveThemeName };
 
 export default themeModule;
 

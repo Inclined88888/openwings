@@ -2311,7 +2311,7 @@ def setup_email_routes():
                 # so ordinary emails containing "Reminder" don't get mixed in.
                 status, data = _imap_uid_search(
                     conn,
-                    f'(OR HEADER X-Odysseus-Kind "reminder" SUBJECT "Reminder (Odysseus):"{from_clause})',
+                    f'(OR HEADER X-Odysseus-Kind "reminder" OR SUBJECT "Reminder (OpenWings):" SUBJECT "Reminder (Odysseus):"{from_clause})',
                 )
             elif filter_ == "pending_30d":
                 # "What's pending in the last month" — UNANSWERED + delivered
@@ -3202,7 +3202,7 @@ def setup_email_routes():
             msg_out["From"] = email.utils.formataddr((cfg.get("display_name") or "", cfg["from_address"]))
             msg_out["To"] = target
             msg_out["Subject"] = subject
-            msg_out["Message-ID"] = email.utils.make_msgid(domain="odysseus.local")
+            msg_out["Message-ID"] = email.utils.make_msgid(domain="openwings.local")
             _apply_odysseus_headers(msg_out, "unsubscribe", uid)
             _send_smtp_message(cfg, cfg["from_address"], [target], msg_out.as_string(), human_approved=True)
             moved = False
@@ -5303,13 +5303,13 @@ def setup_email_routes():
                 if trash_folder:
                     _invalidate_list_cache(account_id, trash_folder)
 
-    @router.delete("/odysseus/reminders")
+    @router.delete("/odysseus/reminders", summary="Delete reminder emails")
     async def delete_odysseus_reminder_emails(
         account_id: str | None = Query(None),
         permanent: bool = Query(False),
         owner: str = Depends(require_owner),
     ):
-        """Delete email messages stamped as Odysseus reminders."""
+        """Delete reminder emails sent by OpenWings."""
         if account_id:
             _assert_owns_account(account_id, owner)
         deleted = 0
@@ -5348,9 +5348,11 @@ def setup_email_routes():
                         # explicit kind header, and subject fallback catches
                         # clients/providers that stripped custom headers.
                         uids.update(_search_uids(conn, f'(HEADER X-Odysseus-Kind {_search_quote("reminder")})'))
+                        uids.update(_search_uids(conn, f'(SUBJECT {_search_quote("Reminder (OpenWings):")})'))
                         uids.update(_search_uids(conn, f'(SUBJECT {_search_quote("Reminder (Odysseus):")})'))
                         for addr in own_addrs:
                             addr_q = _search_quote(addr)
+                            uids.update(_search_uids(conn, f'(FROM {addr_q} SUBJECT {_search_quote("Reminder (OpenWings):")})'))
                             uids.update(_search_uids(conn, f'(FROM {addr_q} SUBJECT {_search_quote("Reminder (Odysseus):")})'))
                             # Legacy reminders created before the Odysseus
                             # prefix still came from this mailbox as
@@ -5594,9 +5596,9 @@ def setup_email_routes():
 
         raise HTTPException(status_code=400, detail="Unknown attachment kind")
 
-    @router.post("/compose-from-odysseus")
+    @router.post("/compose-from-odysseus", summary="Attach from library")
     async def compose_from_odysseus(data: dict, owner: str = Depends(require_owner)):
-        """Stage an Odysseus document or gallery image as a compose upload."""
+        """Stage a library document or gallery image as a compose upload."""
         kind = str(data.get("kind") or "").strip().lower()
         item_id = str(data.get("id") or "").strip()
         if kind not in {"document", "gallery"} or not item_id:
@@ -5618,9 +5620,9 @@ def setup_email_routes():
             logger.error(f"Failed to stage Odysseus attachment {kind}/{item_id}: {e}")
             return {"success": False, "error": "Mail operation failed"}
 
-    @router.post("/compose-from-odysseus-zip")
+    @router.post("/compose-from-odysseus-zip", summary="Attach from library as zip")
     async def compose_from_odysseus_zip(data: dict, owner: str = Depends(require_owner)):
-        """Stage several Odysseus documents/gallery images as one zip attachment."""
+        """Stage several library documents/gallery images as one zip attachment."""
         raw_items = data.get("items") or []
         if not isinstance(raw_items, list) or not raw_items:
             raise HTTPException(status_code=400, detail="Expected items")
@@ -5661,7 +5663,7 @@ def setup_email_routes():
                 content = buf.getvalue()
                 if not content:
                     raise HTTPException(status_code=400, detail="No valid attachments")
-                return _stage_compose_bytes("odysseus-attachments.zip", content)
+                return _stage_compose_bytes("attachments.zip", content)
             finally:
                 db.close()
         except HTTPException:

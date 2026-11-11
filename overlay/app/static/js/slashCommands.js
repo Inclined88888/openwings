@@ -900,14 +900,14 @@ async function handleSetupWizard(mode, input) {
   _addMessage('user', input);
 
   if (mode === 'theme') {
-    const name = input.trim().toLowerCase();
     const tm = themeModule;
     const custom = tm && tm.getCustomThemes ? tm.getCustomThemes() : {};
+    const name = custom[input.trim().toLowerCase()] ? input.trim().toLowerCase() : _resolveTheme(input);
     const colors = (tm && tm.THEMES && tm.THEMES[name]) || custom[name];
     if (tm && colors) {
       tm.applyColors(colors);
       tm.save(name, colors);
-      await typewriterReply(`Theme switched to "${name}".`);
+      await typewriterReply(`Theme switched to "${_themeLabel(name)}".`);
     } else if (tm && tm.applyTheme) {
       tm.applyTheme(name);
       await typewriterReply(`Theme switched to "${name}".`);
@@ -1304,7 +1304,7 @@ async function _cmdWorkspace(args, ctx) {
     // folder, sensitive dir, filesystem root).
     workspaceModule.vetAndSetWorkspace(path).then(({ ok, path: resolvedPath }) => {
       if (ok) slashReply(`Workspace set: <code>${uiModule.esc(resolvedPath)}</code>`);
-      else slashReply(`Not a usable workspace folder on the Odysseus backend: <code>${uiModule.esc(path)}</code>. If Odysseus is running in Docker, use the container path, usually <code>/app</code>, or use <code>/workspace pick</code>.`);
+      else slashReply(`Not a usable workspace folder on the OpenWings server: <code>${uiModule.esc(path)}</code>. If OpenWings is running in Docker, use the container path, usually <code>/app</code>, or use <code>/workspace pick</code>.`);
     });
     return true;
   };
@@ -1502,10 +1502,12 @@ async function _cmdTheme(args, ctx) {
   const sub = (args[0] || '').toLowerCase();
   const custom = tm && tm.getCustomThemes ? tm.getCustomThemes() : {};
   const customNames = Object.keys(custom);
-  const presetNames = tm && tm.THEMES ? Object.keys(tm.THEMES) : [];
+  // OpenWings: list what the theme picker lists (any preset still applies).
+  const _activeTheme = (tm && tm.getSaved && (tm.getSaved() || {}).name) || '';
+  const presetNames = tm && tm.THEMES ? (tm.pickerThemeNames ? tm.pickerThemeNames(_activeTheme) : Object.keys(tm.THEMES)) : [];
   if (!sub || !tm || !tm.THEMES) {
     const customLabel = customNames.length ? `\nCustom: ${customNames.join(', ')}` : '';
-    slashReply(`Usage:\n  /theme &lt;name&gt; — Apply a preset or custom theme\n  /theme save &lt;name&gt; — Save current colors as a custom theme\n  /theme delete &lt;name&gt; — Delete a custom theme\nPresets: ${presetNames.join(', ')}${customLabel}`);
+    slashReply(`Usage:\n  /theme &lt;name&gt; — Apply a preset or custom theme\n  /theme save &lt;name&gt; — Save current colors as a custom theme\n  /theme delete &lt;name&gt; — Delete a custom theme\nPresets: ${presetNames.map(_themeLabel).join(', ')}${customLabel}`);
     return true;
   }
   if (sub === 'save' && args[1]) {
@@ -1531,11 +1533,11 @@ async function _cmdTheme(args, ctx) {
     await typewriterReply(`Theme "${delArg}" deleted`);
     return true;
   }
-  const name = sub;
+  const name = custom[args.join(' ').toLowerCase()] ? args.join(' ').toLowerCase() : _resolveTheme(args.join(' '));
   const colors = tm.THEMES[name] || custom[name];
   if (!colors) {
     const customLabel = customNames.length ? ` | Custom: ${customNames.join(', ')}` : '';
-    slashReply(`Unknown theme "${name}". Available: ${presetNames.join(', ')}${customLabel}`);
+    slashReply(`Unknown theme "${args.join(' ')}". Available: ${presetNames.map(_themeLabel).join(', ')}${customLabel}`);
     return true;
   }
   tm.applyColors(colors);
@@ -1546,8 +1548,19 @@ async function _cmdTheme(args, ctx) {
     const sw = grid.querySelector(`[data-theme="${name}"]`);
     if (sw) sw.classList.add('active');
   }
-  await typewriterReply(`Theme: ${name}`);
+  await typewriterReply(`Theme: ${_themeLabel(name)}`);
   return true;
+}
+
+// OpenWings: people type and read the names the theme picker shows
+// ("Lichen"), not the internal keys ("ow-sage").
+function _resolveTheme(typed) {
+  const tm = themeModule;
+  return tm && tm.resolveThemeName ? tm.resolveThemeName(typed) : String(typed || '').trim().toLowerCase().replace(/\s+/g, '-');
+}
+function _themeLabel(name) {
+  const tm = themeModule;
+  return tm && tm.themeDisplayName ? tm.themeDisplayName(name) : name;
 }
 
 // ── Models ──
@@ -2511,7 +2524,7 @@ async function _cmdDemo(args, ctx) {
   const delay = ms => new Promise(r => setTimeout(r, ms));
 
   // ── Welcome ──
-  await typewriterReply('Welcome to Odysseus! Lets begin the tour!');
+  await typewriterReply('Welcome to OpenWings! Let’s take a quick tour.');
   // Beat between the welcome line and the first hint so it doesn't snap in.
   await delay(900);
 
@@ -2549,8 +2562,8 @@ async function _cmdDemo(args, ctx) {
     { sel: '#sidebar-new-chat-btn', text: 'Start a new chat here. <b>Click it.</b> You can do it!', mode: 'click',
       before() { if (sidebar?.classList.contains('hidden')) sidebar.classList.remove('hidden'); } },
     { sel: '#model-picker-btn',   text: 'Pick your LLM, Local or API.', advanceOnClick: true },
-    { sel: '#mode-agent-btn',     text: '<b>Agent mode</b> gives Odysseus more control of the app when your model supports tools: create a theme, download a model, make a daily task, organize things, and more.', mode: 'click' },
-    { sel: '#web-toggle-btn',     text: 'Toggle tools like <b>web search</b>. Odysseus comes with private built-in <b>SearXNG</b> search.', mode: 'click' },
+    { sel: '#mode-agent-btn',     text: '<b>Agent mode</b> lets OpenWings use tools and work in the app when your model supports them: create a theme, download a model, make a daily task, organize things, and more.', mode: 'click' },
+    { sel: '#web-toggle-btn',     text: 'Toggle tools like <b>web search</b>. OpenWings includes private <b>SearXNG</b> web search.', mode: 'click' },
     { sel: '#overflow-plus-btn',  text: 'More tools can be found here, or in your sidebar. <b>Click to peek.</b>',
       advanceOnClick: true, pulseNext: true, afterDelay: 2200 },
     { sel: '#message',            text: 'Write your prompt here. Drag and drop files to attach them. <b>/prompt</b> for random prompt, <b>/help</b> for more.',
@@ -2580,7 +2593,7 @@ async function _cmdDemo(args, ctx) {
   }
 
   _clearTour();
-  await typewriterReply('Odysseus is yours to explore, enjoy the voyage!');
+  await typewriterReply('You’re all set. Enjoy OpenWings!');
   return true;
 }
 
@@ -3295,7 +3308,7 @@ async function _cmdTourTheme(args, ctx) {
   // work as a fallback (read past without touching anything).
   const steps = [
     { sel: '#theme-popup',
-      text: '<b>Welcome to Theme.</b> Odysseus is yours to customize!',
+      text: '<b>Welcome to Theme.</b> Make OpenWings yours!',
       placement: 'center-above',
       before: () => _clickTab('theme-tab-browse') },
     { sel: '#themeGrid',
@@ -3527,7 +3540,7 @@ async function _cmdTourSettings(args, ctx) {
       text: '<b>AI Defaults</b> — three roles share the work. Let\'s walk through them.',
       before: () => _clickNav('ai') },
     { sel: '#settings-modal .admin-card:has(#set-defaultModelSelect)',
-      text: '<b>Default Chat Model</b> — your main model. The one Odysseus reaches for whenever you start a new chat.',
+      text: '<b>Default Chat Model</b> — your main model. OpenWings uses it for every new chat.',
       before: () => _clickNav('ai') },
     { sel: '#settings-modal .admin-card:has(#set-utilityModelSelect)',
       text: '<b>Utility Model</b> — your hard-working sidekick. Runs background tasks (compaction, cleanup, auto-naming, summarization) so your chat model doesn\'t burn cycles on chores. <b>Recommend a small local model</b> here — it\'s free and always on.',
@@ -3548,7 +3561,7 @@ async function _cmdTourSettings(args, ctx) {
       text: '<b>Email</b> — sync schedule, drafts, snooze defaults — everything email-flow related.',
       before: () => _clickNav('email') },
     { sel: '#settings-modal .settings-nav-item[data-settings-tab="reminders"]',
-      text: '<b>Reminders</b> — quiet hours and how Odysseus nudges you about calendar + urgent email.',
+      text: '<b>Reminders</b> — quiet hours and how OpenWings reminds you about calendar + urgent email.',
       before: () => _clickNav('reminders') },
   ];
 
@@ -3961,7 +3974,7 @@ async function _cmdTourNotes(args, ctx) {
       text: '<b>Notes</b> is your basic todo list, and also where reminders are managed.',
       placement: 'center-above' },
     { sel: '#notes-pane .notes-pane-body',
-      text: 'Your notes show up here. You can also <b>ask Odysseus in chat</b> to take a note for you.' },
+      text: 'Your notes show up here. You can also <b>ask OpenWings in chat</b> to take a note for you.' },
     { sel: '#notes-search',
       text: '<b>Search</b> across every note — title, body, tags, the works.' },
     { sel: '#notes-view-toggle',
@@ -4400,7 +4413,7 @@ async function _cmdTourTask1(args, ctx) {
       text: 'Tasks are <b>paused by default</b> — resume whichever ones make sense for you. (Or pause anything that\'s running.)' },
     { sel: '#tasks-modal .modal-body',
       text: 'When enabled, Tasks use the <b>utility model configured in Settings</b> for cleanup and organization jobs.' },
-  ], 'Use Tasks when you want Odysseus to handle background housekeeping.', {
+  ], 'Use Tasks when you want OpenWings to handle routine jobs in the background.', {
     continueLabel: 'continue →',
     continueText: '<b>Part 1 done.</b> Want to keep going into <b>adding & managing tasks</b>?',
   });
@@ -4424,7 +4437,7 @@ async function _cmdTourTask2(args, ctx) {
     // re-show it when the user moves past this step so the tour lands
     // back where it started.
     { sel: '#message',
-      text: 'You can also <b>just ask in chat</b> — say "every weekday at 9am check for urgent emails" and Odysseus will create the task for you.',
+      text: 'You can also <b>just ask in chat</b> — say "every weekday at 9am check for urgent emails" and OpenWings will create the task for you.',
       before: () => document.getElementById('tasks-modal')?.classList.add('hidden'),
       after:  () => document.getElementById('tasks-modal')?.classList.remove('hidden') },
   ], 'That\'s Tasks. Have it run the background bits so you can stay in chat.');
@@ -4629,7 +4642,7 @@ async function _cmdTourResearch(args, ctx) {
     const _body = await typewriterReply('That’s Deep Research — hit Start or queue up many. You can also view past research in your ');
     const libLink = document.createElement('button');
     libLink.type = 'button';
-    libLink.textContent = 'Library';
+    libLink.textContent = 'Files & Docs';
     libLink.style.cssText = 'background:none;border:none;padding:0;margin:0;color:var(--accent,var(--red));font:inherit;text-decoration:underline;cursor:pointer;';
     libLink.addEventListener('click', () => {
       if (window.documentModule && window.documentModule.openLibrary) {
@@ -5191,28 +5204,30 @@ async function _cmdSetup(args, ctx) {
 
     if (topic === 'theme' || topic === 'themes') {
       const tm = themeModule;
-      const presets = tm && tm.THEMES ? Object.keys(tm.THEMES) : [];
+      const _activeTheme = (tm && tm.getSaved && (tm.getSaved() || {}).name) || '';
+      const presets = tm && tm.THEMES ? (tm.pickerThemeNames ? tm.pickerThemeNames(_activeTheme) : Object.keys(tm.THEMES)) : [];
       const customObj = tm && tm.getCustomThemes ? tm.getCustomThemes() : {};
       const customKeys = Object.keys(customObj);
 
       // One-shot: /setup theme <name> -> apply directly
-      const themeName = topicArgs.join(' ').trim().toLowerCase().replace(/\s+/g, '-');
+      const typedTheme = topicArgs.join(' ').trim().toLowerCase().replace(/\s+/g, '-');
+      const themeName = customObj[typedTheme] ? typedTheme : _resolveTheme(typedTheme);
       if (themeName && tm) {
         const colors = (tm.THEMES && tm.THEMES[themeName]) || customObj[themeName];
         if (colors) {
           tm.applyColors(colors);
           tm.save(themeName, colors);
-          await typewriterReply(`Theme: ${themeName}`);
+          await typewriterReply(`Theme: ${_themeLabel(themeName)}`);
         } else {
           const customLabel = customKeys.length ? ` | Custom: ${customKeys.join(', ')}` : '';
-          slashReply(`Unknown theme "${themeName}". Available: ${presets.join(', ')}${customLabel}`);
+          slashReply(`Unknown theme "${typedTheme}". Available: ${presets.map(_themeLabel).join(', ')}${customLabel}`);
         }
         return true;
       }
 
       const current = (Storage.getJSON(Storage.KEYS.THEME, {}).name) || (tm && tm.DEFAULT_THEME) || 'dark';
       const customLabel = customKeys.length ? `\n\nCustom: ${customKeys.join(', ')}` : '';
-      await typewriterReply(`Current theme: ${current}\n\nAvailable: ${presets.join(', ')}${customLabel}\n\nType a theme name to switch.`);
+      await typewriterReply(`Current theme: ${_themeLabel(current)}\n\nAvailable: ${presets.map(_themeLabel).join(', ')}${customLabel}\n\nType a theme name to switch.`);
       setupMode = 'theme';
       return true;
     }
@@ -5312,19 +5327,6 @@ async function _cmdShortcuts(args, ctx) {
 }
 
 // ── Easter eggs ──
-
-const _ODYSSEY_QUOTES = [
-  "Tell me, O Muse, of that ingenious hero who travelled far and wide...",
-  "Of all creatures that breathe and move upon the earth, nothing is bred that is weaker than man.",
-  "There is a time for many words, and there is also a time for sleep.",
-  "Even his griefs are a joy long after to one that remembers all that he wrought and endured.",
-  "Be strong, saith my heart; I am a soldier; I have seen worse sights than this.",
-  "There is nothing more admirable than when two people who see eye to eye keep house as man and wife.",
-  "A man who has been through bitter experiences and travelled far enjoys even his sufferings after a time.",
-  "For a friend with an understanding heart is worth no less than a brother.",
-  "The wine urges me on, the bewitching wine, which sets even a wise man to singing and to laughing gently.",
-  "I am Odysseus, son of Laertes, known to all for my cunning. My fame reaches even unto heaven.",
-];
 
 const _8BALL = [
   "It is certain.", "It is decidedly so.", "Without a doubt.", "Yes, definitely.",
@@ -5450,16 +5452,6 @@ async function _cmdFortune(args, ctx) {
     <div style="font-size:0.7em;text-transform:uppercase;letter-spacing:2px;opacity:0.35;margin-bottom:8px">Fortune Cookie</div>
     <div style="font-style:italic;line-height:1.5">${f}</div>
     <div style="margin-top:8px;font-size:0.75em;opacity:0.3">${String(Math.floor(Math.random()*90)+10)} ${String(Math.floor(Math.random()*90)+10)} ${String(Math.floor(Math.random()*90)+10)} ${String(Math.floor(Math.random()*90)+10)} ${String(Math.floor(Math.random()*90)+10)} ${String(Math.floor(Math.random()*90)+10)}</div>
-  </div>`);
-  if (!document.getElementById('egg-styles')) { const s=document.createElement('style');s.id='egg-styles';s.textContent='@keyframes egg-spin{0%{transform:rotateY(0) scale(0.5);opacity:0}50%{transform:rotateY(540deg) scale(1.2)}100%{transform:rotateY(720deg) scale(1)}} @keyframes egg-shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}} @keyframes egg-fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}';document.head.appendChild(s); }
-  return true;
-}
-
-async function _cmdOdyssey(args, ctx) {
-  const q = _ODYSSEY_QUOTES[Math.floor(Math.random() * _ODYSSEY_QUOTES.length)];
-  _eggRender(`<div style="max-width:420px;border-left:3px solid var(--red);padding:8px 16px;animation:egg-fade 0.5s ease-out">
-    <div style="font-style:italic;line-height:1.6;opacity:0.9">${q}</div>
-    <div style="margin-top:8px;font-size:0.8em;opacity:0.4">Homer, The Odyssey</div>
   </div>`);
   if (!document.getElementById('egg-styles')) { const s=document.createElement('style');s.id='egg-styles';s.textContent='@keyframes egg-spin{0%{transform:rotateY(0) scale(0.5);opacity:0}50%{transform:rotateY(540deg) scale(1.2)}100%{transform:rotateY(720deg) scale(1)}} @keyframes egg-shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}} @keyframes egg-fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}';document.head.appendChild(s); }
   return true;
@@ -6075,7 +6067,7 @@ const COMMANDS = {
   library: {
     alias: ['docs', 'documents'],
     category: 'Tools',
-    help: 'Open Library',
+    help: 'Open Files & Docs',
     handler: (args, ctx) => _cmdToolPanel('library', args, ctx),
     usage: '/library'
   },
@@ -6196,7 +6188,6 @@ const COMMANDS = {
   roll:    { alias: ['dice', 'r'],  hidden: true, handler: _cmdRoll,    usage: '/roll [NdN|sides]' },
   '8ball': { alias: ['8-ball'],     hidden: true, handler: _cmd8Ball,   usage: '/8ball question' },
   fortune: { alias: ['cookie'],     hidden: true, handler: _cmdFortune, usage: '/fortune' },
-  odyssey: { alias: ['homer','quote'],hidden: true, handler: _cmdOdyssey,usage: '/odyssey' },
   ascii:   { alias: ['banner'],     hidden: true, handler: _cmdAscii,   usage: '/ascii [text]' },
   matrix:  { alias: [],             hidden: true, handler: _cmdMatrix,  usage: '/matrix' },
   cowsay:  { alias: ['moo', 'say'], hidden: true, handler: _cmdSay,     usage: '/cowsay [text]' },

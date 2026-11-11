@@ -128,8 +128,8 @@ logger = logging.getLogger(__name__)
 # and passed to FastAPI so we can use the modern context-manager lifecycle
 # instead of the deprecated @app.on_event("startup"/"shutdown") decorators.
 app = FastAPI(
-    title="AI Chat Application",
-    description="Comprehensive AI chat with memory, research, and multi-modal capabilities",
+    title="OpenWings API",
+    description="OpenWings workspace API: chat, memory, research, documents, email and more.",
     version="1.0.0",
 )
 
@@ -276,6 +276,7 @@ if AUTH_ENABLED:
         "/api/health",
         "/api/version",
         "/login",
+        "/favicon.ico",  # Wings: the OpenWings icon, asked for before sign-in
     }
     AUTH_EXEMPT_PREFIXES = ["/static"]
     # Dynamic paths whose own handler proves identity via a path-embedded
@@ -1000,6 +1001,32 @@ async def serve_login(request: Request):
     if not AUTH_ENABLED:
         return RedirectResponse(url="/", status_code=302)
     return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/login.html"))
+
+# Wings: browsers ask for /favicon.ico on their own; answer with the
+# OpenWings icon instead of a redirect to /login.
+@app.get("/favicon.ico", include_in_schema=False)
+async def wings_favicon():
+    return FileResponse(abs_join(BASE_DIR, "static/openwings/favicon.ico"), media_type="image/x-icon",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+# Wings: a browser that opens a page that does not exist gets a short
+# OpenWings page in the user's look, not raw JSON in a default font. API
+# routes and clients that do not ask for HTML keep upstream's JSON answer.
+from starlette.exceptions import HTTPException as _WingsStarletteHTTPException
+from fastapi.exception_handlers import http_exception_handler as _wings_default_http_handler
+
+
+@app.exception_handler(_WingsStarletteHTTPException)
+async def _wings_not_found_page(request: Request, exc: _WingsStarletteHTTPException):
+    if (exc.status_code == 404 and request.method == "GET"
+            and "text/html" in request.headers.get("accept", "")
+            and not request.url.path.startswith("/api/")):
+        from fastapi.responses import HTMLResponse
+        from wings.pages import not_found_page
+        return HTMLResponse(not_found_page(), status_code=404)
+    return await _wings_default_http_handler(request, exc)
+
 
 @app.get("/api/version")
 async def get_version():
