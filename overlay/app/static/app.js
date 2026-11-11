@@ -4043,27 +4043,18 @@ function startOdysseusApp() {
         newMode = 'idle';
         sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded');
       } else {
-      // Check if we're already on a fresh empty session (welcome screen visible)
-      const isEmptySession = document.getElementById('chat-container')?.classList.contains('welcome-active');
-      if (isEmptySession) {
-        // Already on new chat — show arrow in muted style (ready to type)
+      // OpenWings: an empty box always shows a quiet send arrow. Upstream
+      // turned it into a New chat button inside a chat, so the same button
+      // (and Enter on an empty box) opened a new chat. New chats start from
+      // the sidebar.
+      {
+        // A quiet arrow (muted style) until there is something to send.
         sendBtn.innerHTML = _sendIcon;
         sendBtn.title = 'Send message';
         newMode = 'idle';
         sendBtn.classList.add('newchat-mode'); // muted gray style
         sendBtn.classList.remove('mic-mode', 'newchat-expanded');
         clearTimeout(sendBtn._expandTimer);
-      } else {
-        sendBtn.innerHTML = _newChatIcon + '<span class="send-btn-label">+ New</span>';
-        sendBtn.title = 'New chat';
-        newMode = 'newchat';
-        sendBtn.classList.add('newchat-mode');
-        sendBtn.classList.remove('mic-mode');
-        // The button stays a 32px compact icon (no auto-expand to label —
-        // the "+ New" label inside is for screen readers only; sighted users
-        // see the spinning + on hover + the title tooltip).
-        clearTimeout(sendBtn._expandTimer);
-        sendBtn.classList.remove('newchat-expanded');
       }
       } // close group-else
     } else {
@@ -4147,6 +4138,12 @@ function startOdysseusApp() {
         return;
       }
 
+      // OpenWings: an empty box sends nothing.
+      if (!hasText && !hasFiles && !_isSttEnabled()) {
+        if (messageInput) messageInput.focus();
+        return;
+      }
+
       // If input is empty and STT is enabled, start recording
       if (!hasText && !hasFiles && _isSttEnabled()) {
         sendBtn.innerHTML = _stopIcon;
@@ -4188,6 +4185,9 @@ function startOdysseusApp() {
 	          if (railNew) railNew.click();
 	          return;
 	        }
+        // OpenWings: Enter on an empty box sends nothing (while a reply is
+        // running it still reaches upstream's handling).
+        if (!_isForegroundChatBusy() && !(messageInput.value || '').trim() && !_hasAttachments()) return;
         if (_isForegroundChatBusy() && messageInput.value && messageInput.value.trim()) {
           if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
             return;
