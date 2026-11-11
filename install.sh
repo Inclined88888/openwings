@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# OpenWings one-command installer.
+#
+#   curl -fsSL https://raw.githubusercontent.com/Inclined88888/openwings/main/install.sh | bash
+#
+# Setup options go after "bash -s --", for example:
+#   curl -fsSL https://raw.githubusercontent.com/Inclined88888/openwings/main/install.sh | bash -s -- --with-browser --with-runner
+#
+# What it does: puts the code in ~/openwings (or updates it there), makes sure
+# Docker is installed and running (it asks before installing anything), then
+# runs scripts/setup.sh, which builds and starts OpenWings and prints how to
+# sign in. Running it again updates the code and restarts; your data and .env
+# are kept.
+#
+# Settings (environment variables):
+#   OPENWINGS_DIR          where to install (default ~/openwings)
+#   OPENWINGS_REF          branch or tag to install (default main once it holds OpenWings)
+#   OPENWINGS_YES=1        answer yes to the install questions (unattended installs)
+#   OPENWINGS_NO_OPEN=1    do not open the browser at the end
+#   OPENWINGS_DOCKER_WAIT  seconds to wait for Docker to start (default 300)
+#
+# Works with the bash 3.2 that ships with macOS. The whole script is one
+# function called on the last line, so a download cut short never runs half.
+
+openwings_install() {
+  set -euo pipefail
+
+  local SLUG="Inclined88888/openwings"
+  local REPO="https://github.com/${SLUG}"
+  local RAW="https://raw.githubusercontent.com/${SLUG}"
+  # Where OpenWings lives until it is merged into main.
+  local PREVIEW_REF="claude/focused-hypatia-p8el3r"
+  local DIR="${OPENWINGS_DIR:-$HOME/openwings}"
+  local REF="${OPENWINGS_REF:-}"
+  local WAIT="${OPENWINGS_DOCKER_WAIT:-300}"
+  local OS USE_SG=0 SUDO=""
+
+  local B="" G="" Y="" R="" N=""
+  if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'; fi
+  say()  { printf '%s==>%s %s\n' "$G" "$N" "$*"; }
+  warn() { printf '%s!!%s  %s\n' "$Y" "$N" "$*" >&2; }
+  die()  { printf '%sxx%s  %s\n' "$R" "$N" "$*" >&2; exit 1; }
+  # Questions are read from the terminal, not from the piped script.
+  ask() {
+    local answer=""
+    if [ "${OPENWINGS_YES:-}" = "1" ]; then return 0; fi
+    if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+      printf '%s%s%s [y/N] ' "$B" "$1" "$N" > /dev/tty
+      read -r answer < /dev/tty || answer=""
+    fi
+    case "$answer" in y|Y|yes|Yes|YES) return 0 ;; esac
+    return 1
+  }
+  need() { command -v "$1" >/dev/null 2>&1 || die "$1 is needed and was not found. Install it, then run this again."; }
+
+  case "$(uname -s)" in
+    Darwin) OS=mac ;;
+    Linux) if grep -qi microsoft /proc/version 2>/dev/null; then OS=wsl; else OS=linux; fi ;;
+    *) die "This installer supports macOS, Linux and Windows through WSL2. On Windows, open a WSL2 terminal and run it there." ;;
+  esac
+  if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
+  if [ "$OS" = "mac" ]; then
+    # Docker Desktop only links its docker command into the PATH after its
+    # first start; OrbStack keeps its own. Find them either way.
+    local extra
+    for extra in /Applications/Docker.app/Contents/Resources/bin "$HOME/Applications/Docker.app/Contents/Resources/bin" "$HOME/.orbstack/bin"; do
+      if [ -d "$extra" ]; then PATH="$PATH:$extra"; fi
+    done
+    export PATH
+  fi
+  need curl
+  need tar
+
+  # 1. Which version ------------------------------------------------------
+  if [ -z "$REF" ]; then
+    if curl -fsIL --max-time 20 "${RAW}/main/scripts/setup.sh" >/dev/null 2>&1; then
+      REF="main"
+    elif curl -fsIL --max-time 20 "${RAW}/${PREVIEW_REF}/scripts/setup.sh" >/dev/null 2>&1; then
+      REF="$PREVIEW_REF"
+    else
+      die "Cannot reach GitHub (${REPO}). Check the internet connection and try again."
+    fi
+  fi
+
+  # 2. The code ----------------------------------------------------------
+  has_git() { git --version >/dev/null 2>&1; }   # false for macOS's git stub without the developer tools
+  fetch_tarball() {
+    local tmp kind
+    tmp="$(mktemp -d)"
+    for kind in heads tags; do
+      if curl -fsSL "https://codeload.github.com/${SLUG}/tar.gz/refs/${kind}/${REF}" | tar -xzf - -C "$tmp" --strip-components=1 2>/dev/null; then
+        mkdir -p "$DIR"
+        cp -R "$tmp/." "$DIR/"
+        rm -rf "$tmp"
+        return 0
+      fi
+    done
+    rm -rf "$tmp"
+    die "Could not download OpenWings (${REF}) from GitHub."
+  }
+
+  if [ -d "$DIR/.git" ]; then
+    has_git || die "$DIR is a git checkout, but git does not work here. Install git (on macOS: xcode-select --install), then run this again."
+    say "Updating OpenWings in $DIR ($REF)"
+    git -C "$DIR" fetch --quiet origin "$REF" || die "Could not fetch $REF from GitHub."
+    if [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no)" ]; then
+      die "$DIR has local changes to OpenWings' own files. Commit or undo them (git -C \"$DIR\" status), then run this again."
+    fi
+    if git -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
+      git -C "$DIR" checkout --quiet "$REF"
+      git -C "$DIR" merge --quiet --ff-only FETCH_HEAD \
+        || die "Your local $REF in $DIR has commits that are not on GitHub. Sort that out with git, then run this again."
+    else
+      git -C "$DIR" checkout --quiet -b "$REF" FETCH_HEAD
+    fi
+  elif [ -f "$DIR/scripts/setup.sh" ]; then
+    say "Updating OpenWings in $DIR ($REF)"
+    fetch_tarball
+  elif [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
+    die "$DIR already exists and is not OpenWings. Choose another folder: OPENWINGS_DIR=/path/to/folder"
+  elif has_git; then
+    say "Downloading OpenWings to $DIR ($REF)"
+    git clone --quiet --branch "$REF" "${REPO}.git" "$DIR" || die "Could not download OpenWings from GitHub."
+  else
+    say "Downloading OpenWings to $DIR ($REF)"
+    fetch_tarball
+  fi
+
+  # 3. Docker ------------------------------------------------------------
+  docker_ok() { docker info >/dev/null 2>&1; }
+
+  install_docker() {
+    case "$OS" in
+      mac)
+        if command -v brew >/dev/null 2>&1 && ask "Docker is not installed. Install Docker Desktop with Homebrew now?"; then
+          brew install --cask docker-desktop || brew install --cask docker || die "Homebrew could not install Docker Desktop."
+        else
+          open "https://www.docker.com/products/docker-desktop/" 2>/dev/null || true
+          die "Docker is not installed. Install Docker Desktop (https://www.docker.com/products/docker-desktop/), then run this command again."
+        fi ;;
+      linux)
+        if [ -n "$SUDO" ] && ! command -v sudo >/dev/null 2>&1; then
+          die "Docker is not installed and sudo is missing. Install Docker Engine as root, then run this again."
+        fi
+        if ask "Docker is not installed. Install Docker Engine now with Docker's official script (get.docker.com, needs sudo)?"; then
+          curl -fsSL https://get.docker.com | $SUDO sh || die "Docker's install script failed."
+          if [ -d /run/systemd/system ]; then $SUDO systemctl enable --now docker || true; fi
+        else
+          die "Docker is needed. Install Docker Engine (https://docs.docker.com/engine/install/), then run this again."
+        fi ;;
+      wsl)
+        die "Docker is not available in this WSL terminal. Install Docker Desktop for Windows, turn on Settings > Resources > WSL integration for this distribution, then run this again." ;;
+    esac
+  }
+
+  start_docker() {
+    case "$OS" in
+      mac)
+        if [ -d /Applications/Docker.app ] || [ -d "$HOME/Applications/Docker.app" ]; then
+          say "Starting Docker Desktop"; open -a Docker
+        elif [ -d /Applications/OrbStack.app ] || [ -d "$HOME/Applications/OrbStack.app" ]; then
+          say "Starting OrbStack"; open -a OrbStack
+        elif command -v colima >/dev/null 2>&1; then
+          say "Starting Colima"; colima start
+        else
+          die "Docker is installed but no Docker app was found to start. Start your Docker engine, then run this again."
+        fi ;;
+      linux)
+        say "Starting the Docker service"
+        if [ -d /run/systemd/system ]; then
+          $SUDO systemctl start docker || true
+        elif command -v service >/dev/null 2>&1; then
+          $SUDO service docker start || true
+        fi ;;
+      wsl)
+        local exe="/mnt/c/Program Files/Docker/Docker/Docker Desktop.exe"
+        if [ -f "$exe" ]; then
+          say "Starting Docker Desktop for Windows"; "$exe" >/dev/null 2>&1 &
+        else
+          die "Start Docker Desktop for Windows (with WSL integration on for this distribution), then run this again."
+        fi ;;
+    esac
+  }
+
+  wait_docker() {
+    local waited=0
+    printf 'Waiting for Docker'
+    while ! docker_ok && ! docker_needs_group; do
+      if [ "$waited" -ge "$WAIT" ]; then printf '\n'; return 1; fi
+      if [ "$waited" -eq 30 ]; then
+        printf '\n'; warn "Docker is still starting. The first start can take a minute or two; if Docker shows a window, accept it."
+        printf 'Waiting for Docker'
+      fi
+      printf '.'; sleep 2; waited=$((waited + 2))
+    done
+    printf ' ready\n'
+  }
+
+  # On Linux the daemon can be running while this user may not use it yet.
+  docker_needs_group() {
+    [ "$OS" != "mac" ] && docker info 2>&1 | grep -qi "permission denied"
+  }
+
+  local arg no_start=0
+  for arg in ${1+"$@"}; do [ "$arg" = "--no-start" ] && no_start=1; done
+  if [ "$no_start" -eq 0 ]; then
+  command -v docker >/dev/null 2>&1 || install_docker
+  command -v docker >/dev/null 2>&1 || die "Docker was not found after installing. Open a new terminal and run this again."
+  if ! docker_ok && ! docker_needs_group; then
+    start_docker
+    wait_docker || die "Docker did not start within ${WAIT} seconds. Start it yourself, then run this command again."
+  fi
+  if ! docker_ok && docker_needs_group; then
+    local me; me="$(id -un)"
+    if ask "Your user ($me) may not use Docker yet. Add it to the docker group (needs sudo)?"; then
+      $SUDO usermod -aG docker "$me" || die "Could not add $me to the docker group."
+      command -v sg >/dev/null 2>&1 || die "Added $me to the docker group. Log out and back in, then run this again."
+      USE_SG=1
+    else
+      die "Docker refused this user. Add it to the docker group (sudo usermod -aG docker $me), log out and back in, then run this again."
+    fi
+  fi
+  fi
+
+  # 4. Setup -------------------------------------------------------------
+  cd "$DIR"
+  chmod +x scripts/*.sh 2>/dev/null || true
+  if [ "$USE_SG" -eq 1 ]; then
+    local cmd; cmd="./scripts/setup.sh$(printf ' %q' ${1+"$@"})"
+    sg docker -c "$cmd" < /dev/null
+  else
+    ./scripts/setup.sh ${1+"$@"} < /dev/null
+  fi
+
+  # 5. Open it -----------------------------------------------------------
+  local url="" prev="" bind port
+  for arg in ${1+"$@"}; do
+    [ "$prev" = "--domain" ] && url="https://$arg"
+    prev="$arg"
+  done
+  if [ -z "$url" ]; then
+    bind="$(sed -n 's/^APP_BIND=//p' .env 2>/dev/null | tail -n 1)"; bind="${bind:-127.0.0.1}"
+    port="$(sed -n 's/^APP_PORT=//p' .env 2>/dev/null | tail -n 1)"; port="${port:-7011}"
+    [ "$bind" = "0.0.0.0" ] && bind="localhost"
+    url="http://${bind}:${port}"
+  fi
+  if [ "$no_start" -eq 0 ] && [ "${OPENWINGS_NO_OPEN:-}" != "1" ]; then
+    case "$OS" in
+      mac) open "$url" 2>/dev/null || true ;;
+      wsl) explorer.exe "$url" >/dev/null 2>&1 || true ;;
+      linux) if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then xdg-open "$url" >/dev/null 2>&1 || true; fi ;;
+    esac
+  fi
+  say "Installed in $DIR. Start it again later with: cd \"$DIR\" && docker compose up -d"
+}
+
+openwings_install "$@"

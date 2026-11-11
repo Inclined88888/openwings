@@ -57,12 +57,20 @@ Requirements:
 * Outbound access to `ghcr.io` (the Odysseus image) and Docker Hub (sidecars)
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/Inclined88888/openwings/main/install.sh | bash
+```
+
+That is the whole install, on a Mac, on Linux and in a WSL2 terminal on Windows. [`install.sh`](install.sh) puts OpenWings in `~/openwings` (or updates it there), makes sure Docker is installed and running (it starts Docker Desktop, OrbStack or Colima on a Mac and the Docker service on Linux, and asks before installing Docker), then runs `scripts/setup.sh` and opens the app in your browser. Run the same command again to update; your data and `.env` are kept. Setup options go after `bash -s --`, for example `| bash -s -- --with-browser --with-runner`. Other folder: `OPENWINGS_DIR=/path` before `bash`.
+
+By hand, if you prefer:
+
+```bash
 git clone https://github.com/Inclined88888/openwings.git
 cd openwings
 ./scripts/setup.sh
 ```
 
-That is the whole install. `setup.sh`:
+`setup.sh`:
 
 1. copies `.env.example` to `.env` (mode 600) and generates the encryption key, the admin password and the SearXNG secret;
 2. builds the OpenWings image (the pinned upstream image plus the patch overlay) and starts the stack;
