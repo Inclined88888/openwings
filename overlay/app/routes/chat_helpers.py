@@ -1305,10 +1305,6 @@ async def build_chat_context(
 
 def accumulate_token_usage(session_id: str, metrics: dict):
     """Add input/output token counts (and USD cost) to the session's totals."""
-    # Wings: plain chat turns count toward the daily caps (agent runs are
-    # counted round by round in the agent loop).
-    from wings import budget as _wings_budget
-    _wings_budget.record_chat_turn(session_id, metrics)
     in_t = metrics.get("input_tokens", 0)
     out_t = metrics.get("output_tokens", 0)
     cost = metrics.get("cost_usd")

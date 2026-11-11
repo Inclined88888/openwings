@@ -1,0 +1,95 @@
+Wings patch 0018: several browser actions in one call (batch), and hover
+
+OpenManus's browser runs Python the model writes against the browser, so
+one step can walk twenty pages of a table or open every invoice in a list.
+Wings' browser did one action per call: a "download the last 24 monthly
+statements" task took one model round per click and ran out of rounds.
+Wings does not run model written code against the signed in browser.
+Instead it adds a declarative batch of its own actions, each checked
+exactly as if it were called alone (wings/browser.py).
+
+  * src/browser_identity.py: "batch" and "hover" are page actions. A batch
+    takes steps (up to 20 of open, read, find, click, fill, press, scroll,
+    wait, back, forward, drag and hover), each (repeat the steps for up to
+    50 items, with {item} replaced) and pages (repeat them on up to 25
+    pages, clicking the next control in between). wings/browser.py checks
+    the steps itself: no uploads, screenshots, tabs or JavaScript inside a
+    batch, at most 100 step runs and 5 minutes.
+  * hover: moves the pointer over a ref, the element showing some text, or
+    a screen point, so menus and tooltips that open only on hover appear in
+    the outline (OpenManus's browser can hover; Wings could not). Hovering
+    commits nothing, and clicks on what it reveals are guarded as usual.
+  * src/tool_schemas.py: private_browser describes batch and hover.
+
+The request authority grants batch and hover only together with the other
+interactive browser actions (a browser task the person asked for). A step
+that needs the person (a password, a code, a card, a pay or send button)
+stops the batch with the usual PAUSED message, listing what was done.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/browser_identity.py b/src/browser_identity.py
+index a136935..17715ce 100644
+--- a/src/browser_identity.py
++++ b/src/browser_identity.py
+@@ -46,8 +46,10 @@ CDP_METHODS = frozenset({"Target.getTargets", "Target.getTargetInfo", "Target.at
+ PAGE_ACTIONS = frozenset({"open", "read", "snapshot", "find", "evaluate", "click", "fill",
+     "press", "scroll", "wait", "screenshot", "navigate", "reload", "back", "forward",
+     "select_page", "close_page", "network", "console", "new_page", "tabs",
+-    # Wings: drag (mouse drag between refs or screen points), see wings/browser.py.
+-    "drag"})
++    # Wings: drag (mouse drag between refs or screen points) and batch (a
++    # bounded list of these same actions, each checked like a single call),
++    # see wings/browser.py.
++    "drag", "batch", "hover"})
+ SESSION_ACTIONS = frozenset({"session_info"})
+ PAGE_FAILURE = "browser_page_authority_unavailable"
+ _ACTIVE = ContextVar("browser_resource_operation", default=None)
+@@ -97,7 +99,9 @@ def parse_operation(content):
+     allowed = {"action", "page", "url", "selector", "target", "ref", "key", "direction", "amount",
+                "timeout_ms", "timeout_s", "text", "value", "script", "path", "find",
+                # Wings: screen points for click/drag on canvas apps, and the drag target.
+-               "x", "y", "to_ref", "to_x", "to_y"}
++               "x", "y", "to_ref", "to_x", "to_y",
++               # Wings: batch steps, and the items or pages they repeat over.
++               "steps", "each", "pages"}
+     if set(args) - allowed:
+         raise ResourceIdentityError("Browser flags, labels, configuration and raw targetIds are forbidden")
+     if "page" in args and (not isinstance(args["page"], str) or not re.fullmatch(r"t[1-9][0-9]*", args["page"])):
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 525198f..92f130d 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -393,11 +393,11 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "private_browser",
+-            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
++            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. For repetitive work (read every page of a table, open each invoice in a list) use batch with each or pages instead of one call per click. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+-                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page", "drag"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page. drag: drag from ref (or x,y, or the element showing find=text) to to_ref (or to_x,to_y, or the element showing text=, for drop zones without a ref)."},
++                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page", "drag", "batch", "hover"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page. drag: drag from ref (or x,y, or the element showing find=text) to to_ref (or to_x,to_y, or the element showing text=, for drop zones without a ref). batch: run several of open, read, find, click, fill, press, scroll, wait, back, forward and drag in one call (steps), optionally once per item of each (with {item} in the steps replaced by it) or on each page following the next control (pages); every step is checked as if called alone and the batch stops at the first step that fails or needs the person. hover: move the pointer over ref (or x,y, or the element showing find=) to open a menu or tooltip that appears only on hover."},
+                     "page": {"type": "string", "pattern": "^t[1-9][0-9]*$", "description": "Tab alias tN (from tabs or the outline) for select_page, close_page, or acting on another tab."},
+                     "url": {"type": "string", "description": "open, navigate, new_page: the http(s) address."},
+                     "ref": {"type": "string", "description": "Element ref from the newest outline, for example e12."},
+@@ -411,12 +411,15 @@ FUNCTION_TOOL_SCHEMAS = [
+                     "target": {"type": "string", "description": "Same as selector."},
+                     "script": {"type": "string", "description": "evaluate: JavaScript to run in the page (refused unless the admin enabled it)."},
+                     "path": {"type": "string", "description": "fill on a file upload field: the workspace file to attach (for example report.pdf or downloads/invoice.pdf); the person approves each upload. read: a downloaded file's name, to read its text."},
+-                    "x": {"type": "integer", "minimum": 0, "description": "click or drag start: horizontal pixel in the latest screenshot, for canvas apps without refs."},
++                    "x": {"type": "integer", "minimum": 0, "description": "click, hover or drag start: horizontal pixel in the latest screenshot, for canvas apps without refs."},
+                     "y": {"type": "integer", "minimum": 0, "description": "click or drag start: vertical pixel in the latest screenshot."},
+                     "to_ref": {"type": "string", "description": "drag: the ref to drop on."},
+                     "to_x": {"type": "integer", "minimum": 0, "description": "drag: horizontal pixel to drop at."},
+                     "to_y": {"type": "integer", "minimum": 0, "description": "drag: vertical pixel to drop at."},
+-                    "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 60000, "description": "wait: milliseconds (default 2000, max 30000). open: page load timeout."}
++                    "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 60000, "description": "wait: milliseconds (default 2000, max 30000). open: page load timeout."},
++                    "steps": {"type": "array", "maxItems": 20, "items": {"type": "object"}, "description": "batch: up to 20 actions, each an object with action and that action's arguments, for example [{\"action\": \"click\", \"find\": \"{item}\"}, {\"action\": \"read\"}, {\"action\": \"back\"}]. Refs change when the page changes, so later steps should use find or visible text."},
++                    "each": {"type": "array", "maxItems": 50, "items": {"type": "string"}, "description": "batch: run the steps once per item (visible texts from the outline, such as invoice names), replacing {item} in them."},
++                    "pages": {"type": "object", "properties": {"next": {"type": "string"}, "max": {"type": "integer", "minimum": 1, "maximum": 25}}, "description": "batch: run the steps on this page, click the control showing next, and repeat up to max pages (default 5) or until there is no next page."}
+                 },
+                 "required": ["action"],
+                 "additionalProperties": False

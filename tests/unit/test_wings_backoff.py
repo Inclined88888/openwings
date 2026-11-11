@@ -39,8 +39,25 @@ def test_waits_grow_and_stay_bounded(backoff):
     fixed = lambda lo, hi: 1.0  # noqa: E731 - no jitter
     assert [backoff.wait_for(n, 429, "", rand=fixed) for n in (1, 2, 3)] == [2.0, 4.0, 8.0]
     assert [backoff.wait_for(n, 529, "", rand=fixed) for n in (1, 2, 3)] == [1.0, 2.0, 4.0]
-    assert backoff.wait_for(1, 429, "try again in 120s", rand=fixed) == 20.0
+    assert backoff.wait_for(1, 429, "try again in 20s", rand=fixed) == 20.0
     assert backoff.wait_for(1, 429, "try again in 1ms", rand=fixed) == 0.2
     assert backoff.wait_for(6, 429, "", rand=fixed) == 20.0
     for _ in range(50):
         assert 0.18 <= backoff.wait_for(1, 429, "try again in 0.2s") <= 23.0
+
+
+def test_compound_and_long_hints(backoff):
+    fixed = lambda lo, hi: 1.0  # noqa: E731 - no jitter
+    assert backoff.hinted_wait("Please try again in 7m12.48s.") == 432.48
+    assert backoff.hinted_wait("Try again in 1h2m3s") == 3723
+    assert backoff.hinted_wait("try again in 2 minutes") == 120
+    assert backoff.hinted_wait("Try again in 3 days.") == 3 * 86400
+    # Asked to wait longer than Wings ever waits: retrying cannot succeed.
+    for text in ("Please try again in 7m12.48s.", "try again in 120s", "Try again in 3 days."):
+        assert backoff.wait_for(1, 429, text, rand=fixed) is None
+
+
+def test_own_connection_failures_are_not_backed_off(backoff):
+    assert backoff.wait_for(1, 503, "Cannot reach api.example.com") is None
+    assert backoff.wait_for(1, 503, "Upstream api.example.com unreachable (cooldown active)") is None
+    assert backoff.wait_for(1, 503, "Service temporarily overloaded", rand=lambda lo, hi: 1.0) == 1.0

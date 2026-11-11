@@ -1505,33 +1505,89 @@ import { invalidateSettings } from './appConfig.js';
   // Wings: the approved plan stays pinned for this chat after the first
   // send, so Continue (after the step limit, a stop, or a typed "continue")
   // carries the plan with its ticked steps and update_plan stays available.
-  // Upstream sent it once and dropped it. Kept per chat, so a plan drafted in
-  // another chat never leaks in.
-  const WINGS_APPROVED_PLAN_KEY = 'wings-approved-plan';
+  // Upstream sent it once and dropped it. Each chat keeps its own plan, for
+  // 12 hours after the last approval or tick. Only the person's approved
+  // text is ever sent back: from the agent's update_plan the tick marks of
+  // the approved steps are copied, and a plan whose steps the agent changed
+  // is dropped (the person approves it again in the plan panel).
+  const WINGS_APPROVED_PLAN_KEY = 'wings-approved-plan:';
   const WINGS_PLAN_AUTO_CONTINUE_MAX = 3;
-  let _planAutoContinues = 0;
+  const WINGS_PLAN_TTL_MS = 12 * 3600 * 1000;
+  const WINGS_STEP_RE = /^(\s*(?:[-*]|\d+\.)\s+\[)( |x|X)(\]\s+)(.*)$/;
+  let _wingsStreamPlanSession = '';
   function _wingsSessionNow() {
     try {
       const sm = _liveSessionModule();
       return (sm && sm.getCurrentSessionId && sm.getCurrentSessionId()) || '';
     } catch (_) { return ''; }
   }
+  function _wingsLoadPlan(session) {
+    const sid = session || _wingsSessionNow();
+    if (!sid) return null;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(WINGS_APPROVED_PLAN_KEY + sid) || 'null'); } catch (_) { saved = null; }
+    if (!saved || typeof saved.plan !== 'string' || typeof saved.at !== 'number') return null;
+    if (Date.now() - saved.at > WINGS_PLAN_TTL_MS) { _wingsForgetPlan(sid); return null; }
+    return saved;
+  }
+  function _wingsSavePlan(session, entry) {
+    try {
+      localStorage.setItem(WINGS_APPROVED_PLAN_KEY + session, JSON.stringify(entry));
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith(WINGS_APPROVED_PLAN_KEY) || k === WINGS_APPROVED_PLAN_KEY + session) continue;
+        let old = null;
+        try { old = JSON.parse(localStorage.getItem(k) || 'null'); } catch (_) {}
+        if (!old || typeof old.at !== 'number' || Date.now() - old.at > WINGS_PLAN_TTL_MS) localStorage.removeItem(k);
+      }
+    } catch (_) {}
+  }
   function _wingsRememberPlan(plan, session) {
     const text = _extractPlanText(plan);
     const sid = session || _wingsSessionNow();
     if (!text || !sid) return;
-    try { localStorage.setItem(WINGS_APPROVED_PLAN_KEY, JSON.stringify({ session: sid, plan: text })); } catch (_) {}
+    _wingsSavePlan(sid, { plan: text, at: Date.now(), auto: 0 });
   }
-  function _wingsForgetPlan() {
-    _planAutoContinues = 0;
-    try { localStorage.removeItem(WINGS_APPROVED_PLAN_KEY); } catch (_) {}
+  function _wingsForgetPlan(session) {
+    const sid = session || _wingsSessionNow();
+    if (!sid) return;
+    try { localStorage.removeItem(WINGS_APPROVED_PLAN_KEY + sid); } catch (_) {}
+  }
+  function _wingsSteps(text) {
+    const out = [];
+    for (const line of String(text || '').split('\n')) {
+      const m = line.match(WINGS_STEP_RE);
+      if (m) out.push({ done: m[2] !== ' ', key: m[4].toLowerCase().replace(/\s+/g, ' ').trim() });
+    }
+    return out;
+  }
+  function _wingsTickPlan(update, session) {
+    const saved = _wingsLoadPlan(session);
+    if (!saved) return;
+    const approved = _wingsSteps(saved.plan);
+    const next = _wingsSteps(_extractPlanText(update));
+    const same = approved.length > 0 && approved.length === next.length
+      && approved.every((step, i) => step.key === next[i].key);
+    if (!same) { _wingsForgetPlan(session); return; }
+    let i = 0;
+    const plan = saved.plan.split('\n').map((line) => {
+      const m = line.match(WINGS_STEP_RE);
+      return m ? m[1] + (next[i++].done ? 'x' : ' ') + m[3] + m[4] : line;
+    }).join('\n');
+    _wingsSavePlan(session, { ...saved, plan, at: Date.now() });
   }
   function _wingsActivePlan() {
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(WINGS_APPROVED_PLAN_KEY) || 'null'); } catch (_) { saved = null; }
-    if (!saved || typeof saved.plan !== 'string' || !saved.session || saved.session !== _wingsSessionNow()) return '';
+    const saved = _wingsLoadPlan();
     // Only while steps are left: a finished plan is not pinned again.
-    return /^\s*(?:[-*]|\d+\.)\s+\[ \]\s+/m.test(saved.plan) ? saved.plan : '';
+    return saved && /^\s*(?:[-*]|\d+\.)\s+\[ \]\s+/m.test(saved.plan) ? saved.plan : '';
+  }
+  function _wingsAutoContinueCount(session) {
+    const saved = _wingsLoadPlan(session);
+    return saved ? (Number(saved.auto) || 0) : WINGS_PLAN_AUTO_CONTINUE_MAX;
+  }
+  function _wingsSetAutoContinue(session, count) {
+    const saved = _wingsLoadPlan(session);
+    if (saved) _wingsSavePlan(session, { ...saved, auto: count, at: Date.now() });
   }
   function _wingsIsContinuation(text) {
     const t = String(text || '').trim();
@@ -1628,7 +1684,6 @@ import { invalidateSettings } from './appConfig.js';
 	      const approved = _getStoredPlan() || _extractPlanText(plan);
 	      if (!approved.trim()) return;
 	      _pendingApprovedPlan = approved;
-	      _planAutoContinues = 0;
 	      _wingsRememberPlan(approved);
 	      if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
 	      if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
@@ -1679,7 +1734,6 @@ import { invalidateSettings } from './appConfig.js';
         const approved = _getStoredPlan();
         if (!approved.trim()) return;
         _pendingApprovedPlan = approved;
-        _planAutoContinues = 0;
         _wingsRememberPlan(approved);
         panel.remove();
         if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
@@ -2685,6 +2739,9 @@ import { invalidateSettings } from './appConfig.js';
 	      }
 	      fd.append('mode', isAgentMode ? 'agent' : 'chat');
 	      fd.append('plan_mode', isPlanMode ? 'true' : 'false');
+	      // Wings: remember which chat's run carries the approved plan, so only
+	      // that run continues on its own at the step limit.
+	      _wingsStreamPlanSession = (!isPlanMode && _pendingApprovedPlan) ? _wingsSessionNow() : '';
 	      if (!isPlanMode && _pendingApprovedPlan) {
 	        fd.append('approved_plan', _pendingApprovedPlan.slice(0, 8192));
 	        _pendingApprovedPlan = '';
@@ -4597,17 +4654,34 @@ import { invalidateSettings } from './appConfig.js';
                     }
                   });
                   note.appendChild(contBtn);
-                  if (_wingsActivePlan() && _planAutoContinues < WINGS_PLAN_AUTO_CONTINUE_MAX) {
-                    _planAutoContinues += 1;
-                    label.textContent = `Reached the ${json.rounds || ''} step limit with plan steps left. Continuing the approved plan (${_planAutoContinues} of ${WINGS_PLAN_AUTO_CONTINUE_MAX})...`;
+                  const _planSid = streamSessionId;
+                  const _done = _wingsAutoContinueCount(_planSid);
+                  if (_wingsStreamPlanSession && _wingsStreamPlanSession === _planSid
+                      && _wingsActivePlan() && _done < WINGS_PLAN_AUTO_CONTINUE_MAX) {
+                    _wingsSetAutoContinue(_planSid, _done + 1);
+                    label.textContent = `Reached the ${json.rounds || ''} step limit with plan steps left. Continuing the approved plan (${_done + 1} of ${WINGS_PLAN_AUTO_CONTINUE_MAX})...`;
                     const stopAuto = document.createElement('button');
                     stopAuto.className = 'continue-btn';
                     stopAuto.title = 'Do not continue automatically';
                     stopAuto.textContent = 'Stop here';
-                    const _timer = setTimeout(() => { if (note.isConnected) contBtn.click(); }, 2500);
+                    let _timer = 0;
+                    const _started = Date.now();
+                    // Send only once this reply has fully finished and the
+                    // person is still in the same chat (a click while the
+                    // stream is open would queue it behind the reply).
+                    const _tryContinue = () => {
+                      if (!note.isConnected) return;
+                      if (_wingsSessionNow() !== _planSid) return;
+                      if (isStreaming || _sendInFlight) {
+                        if (Date.now() - _started < 10 * 60 * 1000) _timer = setTimeout(_tryContinue, 500);
+                        return;
+                      }
+                      contBtn.click();
+                    };
+                    _timer = setTimeout(_tryContinue, 2500);
                     stopAuto.addEventListener('click', () => {
                       clearTimeout(_timer);
-                      _planAutoContinues = WINGS_PLAN_AUTO_CONTINUE_MAX;
+                      _wingsSetAutoContinue(_planSid, WINGS_PLAN_AUTO_CONTINUE_MAX);
                       stopAuto.remove();
                       label.textContent = `Reached the ${json.rounds || ''} step limit. Not finished; press Continue when ready.`;
                     });
@@ -5164,12 +5238,7 @@ import { invalidateSettings } from './appConfig.js';
                 // the stored plan + live-refresh the docked plan window.
                 const _pu = (json.data && json.data.plan) ? json.data.plan : '';
                 if (_pu) _setStoredPlan(_pu);
-                if (_pu) {
-                  try {
-                    const _saved = JSON.parse(localStorage.getItem(WINGS_APPROVED_PLAN_KEY) || 'null');
-                    if (_saved && _saved.session && _saved.session === streamSessionId) _wingsRememberPlan(_pu, streamSessionId);
-                  } catch (_) {}
-                }
+                if (_pu && streamSessionId) _wingsTickPlan(_pu, streamSessionId);
 
               } else if (json.type === 'agent_step') {
                 if (!_turnRendering.accepts(json)) continue;

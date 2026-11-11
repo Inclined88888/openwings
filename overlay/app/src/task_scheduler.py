@@ -2167,6 +2167,12 @@ class TaskScheduler:
         authority = authority.restrict(disabled_tools=get_setting("disabled_tools", []) or ())
         if not authority.permits(task_operation(task.task_type, getattr(task, "action", None), task.prompt)):
             raise PermissionError("Scheduled research has no matching server request authority.")
+        # Wings: daily token and spend caps (wings/budget.py).
+        from wings import budget as _wings_budget
+        _wings_stop = _wings_budget.day_exhausted(task.owner)
+        if _wings_stop:
+            raise PermissionError(_wings_stop)
+        _wings_budget.set_owner(task.owner)
         from core.database import Session as DbSession, ChatMessage
         from src.deep_research import DeepResearcher
         from src.research_handler import RESEARCH_DATA_DIR, ResearchHandler

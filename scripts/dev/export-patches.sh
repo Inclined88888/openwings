@@ -38,6 +38,7 @@ done < <(git -C "$SRC" log --reverse --format='%H %s' "${ODYSSEUS_COMMIT}..HEAD"
 [ "$count" -gt 0 ] || { echo "no commits on top of ${ODYSSEUS_COMMIT} in $SRC" >&2; exit 1; }
 for patch in "$ROOT"/patches/*.patch; do
   name="$(basename "$patch" .patch)"
-  git -C "$SRC" log --format='%s' "${ODYSSEUS_COMMIT}..HEAD" | grep -qx "$name" \
+  # grep without -q reads all of git log's output, so pipefail never sees a SIGPIPE.
+  git -C "$SRC" log --format='%s' "${ODYSSEUS_COMMIT}..HEAD" | grep -x "$name" >/dev/null \
     || echo "warning: patches/${name}.patch has no matching commit in $SRC (stale?)" >&2
 done

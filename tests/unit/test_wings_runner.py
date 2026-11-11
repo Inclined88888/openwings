@@ -123,3 +123,14 @@ def test_background_marker_runs_in_the_foreground_with_the_full_limit(runner, mo
     assert "Ran in the foreground" in out["output"] and out["exit_code"] == 0
     out = asyncio.run(runner.run_owned("echo hi", {}, tool="bash", timeout=30))
     assert sent["timeout"] == 30 and "foreground" not in out["output"]
+
+
+def test_background_marker_is_split_on_newlines_only(runner):
+    # bash reads everything up to the newline as one comment line; splitting
+    # on other separators would run text the person saw as a comment.
+    for sep in ("\r", "\x0b", "\x0c", "\x1c", "\x85", "\u2028", "\u2029"):
+        code = f"#!bg{sep}rm -rf ./*\nls -la"
+        assert not runner.is_background_marked(code)
+        assert runner.split_background_marker(code) == (False, code)
+    assert runner.split_background_marker("#!bg\r\nmake all") == (True, "make all")
+    assert runner.split_background_marker("\n#!bg\nsleep 1\n") == (True, "sleep 1")

@@ -3,17 +3,29 @@ Wings patch 0013: hard token and spend caps for agent runs
 Upstream caps an agent run by rounds and tool calls only; it tracks
 tokens and estimated cost for display but nothing stops on them.
 OpenManus can stop on a token count (input tokens only, off by default).
-Wings counts input and output tokens and estimated dollars, per run and
-per person per day, including scheduled tasks; see wings/budget.py.
+Wings counts input and output tokens and dollars (the provider's reported
+cost when it sends one, else upstream's price table), per run and per
+person per day, for every model call; see wings/budget.py.
 
-  * src/agent_loop.py: the run's usage_buckets list is a wings RunUsage,
-    which counts each round as upstream records it (all four sites). A
-    person whose daily cap is used up gets a message instead of a run.
-    Before any tool of a round runs, a run or daily cap that is reached
-    stops the run through upstream's budget_exceeded path.
+  * src/llm_core.py: stream_llm counts each streaming call when its stream
+    ends; llm_call and llm_call_async count each provider answer. Every
+    model call goes through one of these, so chat, agent rounds, the
+    summaries after an agent loop, model calling tools, the non-streaming
+    /api/chat route, deep research and helper calls are all counted.
+  * src/clean_agent_preview.py: the compact agent runtime calls providers
+    itself; its rounds and its scope classifier are counted the same way,
+    and the caps are checked before each of its rounds.
+  * src/agent_loop.py: a run starts its RunUsage before the compact branch;
+    all calls made under the run's request (child runs and tools included)
+    count toward it. A person whose daily cap is used up gets a message
+    instead of a run. Before any tool of a round runs, a run or daily cap
+    that is reached stops the run through upstream's budget_exceeded path.
   * routes/chat_helpers.py: _enforce_chat_privileges refuses a new chat
     or agent message with 429 when the daily cap is used up (admins
-    included); accumulate_token_usage counts plain chat turns.
+    included).
+  * routes/research/research_routes.py, src/task_scheduler.py: a research
+    job (panel, agent tool or schedule) does not start when the person's
+    daily cap is used up, and its calls count toward that person.
   * static/js/chat.js: budget_exceeded shows the message it carries.
 
 All caps are off unless set in .env (WINGS_RUN_MAX_TOKENS,
@@ -23,7 +35,7 @@ Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
 diff --git a/routes/chat_helpers.py b/routes/chat_helpers.py
-index eb0bfc3..0eb45bf 100644
+index eb0bfc3..f9d4509 100644
 --- a/routes/chat_helpers.py
 +++ b/routes/chat_helpers.py
 @@ -485,6 +485,12 @@ def _enforce_chat_privileges(request, sess) -> None:
@@ -39,40 +51,59 @@ index eb0bfc3..0eb45bf 100644
      if not user:
          return
      auth_manager = getattr(getattr(request.app, "state", None), "auth_manager", None)
-@@ -1299,6 +1305,10 @@ async def build_chat_context(
- 
- def accumulate_token_usage(session_id: str, metrics: dict):
-     """Add input/output token counts (and USD cost) to the session's totals."""
-+    # Wings: plain chat turns count toward the daily caps (agent runs are
-+    # counted round by round in the agent loop).
-+    from wings import budget as _wings_budget
-+    _wings_budget.record_chat_turn(session_id, metrics)
-     in_t = metrics.get("input_tokens", 0)
-     out_t = metrics.get("output_tokens", 0)
-     cost = metrics.get("cost_usd")
+diff --git a/routes/research/research_routes.py b/routes/research/research_routes.py
+index 98897a8..5bfd644 100644
+--- a/routes/research/research_routes.py
++++ b/routes/research/research_routes.py
+@@ -553,6 +553,13 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
+                     except Exception:
+                         pass
+                 user = tool_owner
++        # Wings: daily token and spend caps (wings/budget.py). The job's model
++        # calls count toward this person (its task inherits the owner).
++        from wings import budget as _wings_budget
++        _wings_stop = _wings_budget.day_exhausted(user)
++        if _wings_stop:
++            raise HTTPException(429, _wings_stop)
++        _wings_budget.set_owner(user)
+         session_id = f"rp-{uuid.uuid4().hex[:12]}"
+         delivery = getattr(request.app.state, 'background_tool_jobs', None)
+         if body.origin_chat_id:
 diff --git a/src/agent_loop.py b/src/agent_loop.py
-index aaca7bd..59d266e 100644
+index aaca7bd..d95417a 100644
 --- a/src/agent_loop.py
 +++ b/src/agent_loop.py
-@@ -24739,7 +24739,16 @@ async def stream_agent_loop(
-     actual_endpoint_id = requested_endpoint_id
-     actual_endpoint_label = requested_endpoint_label
-     actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
--    usage_buckets = []
-+    # Wings: the run's usage list counts tokens and estimated cost as each
-+    # round is recorded, for the run and daily caps (wings/budget.py).
+@@ -21121,6 +21121,18 @@ async def stream_agent_loop(
+         set(tool_policy.all_disabled_names()) if tool_policy else set()
+     ))
+ 
++    # Wings: token and spend caps (wings/budget.py). From here on every model
++    # call made for this request counts toward this run; the compact runtime
++    # below checks the caps itself before each round.
 +    from wings import budget as _wings_budget
-+    usage_buckets = _wings_budget.RunUsage(owner)
++    _wings_run = _wings_budget.RunUsage(owner)
 +    _wings_budget_stop = _wings_budget.day_exhausted(owner)
 +    if _wings_budget_stop:
 +        yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
 +        yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
 +        yield "data: [DONE]\n\n"
 +        return
++
+     if is_compact_preview_contract(turn_contract):
+         from src.clean_agent_preview import stream_preview
+         async for chunk in stream_preview(
+@@ -24739,7 +24751,9 @@ async def stream_agent_loop(
+     actual_endpoint_id = requested_endpoint_id
+     actual_endpoint_label = requested_endpoint_label
+     actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
+-    usage_buckets = []
++    # Wings: upstream's per-round usage list, which also carries this run's
++    # token and cost totals for the caps (created above; wings/budget.py).
++    usage_buckets = _wings_run
      total_tool_calls = 0  # for budget enforcement
      _ody_notes_tool_completed = False
      _qwen_terminal_summary_completed = False
-@@ -32215,6 +32224,15 @@ async def stream_agent_loop(
+@@ -32215,6 +32229,15 @@ async def stream_agent_loop(
                  _workspace_mutation_epoch,
                  _browser_state_epoch,
              )
@@ -88,11 +119,192 @@ index aaca7bd..59d266e 100644
              # --- Tool budget check ---
              if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                  if _runtime_action is not None:
+diff --git a/src/clean_agent_preview.py b/src/clean_agent_preview.py
+index 28ee1a5..972cd0f 100644
+--- a/src/clean_agent_preview.py
++++ b/src/clean_agent_preview.py
+@@ -5201,11 +5201,19 @@ async def preview_model_response(client, endpoint_url, headers, request, recover
+             await asyncio.sleep(0.1)
+ 
+ 
+-async def preview_lines_until_finish(response, finish_event=None):
++async def preview_lines_until_finish(response, finish_event=None, meter=None):
+     """Stop reading a later editor model pass as soon as Finish is requested."""
++    # Wings: `meter` (wings.budget.StreamMeter) sees every line and counts the
++    # call toward the spend caps once reading stops, however it stops.
+     if finish_event is None:
+-        async for line in response.aiter_lines():
+-            yield line
++        try:
++            async for line in response.aiter_lines():
++                if meter is not None:
++                    meter.observe(line)
++                yield line
++        finally:
++            if meter is not None:
++                meter.finish()
+         return
+     iterator = response.aiter_lines().__aiter__()
+     finish_task = asyncio.create_task(finish_event.wait())
+@@ -5220,12 +5228,17 @@ async def preview_lines_until_finish(response, finish_event=None):
+                 await asyncio.gather(read_task, return_exceptions=True)
+                 return
+             try:
+-                yield read_task.result()
++                line = read_task.result()
+             except StopAsyncIteration:
+                 return
++            if meter is not None:
++                meter.observe(line)
++            yield line
+     finally:
+         finish_task.cancel()
+         await asyncio.gather(finish_task, return_exceptions=True)
++        if meter is not None:
++            meter.finish()
+ 
+ 
+ from src.agent_runtime.authority import MISSING_AUTHORITY, with_request_authority
+@@ -5703,6 +5716,12 @@ async def stream_preview(*, endpoint_url, model, messages, headers, turn_contrac
+                 usage_in += intent_accounting.get('input_tokens', 0)
+                 usage_out += intent_accounting.get('output_tokens', 0)
+                 has_real_usage = intent_accounting.get('usage_source') == 'real'
++                # Wings: the scope classifier's model call counts toward the
++                # spend caps (wings/budget.py).
++                from wings import budget as _wings_budget
++                _wings_budget.count(model=model, url=endpoint_url, session_id=session_id,
++                                    input_tokens=intent_accounting.get('input_tokens', 0),
++                                    output_tokens=intent_accounting.get('output_tokens', 0))
+             # One extra iteration is available only when a provider emits raw
+             # tool markup during the normal final no-tools round. Ordinary
+             # turns still obey ``round_limit`` exactly.
+@@ -5721,6 +5740,15 @@ async def stream_preview(*, endpoint_url, model, messages, headers, turn_contrac
+                     history.append({'role': 'assistant', 'content': answer})
+                     yield event({'type': 'final_response', 'content': answer})
+                     break
++                # Wings: token and spend caps, checked before each round
++                # (wings/budget.py); this runtime calls providers itself.
++                from wings import budget as _wings_budget
++                _wings_stop = _wings_budget.current_stop()
++                if _wings_stop:
++                    yield event({'type': 'budget_exceeded', 'kind': 'spend', 'message': _wings_stop})
++                    history.append({'role': 'assistant', 'content': _wings_stop})
++                    yield event({'type': 'final_response', 'content': _wings_stop})
++                    break
+                 rounds_used = round_number
+                 artifact_body_handoff_active_at_round_start = bool(
+                     artifact_body_handoff_target
+@@ -6100,7 +6128,11 @@ async def stream_preview(*, endpoint_url, model, messages, headers, turn_contrac
+                         agent_runs.get_finish_event(session_id)
+                         if active_editor_target and successful_write else None
+                     )
+-                    async for line in preview_lines_until_finish(response, finish_event):
++                    # Wings: count this provider call toward the spend caps.
++                    from wings.budget import StreamMeter as _WingsMeter
++                    _wings_meter = _WingsMeter(url=endpoint_url, model=model, raw=True,
++                                               messages=request.get('messages'), session_id=session_id)
++                    async for line in preview_lines_until_finish(response, finish_event, _wings_meter):
+                         if active_editor_target and successful_write and agent_runs.should_finish(session_id):
+                             finish_during_stream = True
+                             break
+diff --git a/src/llm_core.py b/src/llm_core.py
+index c563469..10d23a3 100644
+--- a/src/llm_core.py
++++ b/src/llm_core.py
+@@ -2367,6 +2367,10 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
+     if not r.is_success:
+         raise HTTPException(502, f"Upstream {target_url} -> {r.status_code}: {r.text}")
+     data = r.json()
++    # Wings: count this call toward the token and spend caps.
++    if not (isinstance(data, dict) and data.get("error")):
++        from wings import budget as _wings_budget
++        _wings_budget.count_response(data, url=url, model=model, messages=messages)
+     try:
+         if provider == "anthropic":
+             response = _parse_anthropic_response(data)
+@@ -2801,6 +2805,11 @@ async def llm_call_async(
+             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
+             _clear_host_dead(target_url)
+             data = r.json()
++            # Wings: count this call toward the token and spend caps.
++            if not (isinstance(data, dict) and data.get("error")):
++                from wings import budget as _wings_budget
++                _wings_budget.count_response(data, url=url, model=model, messages=messages_copy,
++                                             session_id=session_id)
+             if isinstance(data, dict) and data.get("error"):
+                 provider_error = data["error"]
+                 status = _provider_stream_error_status(provider_error, default=400)
+@@ -2937,23 +2946,31 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
+                      tool_choice_none: bool = False, workload: str = "foreground",
+                      thinking_mode: Optional[str] = None, reasoning_effort: Optional[str] = None):
+     target_url = _stream_target_url(url)
+-    async with _local_model_slot(target_url, model, workload):
+-        async for chunk in _stream_llm_inner(
+-            url,
+-            model,
+-            messages,
+-            temperature=temperature,
+-            max_tokens=max_tokens,
+-            headers=headers,
+-            timeout=timeout,
+-            prompt_type=prompt_type,
+-            tools=tools,
+-            session_id=session_id,
+-            tool_choice_none=tool_choice_none,
+-            thinking_mode=thinking_mode,
+-            reasoning_effort=reasoning_effort,
+-        ):
+-            yield chunk
++    # Wings: every streaming model call counts toward the token and spend
++    # caps when its stream ends, however it ends (wings/budget.py).
++    from wings.budget import StreamMeter as _WingsMeter
++    _wings_meter = _WingsMeter(url=url, model=model, messages=messages, session_id=session_id)
++    try:
++        async with _local_model_slot(target_url, model, workload):
++            async for chunk in _stream_llm_inner(
++                url,
++                model,
++                messages,
++                temperature=temperature,
++                max_tokens=max_tokens,
++                headers=headers,
++                timeout=timeout,
++                prompt_type=prompt_type,
++                tools=tools,
++                session_id=session_id,
++                tool_choice_none=tool_choice_none,
++                thinking_mode=thinking_mode,
++                reasoning_effort=reasoning_effort,
++            ):
++                _wings_meter.observe(chunk)
++                yield chunk
++    finally:
++        _wings_meter.finish()
+ 
+ 
+ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+diff --git a/src/task_scheduler.py b/src/task_scheduler.py
+index 8f6af62..5f83e92 100644
+--- a/src/task_scheduler.py
++++ b/src/task_scheduler.py
+@@ -2167,6 +2167,12 @@ class TaskScheduler:
+         authority = authority.restrict(disabled_tools=get_setting("disabled_tools", []) or ())
+         if not authority.permits(task_operation(task.task_type, getattr(task, "action", None), task.prompt)):
+             raise PermissionError("Scheduled research has no matching server request authority.")
++        # Wings: daily token and spend caps (wings/budget.py).
++        from wings import budget as _wings_budget
++        _wings_stop = _wings_budget.day_exhausted(task.owner)
++        if _wings_stop:
++            raise PermissionError(_wings_stop)
++        _wings_budget.set_owner(task.owner)
+         from core.database import Session as DbSession, ChatMessage
+         from src.deep_research import DeepResearcher
+         from src.research_handler import RESEARCH_DATA_DIR, ResearchHandler
 diff --git a/static/js/chat.js b/static/js/chat.js
-index 299b16d..7802487 100644
+index dcee932..029ccaa 100644
 --- a/static/js/chat.js
 +++ b/static/js/chat.js
-@@ -5248,7 +5248,9 @@ import { invalidateSettings } from './appConfig.js';
+@@ -5317,7 +5317,9 @@ import { invalidateSettings } from './appConfig.js';
                  _removeThinkingSpinner();
                  const budgetDiv = document.createElement('div');
                  budgetDiv.style.cssText = 'font-size:11px;opacity:0.6;font-style:italic;padding:4px 8px;margin:4px 0;';

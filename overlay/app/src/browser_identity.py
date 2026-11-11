@@ -46,8 +46,10 @@ CDP_METHODS = frozenset({"Target.getTargets", "Target.getTargetInfo", "Target.at
 PAGE_ACTIONS = frozenset({"open", "read", "snapshot", "find", "evaluate", "click", "fill",
     "press", "scroll", "wait", "screenshot", "navigate", "reload", "back", "forward",
     "select_page", "close_page", "network", "console", "new_page", "tabs",
-    # Wings: drag (mouse drag between refs or screen points), see wings/browser.py.
-    "drag"})
+    # Wings: drag (mouse drag between refs or screen points) and batch (a
+    # bounded list of these same actions, each checked like a single call),
+    # see wings/browser.py.
+    "drag", "batch", "hover"})
 SESSION_ACTIONS = frozenset({"session_info"})
 PAGE_FAILURE = "browser_page_authority_unavailable"
 _ACTIVE = ContextVar("browser_resource_operation", default=None)
@@ -97,7 +99,9 @@ def parse_operation(content):
     allowed = {"action", "page", "url", "selector", "target", "ref", "key", "direction", "amount",
                "timeout_ms", "timeout_s", "text", "value", "script", "path", "find",
                # Wings: screen points for click/drag on canvas apps, and the drag target.
-               "x", "y", "to_ref", "to_x", "to_y"}
+               "x", "y", "to_ref", "to_x", "to_y",
+               # Wings: batch steps, and the items or pages they repeat over.
+               "steps", "each", "pages"}
     if set(args) - allowed:
         raise ResourceIdentityError("Browser flags, labels, configuration and raw targetIds are forbidden")
     if "page" in args and (not isinstance(args["page"], str) or not re.fullmatch(r"t[1-9][0-9]*", args["page"])):

@@ -44,6 +44,17 @@ if [ "$PULL" -eq 1 ]; then
 fi
 
 after="$(git -C "$WINGS_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+# Shared secrets between the app and its helper containers that newer Wings
+# versions added (the page renderer's, for one). Missing ones are created the
+# way setup.sh does; existing values are never changed.
+for key in WINGS_BROWSER_TOKEN WINGS_RUNNER_TOKEN WINGS_RENDERER_TOKEN; do
+  if [ -z "$(env_get "$key")" ]; then
+    env_set "$key" "$(rand_token 36)"
+    ok "generated $key"
+  fi
+done
+
 info "Rebuilding (${before} -> ${after})"
 dc pull --ignore-buildable --quiet
 dc build --pull odysseus

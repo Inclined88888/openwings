@@ -35,9 +35,22 @@ review fixes:
 The 26 baseline failures are environmental (no IPv6, README files excluded
 from the image, no network for some fixtures).
 
+**Full suite, 2026-11-11** (706 test files, 11,262 tests, both images, network
+off): unpatched upstream 65 failed; Wings 68 failed. The first run had 10
+failures only on Wings; 7 were real and are fixed (see "Second review pass"
+below). The 3 left are intended: patch 0007 makes drafted skills wait for a
+person instead of auto publishing, and upstream's tests assert the auto
+publish default (`test_skill_audit_utility.py::test_audit_persists_saved_turn_estimate_from_baseline_comparison`,
+`test_skill_index_toolset_gating.py::test_inconclusive_audit_hides_an_unapproved_skill`,
+`test_skill_index_toolset_gating.py::test_unaudited_or_below_threshold_published_skill_is_not_injected`).
+With that default off, a skill reaches prompts only once it is published,
+which the agent can do only with the person's request or approval. Every
+other failure is identical on both images (no bubblewrap, ffmpeg, node,
+tmux or README in the image; no network).
+
 ## Wings unit tests
 
-`./tests/unit/run.sh`: 44 tests for the email gate (human vs agent loopback vs
+`./tests/unit/run.sh`: 171 tests (44 at first release) for the email gate (human vs agent loopback vs
 API token vs auth disabled; self address allowlist; the SMTP chokepoint),
 environment scrubbing, per agent tool allowlists (including MCP tools and fail
 closed handling), the encryption key patch (env key used, no file written,
@@ -258,6 +271,78 @@ the code runner and both browser containers running.
 * **MCP server notes (0017)**: a FastMCP stdio server with instructions,
   connected through upstream's MCP manager, had its notes (zero width
   character removed) shown above its tool in the prompt catalog.
+
+## Second review pass (patches 0001 to 0017, 2026-11-11)
+
+Three independent reviewers read patches 0011 to 0017 and the new Wings
+modules; every serious finding went to a separate skeptic told to refute
+it. 16 were confirmed, 1 was rejected (already fixed in the tree under
+review), and all 16 plus the low ones are fixed. The full upstream suite
+found 7 more. Fixed, each where the defect was introduced:
+
+* **Approvals (0009)**: the code runner fix had stopped marking child runs
+  as inherited, so a child's exact approval could restore a record, an MCP
+  backend or a folder its parent excluded (4 upstream security tests
+  failed). intersect() is upstream's again; only tool_execution's per call
+  rebinding of the running request's own authority keeps its flag.
+* **Documentation tests (0001, 0008)**: ODYSSEUS_APP_KEY is in upstream's
+  environment reference; upstream's isolated distribution check copies the
+  wings package.
+* **Spend caps (0013)**: they missed the compact agent runtime, the
+  non-streaming `/api/chat`, deep research, model calling tools, the
+  summaries after an agent loop and providers' reported cost. Counting
+  moved to where calls reach the provider (llm_core and the compact
+  runtime), research checks the day cap, and runs share totals across
+  their child runs.
+* **Plans (0012)**: text the agent wrote through update_plan was sent back
+  as the person's approved plan; plans never expired, were kept for one
+  chat only, and the automatic continue count reset on reload.
+* **Code runner (0014)**: the `#!bg` marker was split on carriage returns
+  and Unicode separators, which could run text bash and the person saw as
+  a comment. It is split on newlines only, as upstream and bash do.
+* **Renderer (0015)**: no overall time limit (a page that never yields held
+  a slot forever), it followed the browser's private address switch, it
+  returned bot check pages as content, it resolved DNS on the event loop,
+  and upgrades never created its token.
+* **Browser (0011)**: `read` returned values typed into fields (card
+  numbers, codes, revealed passwords); pointer clicks did not see into
+  shadow DOM or embedded objects and checked before hovering; a drag could
+  drop text into a code or card field and could start at a point the page
+  had scrolled away from.
+* **Retries (0016)**: hints in minutes, hours or days were read as seconds,
+  long waits were retried anyway, upstream's own connection errors were
+  backed off, and the wait held the failed stream and local model slot.
+* **MCP notes (0017)**: shown even when none of that server's tools were
+  offered.
+
+Checked after the fixes, on the rebuilt image:
+
+* Unit tests: 171 pass. Full upstream suite: as above.
+* Spend caps through the real API with the mock model: a plain chat turn,
+  an agent turn and `POST /api/chat` each add to the ledger (the last was
+  never counted before); with `WINGS_RUN_MAX_TOKENS=100` an agent turn
+  stopped before its tool ran; with the day used up, chat and `/api/chat`
+  got 429 and `/api/research/start` did not start a job. A compact runtime
+  turn (mock model set to compact tool mode) was counted. Its per round
+  stop could not be driven by the mock (the compact preview refuses file
+  tools without a sealed workspace, so no second round happens); the
+  check it uses (`current_stop` under the run's request, through the real
+  authority binding) returned the run limit message in process.
+* Plans: `tests/e2e/ui/plan_continuation.js` PASS, now also checking that
+  the automatic count survives a reload, ticks are copied, a plan the agent
+  changed is dropped, and a plan older than 12 hours is not sent.
+* Renderer, live: a JavaScript page read with its table; a "Just a
+  moment..." page reported as a bot check; a page that never yields
+  returned an error after 30.7 s and the next read worked; with the test
+  switch off, the private test site was refused before any request.
+* Browser page scripts in Chromium: `read` on a checkout page with a card
+  number, a code, a revealed password and a typed note returned none of
+  them; a point on a web component's inner "Place order" button was seen
+  as that button; a closed component was flagged; an embedded object was
+  refused.
+* Retries: the rate limited mock answered after two 0.4 s waits (1.0 s in
+  all, 2.9 s before the wait moved after the stream closed).
+* Code runner: `runner_checks` 14 of 14 pass, including approved runs.
 
 ## Operations
 

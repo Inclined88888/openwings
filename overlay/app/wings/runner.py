@@ -55,16 +55,34 @@ def relative_cwd(cwd: str) -> str | None:
     return None
 
 
+def split_background_marker(code: str) -> tuple[bool, str]:
+    """(True, code without the marker line) when the first non-empty line is
+    upstream's background marker (#!bg), else (False, code).
+
+    Lines are split on newline only, exactly as upstream's _split_bg_marker
+    and bash do. str.splitlines() also breaks on carriage returns, form feeds
+    and Unicode separators, so "#!bg<CR>rm -rf ." would lose only "#!bg" and
+    run text that bash, and the person approving it, read as a comment."""
+    text = str(code or "")
+    try:
+        from src.tool_execution import _split_bg_marker
+        marked, rest = _split_bg_marker(text)
+        return bool(marked), rest if marked else text
+    except Exception:
+        lines = text.split("\n")
+        i = 0
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        if i < len(lines) and lines[i].strip().lower() in ("#!bg", "#bg", "# bg", "#background",
+                                                           "# background", "@background", "# @background"):
+            del lines[i]
+            return True, "\n".join(lines).strip()
+        return False, text
+
+
 def is_background_marked(code: str) -> bool:
     """First non-empty line is upstream's background marker (#!bg)."""
-    for line in str(code or "").splitlines():
-        if line.strip():
-            try:
-                from src.tool_execution import _BG_MARKERS
-            except Exception:
-                _BG_MARKERS = ("#!bg",)
-            return line.strip().lower() in _BG_MARKERS
-    return False
+    return split_background_marker(code)[0]
 
 
 def _endpoint() -> tuple[str, int]:
@@ -160,12 +178,10 @@ async def run_owned(command, ctx: dict, *, tool: str, timeout: int, argv: bool =
     wall = max(5, min(int(timeout or 60), cap))
     # A bash command marked #!bg asked to run detached; Docker has no detached
     # jobs, so it runs now with the runner's full time limit (patch 0014).
-    background_asked = tool == "bash" and is_background_marked(code)
+    background_asked, stripped = split_background_marker(code) if tool == "bash" else (False, code)
     if background_asked:
         wall = cap
-        lines = code.splitlines()
-        first = next(i for i, line in enumerate(lines) if line.strip())
-        code = "\n".join(lines[:first] + lines[first + 1:])
+        code = stripped
     try:
         result = await _post({"language": tool, "code": code, "cwd": rel, "timeout": wall}, timeout=wall + 20)
     except (OSError, RuntimeError, asyncio.TimeoutError) as exc:

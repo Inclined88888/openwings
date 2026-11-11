@@ -1,0 +1,4 @@
+<!doctype html>
+<html><head><title>Never yields</title></head>
+<body><p>This page's script never gives the browser its main thread back.</p>
+<script>addEventListener('DOMContentLoaded', () => setTimeout(() => { for (;;) {} }, 0));</script></body></html>

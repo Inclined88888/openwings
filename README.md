@@ -129,7 +129,7 @@ llama.cpp `llama-server`, vLLM, LM Studio and other OpenAI compatible servers wo
 
 Rough sizing for local chat models: a 4B model at 4 bit needs about 4 GB of free RAM or VRAM; an 8B model about 6 to 8 GB. On CPU only, expect a few tokens per second. For agents (tool calling), research and email drafting, a hosted model or a local model of 14B or more works far better than small ones.
 
-**Rate limits**: when a hosted provider answers "rate limited" (429) or "overloaded" (503, 529) before a reply starts, Wings waits and retries up to 3 times (patch 0016), as long as the provider asks or 2, 4 and 8 seconds, never more than 20 seconds per wait; upstream showed an error instead. `WINGS_MODEL_RETRIES=0` turns this off. With more than one model set up for a chat, upstream's switch to the next model still applies.
+**Rate limits**: when a hosted provider answers "rate limited" (429) or "overloaded" (503, 529) before a reply starts, Wings waits and retries up to 3 times (patch 0016), as long as the provider asks or 2, 4 and 8 seconds, never more than 20 seconds per wait; upstream showed an error instead. When the provider asks for longer (an hourly or daily quota), Wings does not retry at all. `WINGS_MODEL_RETRIES=0` turns this off. With more than one model set up for a chat, upstream's switch to the next model still applies.
 
 **Compare models**: sidebar **Compare**. Sends one prompt to up to 8 models side by side, blind by default, with voting and a scoreboard.
 
@@ -228,9 +228,10 @@ This adds the `browser` container: a real, headful Chromium on a virtual screen.
 
 and acts by number: open, read, find, click, fill (text, dropdowns, checkboxes), type, press keys, scroll, wait, tabs, back and forward, and screenshots for vision models. Because the outline is text, it works with local and hosted models alike. Each chat gets its own tab, and pop up windows are followed automatically.
 
-* **Reading** returns headings, lists and tables as structured text (tables stay tables), so the agent can pull figures out of a page reliably.
-* **Canvas apps and drag and drop** (patch 0011): canvas areas and draggable items appear in the outline with their position, and the agent can click at a point (`x`, `y`) or drag from one element or point to another, including onto a drop zone named by its visible text. The pay and send guard below applies to pointer clicks and to both ends of a drag.
-* **Pages that need JavaScript** (patch 0015): web fetch and deep research read them in the `renderer` container, a stateless copy of the browser with no logins, cookies or downloads and a fresh context per page, so research works on single page apps and script heavy news, shop and dashboard sites without exposing your signed in browser to them. Upstream's own research fallback for such pages no longer worked.
+* **Reading** returns headings, lists and tables as structured text (tables stay tables), so the agent can pull figures out of a page reliably. It never returns what was typed into a field (a card number, a code or a password you typed in the live view stays out of the chat); fields show only their label.
+* **Canvas apps and drag and drop** (patch 0011): canvas areas and draggable items appear in the outline with their position, and the agent can click at a point (`x`, `y`) or drag from one element or point to another, including onto a drop zone named by its visible text. The pay and send guard below applies to pointer clicks and to both ends of a drag: the pointer first moves to the point and what is under it is checked after the page reacts (rows that reveal a Delete button on hover), web components are looked into, and a component whose label cannot be read is handed to you. A drop never types into a field, and both ends of a drag must be on screen at once.
+* **Repetitive work in one step** (patch 0018): `batch` runs up to 20 browser actions in one call, optionally once per item of a list (open each invoice by name) or on each page of a paged table (follow "Next" up to 25 pages). Every step is checked exactly as if it were called alone, and the batch stops at the first step that needs you. Without it, a 24 statement download took a model round per click. `hover` opens menus that appear only under the pointer.
+* **Pages that need JavaScript** (patch 0015): web fetch and deep research read them in the `renderer` container, a stateless copy of the browser with no logins, cookies or downloads and a fresh context per page, so research works on single page apps and script heavy news, shop and dashboard sites without exposing your signed in browser to them. Upstream's own research fallback for such pages no longer worked. The renderer never opens private or local addresses, whatever the browser is allowed, each read has a hard time limit, and a bot check page ("Just a moment...") is reported as one, never as the page.
 * **Files** (patch 0010): downloads land in the agent workspace under `downloads/`, where the agent can read them, analyse them with the code runner, and you can save them from **Workspace files** or the live view's **Downloads**. The agent can also upload a workspace file into a web form (`fill` with `path=`); every upload asks for your approval first, because it sends your file to a website.
 
 **Ask in plain words**, in Agent mode: "Log into the supplier portal and download last month's invoice", "Fill in the contact form on example.com with my details", "Check my order status on the shop site", "Go to the council website and find the bin collection days". Naming a site, a portal, a form or the browser is enough; the web search switch does not need to be on.
@@ -287,7 +288,7 @@ Settings: `WINGS_RUNNER_MAX_TIMEOUT=300`, `WINGS_RUNNER_MEMORY_MB=2048` (per run
 <a id="long-tasks"></a>
 ## Long tasks: plans and limits
 
-**Plans**: press Tab in the message box (on a phone, swipe sideways on the message bar) to turn on **Plan mode**: the agent researches and proposes a checklist without changing anything, and you review it and press **Execute** under its reply. While it works it ticks steps off. Wings keeps the approved plan for that chat (patch 0012): when the agent reaches its step limit with steps left, the chat continues on its own up to 3 times per approval (press **Stop here** to prevent that), and a **Continue** or a typed "continue" carries the plan and its ticks forward instead of starting from memory. Approvals, questions and the stop button still pause it. The step limit per message is in **Settings → Agent** (40 by default in Wings, up to 200).
+**Plans**: press Tab in the message box (on a phone, swipe sideways on the message bar) to turn on **Plan mode**: the agent researches and proposes a checklist without changing anything, and you review it and press **Execute** under its reply. While it works it ticks steps off. Wings keeps the approved plan for that chat for 12 hours (patch 0012): when the run that carries it reaches its step limit with steps left, the chat continues on its own, once the reply has finished, up to 3 times per approval (press **Stop here** to prevent that), and a **Continue** or a typed "continue" carries the plan and its ticks forward instead of starting from memory. Only the plan you approved is ever sent back: the agent can tick its steps, but if it adds, removes or rewords steps the plan is dropped until you approve it again in the plan panel. Approvals, questions and the stop button still pause it. The step limit per message is in **Settings → Agent** (40 by default in Wings, up to 200).
 
 **Token and spend limits** (patch 0013, all off until you set them in `.env`):
 
@@ -295,10 +296,10 @@ Settings: `WINGS_RUNNER_MAX_TIMEOUT=300`, `WINGS_RUNNER_MEMORY_MB=2048` (per run
 | --- | --- |
 | `WINGS_RUN_MAX_TOKENS` | one agent reply, including all its tool rounds, after this many input plus output tokens |
 | `WINGS_RUN_MAX_USD` | one agent reply after about this many US dollars |
-| `WINGS_DAY_MAX_TOKENS` | each person's chats, agents and scheduled tasks for the rest of the day |
+| `WINGS_DAY_MAX_TOKENS` | each person's chats, agents, research and scheduled tasks for the rest of the day |
 | `WINGS_DAY_MAX_USD` | the same, in estimated US dollars |
 
-When a limit is reached the agent stops before its next tool and says which limit it hit; a used up daily limit refuses new messages until midnight (in `TZ`). Dollar amounts are estimates from upstream's price table; models it does not know, and local models, count as zero dollars but still count tokens. A reply can overshoot by at most one model round, and small helper calls (chat titles, memory extraction) are not counted.
+Every model call counts, where it reaches the provider: chat, agent rounds and the summaries after them, tools that ask another model, the `/api/chat` API, deep research and helper calls such as chat titles. When a limit is reached the agent stops before its next tool or round and says which limit it hit; a used up daily limit refuses new messages and research until midnight (in `TZ`). Token counts are the provider's when it reports them, otherwise upstream's estimate. Dollars are the provider's reported cost when it sends one (OpenRouter does), otherwise upstream's price table; models it does not know, and local models, count as zero dollars but still count tokens. A run can overshoot by the model round in flight and its closing summary.
 
 <a id="map"></a>
 ## Where everything is in the app
@@ -346,7 +347,7 @@ Nightly backups with cron (`crontab -e`):
 15 3 * * * cd /path/to/wings && ./scripts/backup.sh --out /mnt/nas/wings >> /var/log/wings-backup.log 2>&1
 ```
 
-**Upgrade**: `./scripts/upgrade.sh` takes a backup, `git pull`s this repository, rebuilds and restarts, and tells you how to roll back if the new version is unhealthy. Wings pins upstream by image digest; moving to a newer Odysseus is a Wings change (bump `upstream.lock`, run `scripts/dev/rebase-overlay.sh`, rebuild, run the tests). The image build refuses to run if any patched upstream file changed underneath the overlay.
+**Upgrade**: `./scripts/upgrade.sh` takes a backup, `git pull`s this repository, creates any helper container secret a newer version added (the page renderer's, for one), rebuilds and restarts, and tells you how to roll back if the new version is unhealthy. Wings pins upstream by image digest; moving to a newer Odysseus is a Wings change (bump `upstream.lock`, run `scripts/dev/rebase-overlay.sh`, rebuild, run the tests). The image build refuses to run if any patched upstream file changed underneath the overlay.
 
 **Moving an existing Odysseus install** into Wings: restore its `data/` into the `odysseus-data` volume, then run `./scripts/adopt-key.sh --yes` to move its key file into `.env`.
 
@@ -387,7 +388,8 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0014](patches/0014-runner-background-marker.patch) | Long commands upstream would start as detached jobs (which always failed in Docker) run in the runner instead |
 | [0015](patches/0015-render-javascript-pages.patch) | Web fetch and deep research read pages that need JavaScript in the stateless renderer |
 | [0016](patches/0016-model-retry-backoff.patch) | Model rate limits and overloads are retried with backoff before a reply starts |
-| [0017](patches/0017-mcp-server-instructions.patch) | The usage notes MCP servers send when they connect reach the model, labelled as the server's words |
+| [0017](patches/0017-mcp-server-instructions.patch) | The usage notes MCP servers send when they connect reach the model, labelled as the server's words, on turns where that server's tools are offered |
+| [0018](patches/0018-browser-batch-and-hover.patch) | Several browser actions in one call (per item or per page), each guarded as if alone; hover for menus |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 

@@ -308,6 +308,26 @@ def browser_checks(c: Client, ep_id: str) -> None:
     bcheck("the screenshot labels the refs the agent acts on", bool(shot) and "Boxes labelled e1" in str(shot.get("output", "")),
            unreachable if not events and "Model request failed" in text else str((shot or {}).get("output", ""))[:200])
 
+    # batch (patch 0018): many page actions in one call, each guarded as if alone.
+    call({"action": "open", "url": f"{site}/statements1.html"})
+    out = call({"action": "batch", "pages": {"next": "Next page", "max": 10}, "steps": [{"action": "read"}]})
+    bcheck("batch reads every page of a paginated table in one call",
+           all(f"Statement {n}-B" in out for n in (1, 2, 3)) and "3 page(s)" in out, out[-600:])
+    call({"action": "open", "url": f"{site}/statements1.html"})
+    out = call({"action": "batch", "each": ["Open details for page 1"],
+                "steps": [{"action": "click", "find": "{item}"}, {"action": "read"}, {"action": "back"}]})
+    bcheck("batch repeats steps per item and reads what each opens", "Details of statement page 1" in out, out[-600:])
+    call({"action": "open", "url": f"{site}/checkout.html"})
+    out = call({"action": "batch", "steps": [{"action": "read"}, {"action": "click", "find": "Place order"}, {"action": "read"}]})
+    bcheck("a batch stops for the person at an order button", "PAUSED" in out and "Batch stopped here" in out and "ORDER PLACED" not in out, out[-600:])
+    out = call({"action": "batch", "steps": [{"action": "evaluate", "script": "1"}]})
+    bcheck("a batch cannot run page JavaScript", "cannot run in a batch" in out, out)
+    out = call({"action": "open", "url": f"{site}/menu.html"})
+    hidden_before = "Hidden monthly report" in out
+    out = call({"action": "hover", "find": "Reports menu"})
+    bcheck("hover opens a menu that appears only under the pointer",
+           not hidden_before and "Hidden monthly report" in out, out[-400:])
+
 
 def runner_checks(c: Client, ep_id: str) -> None:
     """The agent's python runs in the runner container after one approval."""

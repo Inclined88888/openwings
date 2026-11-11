@@ -53,8 +53,19 @@
       if (tag === "BR") { flush(); continue; }
       if (tag === "IMG") { const alt = clean(el.alt); if (alt) inline += ` [image: ${alt}]`; continue; }
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON") {
-        const t = clean(el.innerText || el.value || el.getAttribute("aria-label") || "");
-        if (t && el.type !== "password" && el.type !== "hidden") inline += " " + t;
+        // What a person typed never leaves the page through read (card
+        // numbers, one time codes, a password a "show" toggle revealed),
+        // matching innerText. Buttons keep their caption, lists their
+        // choices (not card fields), other fields only their label.
+        const type = String(el.type || "").toLowerCase();
+        const auto = String(el.getAttribute("autocomplete") || "").toLowerCase();
+        let t = "";
+        if (tag === "BUTTON") t = el.innerText;
+        else if (tag === "INPUT" && (type === "submit" || type === "button" || type === "reset")) t = el.value;
+        else if (tag === "SELECT" && !auto.startsWith("cc-")) t = el.innerText;
+        if (!t) t = el.getAttribute("aria-label") || el.getAttribute("placeholder") || "";
+        t = clean(t);
+        if (t && type !== "hidden") inline += " " + t;
         continue;
       }
       const blk = isBlock(el);

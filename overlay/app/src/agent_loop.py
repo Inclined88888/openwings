@@ -21121,6 +21121,18 @@ async def stream_agent_loop(
         set(tool_policy.all_disabled_names()) if tool_policy else set()
     ))
 
+    # Wings: token and spend caps (wings/budget.py). From here on every model
+    # call made for this request counts toward this run; the compact runtime
+    # below checks the caps itself before each round.
+    from wings import budget as _wings_budget
+    _wings_run = _wings_budget.RunUsage(owner)
+    _wings_budget_stop = _wings_budget.day_exhausted(owner)
+    if _wings_budget_stop:
+        yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
+        yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
+        yield "data: [DONE]\n\n"
+        return
+
     if is_compact_preview_contract(turn_contract):
         from src.clean_agent_preview import stream_preview
         async for chunk in stream_preview(
@@ -24739,16 +24751,9 @@ async def stream_agent_loop(
     actual_endpoint_id = requested_endpoint_id
     actual_endpoint_label = requested_endpoint_label
     actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
-    # Wings: the run's usage list counts tokens and estimated cost as each
-    # round is recorded, for the run and daily caps (wings/budget.py).
-    from wings import budget as _wings_budget
-    usage_buckets = _wings_budget.RunUsage(owner)
-    _wings_budget_stop = _wings_budget.day_exhausted(owner)
-    if _wings_budget_stop:
-        yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
-        yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
-        yield "data: [DONE]\n\n"
-        return
+    # Wings: upstream's per-round usage list, which also carries this run's
+    # token and cost totals for the caps (created above; wings/budget.py).
+    usage_buckets = _wings_run
     total_tool_calls = 0  # for budget enforcement
     _ody_notes_tool_completed = False
     _qwen_terminal_summary_completed = False

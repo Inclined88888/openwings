@@ -2367,6 +2367,10 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if not r.is_success:
         raise HTTPException(502, f"Upstream {target_url} -> {r.status_code}: {r.text}")
     data = r.json()
+    # Wings: count this call toward the token and spend caps.
+    if not (isinstance(data, dict) and data.get("error")):
+        from wings import budget as _wings_budget
+        _wings_budget.count_response(data, url=url, model=model, messages=messages)
     try:
         if provider == "anthropic":
             response = _parse_anthropic_response(data)
@@ -2801,6 +2805,11 @@ async def llm_call_async(
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
+            # Wings: count this call toward the token and spend caps.
+            if not (isinstance(data, dict) and data.get("error")):
+                from wings import budget as _wings_budget
+                _wings_budget.count_response(data, url=url, model=model, messages=messages_copy,
+                                             session_id=session_id)
             if isinstance(data, dict) and data.get("error"):
                 provider_error = data["error"]
                 status = _provider_stream_error_status(provider_error, default=400)
@@ -2937,23 +2946,31 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      tool_choice_none: bool = False, workload: str = "foreground",
                      thinking_mode: Optional[str] = None, reasoning_effort: Optional[str] = None):
     target_url = _stream_target_url(url)
-    async with _local_model_slot(target_url, model, workload):
-        async for chunk in _stream_llm_inner(
-            url,
-            model,
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            headers=headers,
-            timeout=timeout,
-            prompt_type=prompt_type,
-            tools=tools,
-            session_id=session_id,
-            tool_choice_none=tool_choice_none,
-            thinking_mode=thinking_mode,
-            reasoning_effort=reasoning_effort,
-        ):
-            yield chunk
+    # Wings: every streaming model call counts toward the token and spend
+    # caps when its stream ends, however it ends (wings/budget.py).
+    from wings.budget import StreamMeter as _WingsMeter
+    _wings_meter = _WingsMeter(url=url, model=model, messages=messages, session_id=session_id)
+    try:
+        async with _local_model_slot(target_url, model, workload):
+            async for chunk in _stream_llm_inner(
+                url,
+                model,
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                headers=headers,
+                timeout=timeout,
+                prompt_type=prompt_type,
+                tools=tools,
+                session_id=session_id,
+                tool_choice_none=tool_choice_none,
+                thinking_mode=thinking_mode,
+                reasoning_effort=reasoning_effort,
+            ):
+                _wings_meter.observe(chunk)
+                yield chunk
+    finally:
+        _wings_meter.finish()
 
 
 async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
@@ -4084,8 +4101,12 @@ async def _stream_candidate_with_context_recovery(
     # Wings: retries for rate limits and overloads (wings/backoff.py).
     from wings import backoff as _wings_backoff
     _wings_backoff_attempts = 0
+    _wings_pending_wait = 0.0
 
     while True:
+        if _wings_pending_wait:
+            await asyncio.sleep(_wings_pending_wait)
+            _wings_pending_wait = 0.0
         emitted = False
         pending = []
         retry = False
@@ -4193,6 +4214,8 @@ async def _stream_candidate_with_context_recovery(
                 # exponential backoff before any output (upstream retried them
                 # once after 0.5 s, and 429 never). 502 and 504 (gateway errors
                 # and timeouts) keep upstream's single retry below.
+                # The wait happens at the top of the next attempt, after this
+                # stream (and its local model slot) has been closed.
                 if (
                     chunk.startswith("event: error")
                     and not emitted
@@ -4200,17 +4223,18 @@ async def _stream_candidate_with_context_recovery(
                     and _stream_error_status(chunk) in {429, 503, 529}
                     and _stream_error_fallback_override(chunk) is not False
                     and _wings_backoff_attempts < _wings_backoff.max_attempts()
+                    and (_wings_wait := _wings_backoff.wait_for(
+                        _wings_backoff_attempts + 1, _stream_error_status(chunk),
+                        _stream_error_text(chunk))) is not None
                 ):
                     _wings_backoff_attempts += 1
                     availability_recovery_attempted = True
-                    _wings_wait = _wings_backoff.wait_for(
-                        _wings_backoff_attempts, _stream_error_status(chunk), _stream_error_text(chunk))
                     logger.warning(
                         "[availability-recovery] model=%s HTTP %s, retry %s of %s in %.1fs",
                         model, _stream_error_status(chunk), _wings_backoff_attempts,
                         _wings_backoff.max_attempts(), _wings_wait,
                     )
-                    await asyncio.sleep(_wings_wait)
+                    _wings_pending_wait = _wings_wait
                     retry = True
                     break
 

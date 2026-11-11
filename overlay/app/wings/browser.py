@@ -46,6 +46,19 @@ _TEXT_JS = "\n".join(line for line in Path(__file__).with_name("browser_text.js"
                      if not line.startswith("//")).strip()
 _READ_CHUNK = 7000
 _ACTION_TIMEOUT_S = 75
+# batch: several page actions in one call (OpenManus's browser code mode does
+# this with model written Python; Wings runs a bounded list of its own actions,
+# each through the same guards as when called alone).
+_BATCH_STEP_ACTIONS = frozenset({"open", "navigate", "read", "find", "click", "fill", "press",
+                                 "scroll", "wait", "back", "forward", "drag", "hover"})
+_BATCH_STEP_ARGS = frozenset({"action", "url", "selector", "target", "ref", "key", "direction", "amount",
+                              "timeout_ms", "timeout_s", "text", "value", "find", "x", "y", "to_ref", "to_x", "to_y"})
+_BATCH_MAX_STEPS = 20
+_BATCH_MAX_ITEMS = 50
+_BATCH_MAX_PAGES = 25
+_BATCH_MAX_RUNS = 100
+_BATCH_TIME_S = 300
+_BATCH_OUTPUT_CHARS = 24000
 _OP_TIMEOUT_MS = 8000
 _NAV_TIMEOUT_MS = 30000
 _MAX_TABS = int(os.environ.get("WINGS_BROWSER_MAX_TABS", "10") or 10)
@@ -314,7 +327,7 @@ def interactive_actions() -> frozenset:
     """Actions the request authority grants on top of upstream's read set
     when the Wings browser is on. Guardrails live in the backend itself."""
     actions = {"click", "fill", "type", "press", "select", "new_page", "select_page", "close_page",
-               "reload", "console", "network", "drag"}
+               "reload", "console", "network", "drag", "batch", "hover"}
     if policy.allow_eval():
         actions.add("evaluate")
     return frozenset(actions)
@@ -1088,6 +1101,9 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
         await tab.page.close()
         return "close", {"output": f"Closed tab t{tab.id}.", "exit_code": 0}
 
+    if action == "batch":
+        return await _batch(driver, args, key)
+
     tab = driver._tab_by_alias(args["page"], key) if args.get("page") else await driver._active_or_new(key)
     tab.last_used = time.monotonic()
     page = tab.page
@@ -1219,11 +1235,12 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
             raise BrowserError("A browser dialog is waiting. Use press key=Enter to accept or key=Escape to dismiss it.")
         point = _point(args, "x", "y")
         if point is not None and not any(args.get(k) for k in ("ref", "selector", "target", "find")):
-            info = await _point_info(page, *point)
+            info = await _hover_then_check(page, *point)
             label = f"the point ({point[0]}, {point[1]})"
 
-            def perform():
-                return page.mouse.click(*point)
+            async def perform():
+                await page.mouse.down()
+                await page.mouse.up()
         else:
             locator, label = await driver.locate(tab, args)
             info = await locator.evaluate(_INFO_JS)
@@ -1262,15 +1279,48 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
             tab = new_tab
         return await _state_result(driver, tab, key, "click", note)
 
+    if action == "hover":
+        # Menus and tooltips that open only under the pointer (patch 0018).
+        # Hovering commits nothing; clicks on what it reveals are guarded.
+        await page.bring_to_front()
+        if await driver.dialog_pending(tab):
+            raise BrowserError("A browser dialog is waiting. Use press key=Enter or key=Escape first.")
+        point = _point(args, "x", "y")
+        if point is not None and not any(args.get(k) for k in ("ref", "selector", "target", "find")):
+            await _point_info(page, *point)
+            await page.mouse.move(*point)
+            label = f"the point ({point[0]}, {point[1]})"
+        else:
+            locator, label = await driver.locate(tab, args)
+            await locator.hover(timeout=_OP_TIMEOUT_MS)
+        await asyncio.sleep(0.4)  # hover menus often open after a short delay
+        return await _state_result(driver, tab, key, "hover",
+                                   f"The pointer is over {label}; anything it revealed is in the outline below.")
+
     if action == "drag":
         await page.bring_to_front()
         if await driver.dialog_pending(tab):
             raise BrowserError("A browser dialog is waiting. Use press key=Enter or key=Escape first.")
-        start = await _drag_end(driver, tab, args.get("ref"), _point(args, "x", "y"), args.get("find"))
-        end = await _drag_end(driver, tab, args.get("to_ref"), _point(args, "to_x", "to_y"), args.get("text"))
+        to_point, from_point = _point(args, "to_x", "to_y"), _point(args, "x", "y")
+        # A screen point only means something while nothing scrolls, so with
+        # a point at either end neither end is scrolled into view. With two
+        # elements both are scrolled to, then both boxes are measured again
+        # (a later scroll, of the window or of an inner list, moves the other).
+        scroll = to_point is None and from_point is None
+        end = await _drag_end(driver, tab, args.get("to_ref"), to_point, args.get("text"), scroll=scroll)
+        start = await _drag_end(driver, tab, args.get("ref"), from_point, args.get("find"), scroll=scroll)
+        if scroll:
+            end = await _drag_end(driver, tab, args.get("to_ref"), None, args.get("text"), scroll=False)
+            start = await _drag_end(driver, tab, args.get("ref"), None, args.get("find"), scroll=False)
+        view = await page.evaluate(_VIEW_JS)
+        for x, y in (start[:2], end[:2]):
+            if not (0 <= x < view[2] and 0 <= y < view[3]):
+                raise BrowserError("Both ends of a drag must be on screen at once. Scroll so they are, take a "
+                                   "screenshot, then drag (or drag in shorter steps).")
         for info in (start[2], end[2]):
             _check_risky_click(info)
-        await page.mouse.move(start[0], start[1])
+        _check_drop_target(end[2])
+        await _hover_then_check(page, int(start[0]), int(start[1]))
         await page.mouse.down()
         # A small first move starts an HTML5 drag (Playwright only picks the
         # drag up between separate moves), then glide to the target so pages
@@ -1462,11 +1512,27 @@ _MARKS_DRAW_JS = """(boxes) => {
 
 _POINT_JS = "([x, y]) => {" + _LABEL_FN + """
   if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return { outside: true };
-  const el = document.elementFromPoint(x, y);
+  let el = document.elementFromPoint(x, y);
   if (!el) return { outside: true };
-  if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') return { frame: true };
-  return describe(el);
+  // elementFromPoint stops at a shadow host; look inside open shadow roots
+  // so the guards see the real button (a web component's "Place order").
+  for (let depth = 0; depth < 32 && el.shadowRoot; depth++) {
+    const inner = el.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === el) break;
+    el = inner;
+  }
+  if (['IFRAME', 'FRAME', 'OBJECT', 'EMBED'].includes(el.tagName)) return { frame: true };
+  const info = describe(el);
+  // A custom element whose insides cannot be read (closed shadow root) and
+  // that has no label of its own could be anything, a pay button included.
+  if (el.tagName.includes('-') && !el.shadowRoot && !(info.label || info.text || info.title || info.actionLabel)) {
+    info.opaque = true;
+  }
+  return info;
 }"""
+
+_FRAMES_JS = "() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))"
+_VIEW_JS = "() => [scrollX, scrollY, innerWidth, innerHeight]"
 
 
 def _point(args: dict, kx: str, ky: str):
@@ -1488,8 +1554,40 @@ async def _point_info(page, x: int, y: int) -> dict:
     if not info or info.get("outside"):
         raise BrowserError(f"({x}, {y}) is outside the visible page. Take a screenshot to see the current layout.")
     if info.get("frame"):
-        raise BrowserError("That point is inside an embedded frame; act on the refs inside it instead.")
+        raise BrowserError("That point is inside an embedded frame or object; act on the refs inside it instead.")
+    if info.get("opaque") and policy.confirm_risky():
+        raise Handoff("that point is on a page component whose label cannot be read, so Wings cannot "
+                      "tell whether clicking it commits something.")
     return info
+
+
+async def _hover_then_check(page, x: int, y: int) -> dict:
+    """Move the pointer to the point first and check what is under it after
+    the page reacted: rows and tiles often reveal Delete or Buy now buttons
+    on hover, exactly where the pointer then presses."""
+    await page.mouse.move(x, y)
+    try:
+        await asyncio.wait_for(page.evaluate(_FRAMES_JS), 2)
+    except Exception:
+        pass
+    first = await _point_info(page, x, y)
+    _check_risky_click(first)
+    await asyncio.sleep(0.15)  # hover transitions with a short delay
+    info = await _point_info(page, x, y)
+    _check_risky_click(info)
+    return info
+
+
+def _check_drop_target(info: dict):
+    """A drop must not put text into a field: fill and press guard fields
+    (passwords, one time codes and card numbers stay the person's)."""
+    why = policy.sensitive_field(info)
+    if why:
+        raise Handoff(f"dropping onto the {why} field would put a value there without you; type it yourself.")
+    tag, kind = info.get("tag"), str(info.get("type") or "").lower()
+    if info.get("editable") or tag == "textarea" or (tag == "input" and kind not in (
+            "button", "submit", "reset", "image", "checkbox", "radio", "range", "color", "file")):
+        raise BrowserError("Dropping onto a text field is not supported; use fill to type into it.")
 
 
 async def _draw_marks(page, tab: _Tab):
@@ -1520,20 +1618,21 @@ async def _draw_marks(page, tab: _Tab):
         return None
 
 
-async def _drag_end(driver: _Driver, tab: _Tab, ref, point, text=None):
-    """(x, y, info) for one end of a drag: a ref's centre, a screen point, or
-    the centre of the element showing some visible text (drop zones usually
-    have no ref)."""
+async def _drag_end(driver: _Driver, tab: _Tab, ref, point, text=None, *, scroll=True):
+    """(x, y, info, locator or None) for one end of a drag: a ref's centre, a
+    screen point, or the centre of the element showing some visible text
+    (drop zones usually have no ref)."""
     if ref or text:
         locator, _ = await driver.locate(tab, {"ref": ref} if ref else {"find": text})
-        await locator.scroll_into_view_if_needed(timeout=_OP_TIMEOUT_MS)
+        if scroll:
+            await locator.scroll_into_view_if_needed(timeout=_OP_TIMEOUT_MS)
         box = await locator.bounding_box()
         if not box:
-            raise BrowserError(f"{ref} is not visible.")
+            raise BrowserError(f"{ref or _q(text)} is not visible.")
         info = await locator.evaluate(_INFO_JS)
-        return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, info
+        return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, info, locator
     if point is not None:
-        return point[0], point[1], await _point_info(tab.page, *point)
+        return point[0], point[1], await _point_info(tab.page, *point), None
     raise BrowserError("drag needs ref, find or x,y for the start and to_ref, text or to_x,to_y for the end.")
 
 
@@ -1566,6 +1665,151 @@ async def _navigate(driver: _Driver, tab: _Tab, key: str, args: dict) -> tuple[s
             raise BrowserError(f"Could not open {url}: {message}") from None
     await driver.settle(tab.page)
     return await _state_result(driver, tab, key, "open", note)
+
+
+def parse_batch(args: dict) -> tuple[list[dict], list[str] | None, dict | None]:
+    """Validate a batch: (steps, items or None, pages or None). Raises
+    BrowserError with a message the model can act on."""
+    steps = args.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise BrowserError("batch needs steps: a list of actions, for example "
+                           '[{"action": "click", "find": "Next"}, {"action": "read"}].')
+    if len(steps) > _BATCH_MAX_STEPS:
+        raise BrowserError(f"batch takes at most {_BATCH_MAX_STEPS} steps.")
+    clean = []
+    for number, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            raise BrowserError(f"batch step {number} must be an object with an action.")
+        action = str(step.get("action") or "").strip().lower()
+        if action not in _BATCH_STEP_ACTIONS:
+            raise BrowserError(f"batch step {number}: {_q(action or '(none)')} cannot run in a batch. Allowed: "
+                               + ", ".join(sorted(_BATCH_STEP_ACTIONS)) + ". Uploads, screenshots, tabs and "
+                               "JavaScript are separate calls.")
+        extra = set(step) - _BATCH_STEP_ARGS
+        if extra:
+            raise BrowserError(f"batch step {number}: unsupported argument(s) {', '.join(sorted(extra))}.")
+        for name, value in step.items():
+            if isinstance(value, (dict, list)):
+                raise BrowserError(f"batch step {number}: {name} must be a plain value.")
+            if isinstance(value, str) and ("\0" in value or value.lstrip().startswith("-")):
+                raise BrowserError(f"batch step {number}: {name} cannot start with a dash.")
+        clean.append({**step, "action": action})
+    items = args.get("each")
+    pages = args.get("pages")
+    if items is not None and pages is not None:
+        raise BrowserError("batch takes each or pages, not both.")
+    if items is not None:
+        if (not isinstance(items, list) or not items or len(items) > _BATCH_MAX_ITEMS
+                or not all(isinstance(i, (str, int, float)) and not isinstance(i, bool) for i in items)):
+            raise BrowserError(f"each must be a list of 1 to {_BATCH_MAX_ITEMS} short texts; the steps run once "
+                               "per item with {item} replaced by it.")
+        items = [str(i)[:200] for i in items]
+        if any("\0" in i or i.lstrip().startswith("-") for i in items):
+            raise BrowserError("each items cannot start with a dash.")
+    if pages is not None:
+        if not isinstance(pages, dict) or not str(pages.get("next") or "").strip() or set(pages) - {"next", "max"}:
+            raise BrowserError('pages needs next (the visible text of the next page link or button) and '
+                               'optionally max, for example {"next": "Next", "max": 5}.')
+        try:
+            limit = int(pages.get("max") or 5)
+        except (TypeError, ValueError):
+            raise BrowserError("pages.max must be a whole number.") from None
+        nxt = str(pages["next"]).strip()[:200]
+        if nxt.startswith("-"):
+            raise BrowserError("pages.next cannot start with a dash.")
+        pages = {"next": nxt, "max": min(max(limit, 1), _BATCH_MAX_PAGES)}
+    runs = len(clean) * (len(items) if items else pages["max"] if pages else 1)
+    if runs > _BATCH_MAX_RUNS:
+        raise BrowserError(f"That batch would run {runs} steps; the limit is {_BATCH_MAX_RUNS}. Split it.")
+    return clean, items, pages
+
+
+def _with_item(step: dict, item: str) -> dict:
+    return {k: (v.replace("{item}", item) if isinstance(v, str) else v) for k, v in step.items()}
+
+
+def _step_note(output: str) -> str:
+    """A step's own result without the page outline (the batch ends with one)."""
+    text = str(output or "").split(STATE_BEGIN, 1)[0].strip()
+    return text or "done."
+
+
+_FINGERPRINT_JS = "() => location.href + '|' + (document.body ? document.body.innerText.length : 0)"
+
+
+async def _batch(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
+    steps, items, pages = parse_batch(args)
+    started = time.monotonic()
+    lines: list[str] = []
+    used = 0
+
+    def log(label: str, text: str) -> None:
+        nonlocal used
+        room = _BATCH_OUTPUT_CHARS - used
+        if room <= 0:
+            return
+        entry = f"[{label}] {text}"
+        if len(entry) > room:
+            entry = entry[:room] + " ... (batch output limit reached)"
+        lines.append(entry)
+        used += len(entry) + 1
+
+    async def run_steps(prefix: str, item: str | None) -> None:
+        for number, step in enumerate(steps, 1):
+            if time.monotonic() - started > _BATCH_TIME_S:
+                raise BrowserError(f"the batch reached its {_BATCH_TIME_S} s limit")
+            call = _with_item(step, item) if item is not None else step
+            label = f"{prefix}step {number} {call['action']}"
+            try:
+                _, result = await asyncio.wait_for(_act(driver, call, key), _ACTION_TIMEOUT_S)
+            except BrowserError as error:
+                raise BrowserError(f"{label} failed: {error}") from None
+            except asyncio.TimeoutError:
+                raise BrowserError(f"{label} took longer than {_ACTION_TIMEOUT_S} s") from None
+            note = _step_note(result.get("output"))
+            if int(result.get("exit_code") or 0) != 0:
+                raise BrowserError(f"{label} failed: {note[:600]}")
+            log(label, note)
+
+    summary = ""
+    try:
+        if items is not None:
+            for index, item in enumerate(items, 1):
+                await run_steps(f"item {index} {_q(item)[:60]}, ", item)
+            summary = f"Batch finished: {len(steps)} step(s) for each of {len(items)} item(s)."
+        elif pages is not None:
+            done = 0
+            for number in range(1, pages["max"] + 1):
+                await run_steps(f"page {number}, ", None)
+                done = number
+                if number == pages["max"]:
+                    summary = f"Batch finished: {done} page(s), the most asked for."
+                    break
+                tab = driver._active(key)
+                before = await tab.page.evaluate(_FINGERPRINT_JS) if tab else ""
+                try:
+                    await asyncio.wait_for(_act(driver, {"action": "click", "find": pages["next"]}, key),
+                                           _ACTION_TIMEOUT_S)
+                except (BrowserError, asyncio.TimeoutError):
+                    summary = f"Batch finished: {done} page(s); no {_q(pages['next'])} control to go further."
+                    break
+                tab = driver._active(key)
+                if tab is not None and await tab.page.evaluate(_FINGERPRINT_JS) == before:
+                    summary = f"Batch finished: {done} page(s); {_q(pages['next'])} did not change the page."
+                    break
+        else:
+            await run_steps("", None)
+            summary = f"Batch finished: {len(steps)} step(s)."
+    except Handoff as handoff:
+        text = "\n".join(lines + ["Batch stopped here; the steps above were done.", _handoff_text(str(handoff))])
+        return "batch", {"output": text + await _error_state(driver, key), "exit_code": 0}
+    except BrowserError as error:
+        text = "\n".join(lines + [f"Batch stopped: {error}. The steps above were done."])
+        return "batch", {"output": text + await _error_state(driver, key), "exit_code": 1, "error": str(error)}
+    tab = driver._active(key)
+    if tab is None:
+        return "batch", {"output": "\n".join(lines + [summary]), "exit_code": 0}
+    return await _state_result(driver, tab, key, "batch", "\n".join(lines + [summary]))
 
 
 async def _state_result(driver: _Driver, tab: _Tab, key: str, what: str, note: str) -> tuple[str, dict]:
@@ -1608,11 +1852,12 @@ async def run(args: dict, *, owner: str | None, session_id: str | None,
                        "exit_code": 1, "error": "browser not allowed for this account"}
     key = f"{str(owner or '').casefold()}:{session_id or 'default'}"
     driver = _DRIVER
+    limit = _BATCH_TIME_S + _ACTION_TIMEOUT_S if action == "batch" else _ACTION_TIMEOUT_S
     async with driver.lock:
         try:
             await driver.ensure()
             driver.action_started = time.monotonic()
-            what, result = await asyncio.wait_for(_act(driver, args, key), _ACTION_TIMEOUT_S)
+            what, result = await asyncio.wait_for(_act(driver, args, key), limit)
             return f"{label} {what}".strip(), result
         except Handoff as handoff:
             text = _handoff_text(str(handoff))
@@ -1621,7 +1866,7 @@ async def run(args: dict, *, owner: str | None, session_id: str | None,
             text = f"Error: {error}"
             return label, {"output": text + await _error_state(driver, key), "exit_code": 1, "error": str(error)}
         except asyncio.TimeoutError:
-            text = f"Error: the {action} action took longer than {_ACTION_TIMEOUT_S} s and was abandoned."
+            text = f"Error: the {action} action took longer than {limit} s and was abandoned."
             return label, {"output": text + await _error_state(driver, key), "exit_code": 1, "error": text}
         except Exception as exc:  # Playwright errors, lost connection
             logger.warning("browser action %s failed: %s", action, _short_error(exc))

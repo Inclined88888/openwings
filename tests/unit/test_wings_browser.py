@@ -329,6 +329,32 @@ def test_pointer_clicks_get_the_same_commit_guard(browser):
     browser._check_risky_click({})
 
 
+def test_drops_never_type_into_fields(browser):
+    for info in ({"tag": "input", "type": "text", "autocomplete": "one-time-code"},
+                 {"tag": "input", "type": "password"},
+                 {"tag": "input", "type": "text", "name": "cardnumber"}):
+        with pytest.raises(browser.Handoff):
+            browser._check_drop_target(info)
+    for info in ({"tag": "input", "type": "text", "name": "q"}, {"tag": "textarea"},
+                 {"tag": "div", "editable": True}, {"tag": "input", "type": ""}):
+        with pytest.raises(browser.BrowserError):
+            browser._check_drop_target(info)
+    browser._check_drop_target({"tag": "div", "text": "Done"})
+    browser._check_drop_target({"tag": "li", "label": "Column 2"})
+
+
+def test_point_lookup_sees_into_shadow_roots_and_flags_opaque_components(browser):
+    js = browser._POINT_JS
+    assert "shadowRoot.elementFromPoint" in js and "'OBJECT'" in js and "'EMBED'" in js
+    assert "info.opaque = true" in js
+
+
+def test_read_never_outputs_typed_values(browser):
+    js = browser._TEXT_JS
+    assert "el.value || el.getAttribute" not in js
+    assert 'type === "submit"' in js and 'auto.startsWith("cc-")' in js
+
+
 def test_structured_read_script_is_one_function(browser):
     assert browser._TEXT_JS.startswith("() =>")
     assert "//" not in browser._TEXT_JS.splitlines()[0]
@@ -343,3 +369,119 @@ def test_drag_and_points_are_allowed_browser_arguments():
     bi.parse_operation(json.dumps({"action": "click", "x": 25, "y": 40}))
     with pytest.raises(bi.ResourceIdentityError):
         bi.parse_operation(json.dumps({"action": "drag", "ref": "e2", "button": "right"}))
+
+
+def test_batch_steps_are_checked_before_anything_runs(browser):
+    bad = [
+        {"steps": []},
+        {"steps": [{"action": "evaluate", "script": "1"}]},
+        {"steps": [{"action": "fill", "find": "Attach", "path": "report.pdf"}]},   # uploads are their own call
+        {"steps": [{"action": "screenshot"}]},
+        {"steps": [{"action": "new_page", "url": "https://example.com"}]},
+        {"steps": [{"action": "click", "find": "--remote-debugging"}]},
+        {"steps": [{"action": "click", "find": {"nested": 1}}]},
+        {"steps": [{"action": "read"}] * 21},
+        {"steps": [{"action": "read"}], "each": ["a"], "pages": {"next": "Next"}},
+        {"steps": [{"action": "read"}] * 3, "each": [str(i) for i in range(40)]},   # 120 runs
+        {"steps": [{"action": "read"}], "each": []},
+        {"steps": [{"action": "read"}], "pages": {"max": 3}},
+    ]
+    for args in bad:
+        with pytest.raises(browser.BrowserError):
+            browser.parse_batch(args)
+    steps, items, pages = browser.parse_batch({"steps": [{"action": "CLICK", "find": "{item}"}], "each": ["Jan", 2]})
+    assert steps[0]["action"] == "click" and items == ["Jan", "2"] and pages is None
+    _, _, pages = browser.parse_batch({"steps": [{"action": "read"}], "pages": {"next": "Next", "max": 99}})
+    assert pages == {"next": "Next", "max": 25}
+
+
+class _FakePage:
+    def __init__(self):
+        self.number = 1
+
+    async def evaluate(self, script, *args):
+        return f"page{self.number}"
+
+
+class _FakeDriver:
+    def __init__(self):
+        self.page = _FakePage()
+
+    def _active(self, key):
+        return None if self.page is None else type("T", (), {"page": self.page})()
+
+
+def _fake_act(browser, driver, calls, *, last_page=3, handoff_on=None, fail_on=None):
+    async def act(drv, args, key):
+        calls.append(dict(args))
+        what = args["action"]
+        target = args.get("find") or args.get("ref") or ""
+        if handoff_on and target == handoff_on:
+            raise browser.Handoff(f"clicking {target!r} would commit something on your behalf.")
+        if fail_on and target == fail_on:
+            raise browser.BrowserError(f"nothing on the page matches {target!r}")
+        if what == "click" and target == "Next":
+            if driver.page.number >= last_page:
+                raise browser.BrowserError("nothing on the page matches 'Next'")
+            driver.page.number += 1
+        text = f"text of {target or 'page ' + str(driver.page.number if driver.page else 0)}"
+        return what, {"output": f"{text}\n{browser.STATE_BEGIN}\nURL: x\n{browser.STATE_END}", "exit_code": 0}
+    return act
+
+
+def test_batch_repeats_steps_for_each_item(browser, monkeypatch):
+    import asyncio
+    driver, calls = _FakeDriver(), []
+    driver.page = None
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls))
+    args = {"action": "batch", "each": ["Jan", "Feb"],
+            "steps": [{"action": "click", "find": "{item}"}, {"action": "read"}, {"action": "back"}]}
+    what, result = asyncio.run(browser._batch(driver, args, "k"))
+    assert [c.get("find") for c in calls if c["action"] == "click"] == ["Jan", "Feb"]
+    assert len(calls) == 6 and result["exit_code"] == 0
+    assert '[item 2 "Feb", step 1 click] text of Feb' in result["output"]
+    assert browser.STATE_BEGIN not in result["output"].split("Batch finished")[0]
+
+
+def test_batch_follows_pages_until_there_is_no_next(browser, monkeypatch):
+    import asyncio
+    driver, calls = _FakeDriver(), []
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls, last_page=3))
+
+    async def no_state(drv, tab, key, what, note):
+        return what, {"output": note, "exit_code": 0}
+
+    monkeypatch.setattr(browser, "_state_result", no_state)
+    args = {"action": "batch", "pages": {"next": "Next", "max": 10}, "steps": [{"action": "read"}]}
+    _, result = asyncio.run(browser._batch(driver, args, "k"))
+    reads = [line for line in result["output"].splitlines() if "step 1 read" in line]
+    assert reads == ["[page 1, step 1 read] text of page 1", "[page 2, step 1 read] text of page 2",
+                     "[page 3, step 1 read] text of page 3"]
+    assert '3 page(s); no "Next" control' in result["output"]
+
+
+def test_batch_stops_for_the_person_and_on_errors(browser, monkeypatch):
+    import asyncio
+    driver, calls = _FakeDriver(), []
+    driver.page = None
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls, handoff_on="Pay now"))
+    args = {"action": "batch", "steps": [{"action": "read"}, {"action": "click", "find": "Pay now"},
+                                         {"action": "read"}]}
+    _, result = asyncio.run(browser._batch(driver, args, "k"))
+    assert result["exit_code"] == 0 and "Batch stopped here" in result["output"] and "PAUSED" in result["output"]
+    assert len(calls) == 2                      # nothing after the step that needs the person
+    calls.clear()
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls, fail_on="Missing"))
+    args["steps"][1] = {"action": "click", "find": "Missing"}
+    _, result = asyncio.run(browser._batch(driver, args, "k"))
+    assert result["exit_code"] == 1 and "step 2 click failed" in result["output"] and len(calls) == 2
+
+
+def test_batch_is_granted_only_with_the_interactive_actions(browser):
+    assert {"batch", "hover"} <= browser.interactive_actions()
+    assert "hover" in browser._BATCH_STEP_ACTIONS
+    from src import browser_identity as bi
+    import json
+    op, args = bi.parse_operation(json.dumps({"action": "batch", "steps": [{"action": "read"}],
+                                              "pages": {"next": "Next"}}))
+    assert args["action"] == "batch"
