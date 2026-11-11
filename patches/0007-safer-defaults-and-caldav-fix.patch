@@ -1,4 +1,4 @@
-Wings patch 0007: safer defaults and a CalDAV fix
+OpenWings patch 0007: safer defaults and a CalDAV fix
 
   * Documents Tidy ships paused: it permanently deletes documents it judges
     throwaway (titles like 'Draft' or 'Untitled') every 5 new documents.

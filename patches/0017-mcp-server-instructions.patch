@@ -1,4 +1,4 @@
-Wings patch 0017: pass MCP servers' own usage notes to the model
+OpenWings patch 0017: pass MCP servers' own usage notes to the model
 
 MCP servers can send `instructions` when a client connects: how their
 tools fit together, what to call first, limits. OpenManus passes them to

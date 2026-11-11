@@ -8,7 +8,7 @@ socket. This proxy is the only way in from outside, and every connection must
 pass two checks:
 
   * its source address belongs to a container named in WINGS_BROWSER_CLIENTS
-    (default: the Wings app, "odysseus"), as resolved by Docker's DNS on each
+    (default: the OpenWings app, "odysseus"), as resolved by Docker's DNS on each
     connection, so other containers and the Docker host are refused;
   * its HTTP request (the DevTools JSON/WebSocket handshake or the VNC
     WebSocket handshake) carries X-Wings-Browser-Token equal to

@@ -1,10 +1,10 @@
-Wings patch 0018: several browser actions in one call (batch), and hover
+OpenWings patch 0018: several browser actions in one call (batch), and hover
 
 OpenManus's browser runs Python the model writes against the browser, so
 one step can walk twenty pages of a table or open every invoice in a list.
-Wings' browser did one action per call: a "download the last 24 monthly
+OpenWings' browser did one action per call: a "download the last 24 monthly
 statements" task took one model round per click and ran out of rounds.
-Wings does not run model written code against the signed in browser.
+OpenWings does not run model written code against the signed in browser.
 Instead it adds a declarative batch of its own actions, each checked
 exactly as if it were called alone (wings/browser.py).
 
@@ -17,12 +17,12 @@ exactly as if it were called alone (wings/browser.py).
     batch, at most 100 step runs and 5 minutes.
   * hover: moves the pointer over a ref, the element showing some text, or
     a screen point, so menus and tooltips that open only on hover appear in
-    the outline (OpenManus's browser can hover; Wings could not). Hovering
+    the outline (OpenManus's browser can hover; OpenWings could not). Hovering
     commits nothing, and clicks on what it reveals are guarded as usual.
   * src/tool_schemas.py: private_browser describes batch and hover.
   * src/agent_loop.py: upstream's checks on the addresses a browser batch
     opens (no example.com placeholders, off topic opens become a search)
-    read Wings' "steps" as well as upstream's "commands".
+    read OpenWings' "steps" as well as upstream's "commands".
 
 The request authority grants batch and hover only together with the other
 interactive browser actions (a browser task the person asked for). A step

@@ -146,9 +146,9 @@ async def handle(reader, writer):
         await asyncio.gather(_pipe(reader, up_writer), _pipe(up_reader, writer))
     except PermissionError as exc:
         _warn(target, str(exc))
-        await _reply(writer, "403 Forbidden", f"Wings: {exc}. Set WINGS_BROWSER_ALLOW_PRIVATE=1 to allow it.")
+        await _reply(writer, "403 Forbidden", f"OpenWings: {exc}. Set WINGS_BROWSER_ALLOW_PRIVATE=1 to allow it.")
     except (OSError, ValueError) as exc:
-        await _reply(writer, "502 Bad Gateway", f"Wings: could not connect ({exc.__class__.__name__})")
+        await _reply(writer, "502 Bad Gateway", f"OpenWings: could not connect ({exc.__class__.__name__})")
 
 
 async def main():

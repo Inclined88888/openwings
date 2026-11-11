@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Wings code runner: runs the agent's Python and shell code in this
-container, never in the Wings app container.
+"""OpenWings code runner: runs the agent's Python and shell code in this
+container, never in the OpenWings app container.
 
 The app sends POST /run with the code; this server runs it as an
 unprivileged user in the session's workspace folder with CPU, memory, file

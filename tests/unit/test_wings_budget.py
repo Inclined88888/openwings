@@ -1,4 +1,4 @@
-"""Unit tests for the Wings token and spend caps (overlay/app/wings/budget.py).
+"""Unit tests for the OpenWings token and spend caps (overlay/app/wings/budget.py).
 Run with ./tests/unit/run.sh (inside the built image, network off)."""
 from __future__ import annotations
 

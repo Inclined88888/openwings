@@ -1,7 +1,7 @@
-"""Per-agent tool access for Odysseus personas (Wings patch 0005).
+"""Per-agent tool access for Odysseus personas (OpenWings patch 0005).
 
 Upstream "agents" are persona presets (instructions, temperature, persona
-memory) with no tool restriction of their own. Wings adds an optional
+memory) with no tool restriction of their own. OpenWings adds an optional
 ``enabled_tools`` list to each persona: a list of tool *families* (below). When
 it is set, every tool outside those families is added to the turn's
 disabled-tool set, the same choke point upstream uses for the global admin

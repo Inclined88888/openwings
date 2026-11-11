@@ -1,4 +1,4 @@
-"""Unit tests for the Wings code runner: the app-side client
+"""Unit tests for the OpenWings code runner: the app-side client
 (overlay/app/wings/runner.py) and the runner server's path handling
 (docker/runner/runner_server.py, loaded from the mounted tests folder when
 available). No containers needed."""

@@ -1,4 +1,4 @@
-// Readable text of the page for the Wings browser's "read" action: headings
+// Readable text of the page for the OpenWings browser's "read" action: headings
 // become # lines, list items "* " lines, tables pipe tables, preformatted
 // blocks fenced; everything else is plain text in document order. Hidden
 // elements are skipped. Read-only.

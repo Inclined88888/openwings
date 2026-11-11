@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts Chromium on the virtual screen with a persistent profile, so logins
 # you make in the live view survive restarts. DevTools listens on loopback
-# only; guard_proxy.py is the single way in, and it admits only the Wings app.
+# only; guard_proxy.py is the single way in, and it admits only the OpenWings app.
 # Every request Chromium makes goes through egress_proxy.py (no bypass, not
 # even for loopback), which refuses private and local addresses.
 set -eu

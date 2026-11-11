@@ -1,0 +1,425 @@
+OpenWings patch 0019: the app shows the OpenWings name and logo
+
+The project is named OpenWings: two open black wings on a white tile
+(docs/brand/). The web app showed upstream's name, Odysseus, and its boat
+logo. This patch changes what a person sees; it keeps every technical
+name (WINGS_* settings, the wings package, the Docker project and its
+volumes), so existing installs keep their data and settings.
+
+  * static/index.html: page and tab titles, the sidebar name, the welcome
+    screen logo and name, the message box placeholder, the favicon (black
+    wings on a white tile whatever the accent color) and two settings
+    labels say OpenWings.
+  * static/login.html: the OpenWings logo and name, and a "built on
+    Odysseus (AGPL 3.0)" line linking to upstream.
+  * static/manifest.json: the installed app is named OpenWings. The image
+    build replaces upstream's app icons and favicon with OpenWings ones
+    (docker/odysseus/Dockerfile copies them from wings/brand).
+  * static/js/theme.js: the theme no longer repaints the favicon as the
+    boat in the accent color; the main pages keep the wings tile (route
+    icons such as calendar and notes are unchanged).
+  * static/app.js: the message box placeholder says OpenWings.
+  * static/js/chat.js, chatRenderer.js, slashCommands.js: the assistant's
+    label on system replies says OpenWings.
+  * src/tool_schemas.py, src/tool_index.py, src/secret_storage.py,
+    scripts/generate_env_reference.py: tool descriptions and messages
+    name the OpenWings browser and code runner.
+
+Unchanged on purpose: the "Odysseus" character preset (a persona, the king
+of Ithaca) and the "You are Odysseus." line in upstream's model prompts,
+which upstream's own tuned models may expect.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/scripts/generate_env_reference.py b/scripts/generate_env_reference.py
+index 2e0201d..34571bd 100644
+--- a/scripts/generate_env_reference.py
++++ b/scripts/generate_env_reference.py
+@@ -769,7 +769,7 @@ VARIABLE_NOTES: dict[str, tuple[str, str, str]] = {
+     # -- Auth and internal API ----------------------------------------------
+     "ODYSSEUS_APP_KEY": (
+         "Auth and internal API", USER,
+-        "Security-relevant. Fernet key that encrypts stored secrets (Wings). Set, it "
++        "Security-relevant. Fernet key that encrypts stored secrets (OpenWings). Set, it "
+         "replaces the key file in the data directory, so backups of that directory "
+         "hold no key; a malformed key, or one that differs from an existing key file, "
+         "stops startup instead of orphaning every stored secret.",
+diff --git a/src/secret_storage.py b/src/secret_storage.py
+index 0a3101d..7bc3405 100644
+--- a/src/secret_storage.py
++++ b/src/secret_storage.py
+@@ -85,7 +85,7 @@ def check_key_file_matches_env(path: Path, env_key: bytes) -> None:
+         raise RuntimeError(
+             f"{path} exists and differs from {ENV_KEY_VAR}. Secrets stored so "
+             f"far were encrypted with the key in that file. Move it into the "
+-            f"environment (Wings: ./scripts/adopt-key.sh --yes), or unset "
++            f"environment (OpenWings: ./scripts/adopt-key.sh --yes), or unset "
+             f"{ENV_KEY_VAR}."
+         )
+ 
+diff --git a/src/tool_index.py b/src/tool_index.py
+index ec763ea..0e7d85e 100644
+--- a/src/tool_index.py
++++ b/src/tool_index.py
+@@ -112,7 +112,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
+     "web_fetch": "Fetch and read the text content of a specific URL/website the user names (e.g. 'check example.com', 'open this link'). Use when you have a concrete URL; for open-ended lookups use web_search instead.",
+     "pdf_extract": "Extract focused, source-attributed passages and exact table values from an online PDF or task-local /workspace/*.pdf. Use for arXiv papers, reports, manuals, PDF tables, evaluation metrics, and multi-document PDF extraction. Prefer this over Python requests, curl, downloading, pdftotext, or guessing. Include target model names, metrics, and table headings in query.",
+     "youtube_tool": "Read YouTube-specific data without fighting the JS page: video comments, transcripts, metadata, or latest video from a channel. Use for YouTube comments/transcript/channel latest-video tasks.",
+-    "private_browser": "Use websites in a real browser (Wings browser service): open, read, click, fill forms, press keys, scroll, tabs. Acts on numbered [eN] refs from the newest page outline. Hands passwords, payments and send/order/publish clicks to the user (PAUSED). Prefer web_fetch/web_search for plain reading.",
++    "private_browser": "Use websites in a real browser (OpenWings browser service): open, read, click, fill forms, press keys, scroll, tabs. Acts on numbered [eN] refs from the newest page outline. Hands passwords, payments and send/order/publish clicks to the user (PAUSED). Prefer web_fetch/web_search for plain reading.",
+     "inspect_media": "Inspect local workspace images, SVGs, videos, and PDF pages with the current multimodal model. Samples bounded timestamped video frames uniformly, at scene cuts, or from temporally diverse motion peaks; renders SVG to PNG; exports stills or clips; concatenates ranges; changes clip speed while preserving audio pitch; and renders query-relevant PDF pages. Prefer these native operations over raw ffmpeg. Increase max_dimension only for small visual details; saved exports keep source quality.",
+     "extract_text": "Extract exact visible text, confidence, and pixel centers from a local workspace image with Odysseus local OCR. Use for screenshots, scans, labels, numbers, receipts, and text-location tasks; use inspect_media for general visual understanding.",
+     "transcribe_media": "Transcribe dialogue, narration, names, and spoken timing from a local audio or video file with Odysseus local Whisper. Returns [START --> END] TEXT segments and always persists them to a workspace text file. For a named chapter, question, scene, or topic, locate its boundaries and restrict filtering to that interval. This handles audio speech; combine with inspect_media for audiovisual tasks or visually burned-in subtitles.",
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 92f130d..9057a18 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -289,7 +289,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "bash",
+-            "description": "Run a shell command (with the Wings code runner: isolated, no network, in the agent workspace). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
++            "description": "Run a shell command (with the OpenWings code runner: isolated, no network, in the agent workspace). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+@@ -318,7 +318,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "python",
+-            "description": "Execute Python code to compute a result or test something. Prefer a dedicated tool whenever one fits the job (reading, writing, or searching files); use python only for computation, data processing, or scripting no dedicated tool covers. With the Wings code runner, code runs isolated with no network, in the agent workspace, with pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx and pypdf available. Save charts and files in the current folder: images you save are shown in the chat.",
++            "description": "Execute Python code to compute a result or test something. Prefer a dedicated tool whenever one fits the job (reading, writing, or searching files); use python only for computation, data processing, or scripting no dedicated tool covers. With the OpenWings code runner, code runs isolated with no network, in the agent workspace, with pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx and pypdf available. Save charts and files in the current folder: images you save are shown in the chat.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+@@ -393,7 +393,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "private_browser",
+-            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. For repetitive work (read every page of a table, open each invoice in a list) use batch with each or pages instead of one call per click. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
++            "description": "Use websites in a real Chromium browser (the OpenWings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. For repetitive work (read every page of a table, open each invoice in a list) use batch with each or pages instead of one call per click. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+diff --git a/static/app.js b/static/app.js
+index e14121a..3ce00e9 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -2458,7 +2458,7 @@ function initializeEventListeners() {
+ 	        textarea.setAttribute('placeholder', 'Swipe to toggle plan');
+ 	        return;
+ 	      }
+-	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message Odysseus...');
++	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message OpenWings...');
+ 	    }
+ 
+ 	    if (_isMobile && textarea && !textarea._odysseusPlanPlaceholderHint) {
+diff --git a/static/index.html b/static/index.html
+index db97580..a117b24 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -3,8 +3,8 @@
+ <head>
+   <meta charset="UTF-8" />
+   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
+-  <title>Odysseus Chat</title>
+-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4L16 22L6 22Z' fill='%23e06c75'/%3E%3Cpath d='M16 8L16 22L24 22Z' fill='%23e06c75' opacity='0.6'/%3E%3Cpath d='M4 24Q10 20 16 24Q22 28 28 24' stroke='%23e06c75' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
++  <title>OpenWings</title>
++  <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
+   <link rel="manifest" href="/static/manifest.json">
+   <meta name="theme-color" content="#282c34">
+   <meta name="apple-mobile-web-app-capable" content="yes">
+@@ -48,7 +48,8 @@
+         // Update favicon to match accent color
+         var ac = c.red || '#e06c75';
+         var fav = document.querySelector("link[rel='icon']");
+-        if (fav) fav.href = 'data:image/svg+xml,' + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 4L16 22L6 22Z' fill='" + ac + "'/><path d='M16 8L16 22L24 22Z' fill='" + ac + "' opacity='0.6'/><path d='M4 24Q10 20 16 24Q22 28 28 24' stroke='" + ac + "' stroke-width='2.5' fill='none' stroke-linecap='round'/></svg>");
++        // OpenWings: black wings on a white tile, whatever the accent color.
++        if (fav) fav.href = '/static/openwings/openwings-tile.svg';
+         // Derive syntax highlighting colors from theme
+         function h2hsl(hex) {
+           hex = hex.replace('#','');
+@@ -177,15 +178,15 @@
+       apple.href = href;
+       // Also customize the page title so the bookmark inherits a useful name.
+       var titles = {
+-        '/calendar': 'Calendar — Odysseus',
+-        '/notes': 'Notes — Odysseus',
+-        '/cookbook': 'Cookbook — Odysseus',
+-        '/email': 'Email — Odysseus',
+-        '/memory': 'Memory — Odysseus',
+-        '/skills': 'Skills — Odysseus',
+-        '/gallery': 'Gallery — Odysseus',
+-        '/tasks': 'Tasks — Odysseus',
+-        '/library': 'Library — Odysseus',
++        '/calendar': 'Calendar — OpenWings',
++        '/notes': 'Notes — OpenWings',
++        '/cookbook': 'Cookbook — OpenWings',
++        '/email': 'Email — OpenWings',
++        '/memory': 'Memory — OpenWings',
++        '/skills': 'Skills — OpenWings',
++        '/gallery': 'Gallery — OpenWings',
++        '/tasks': 'Tasks — OpenWings',
++        '/library': 'Library — OpenWings',
+       };
+       if (titles[path]) document.title = titles[path];
+       // Per-route Android home-screen icon. We swap the <link rel="manifest">
+@@ -195,8 +196,8 @@
+       try {
+         if (inner && typeof Blob !== 'undefined') {
+           var pwa = {
+-            name: (titles[path] || 'Odysseus'),
+-            short_name: (titles[path] || 'Odysseus').split('—')[0].trim(),
++            name: (titles[path] || 'OpenWings'),
++            short_name: (titles[path] || 'OpenWings').split('—')[0].trim(),
+             start_url: path,
+             scope: '/',
+             display: 'standalone',
+@@ -591,7 +592,7 @@
+         <div class="theme-adv-group">
+           <div class="theme-adv-group-label">Sidebar</div>
+           <div class="theme-custom">
+-            <div class="color-row"><label>Odysseus Logo</label><input type="color" id="adv-brandColor"><button class="color-reset-btn" data-reset-adv="brandColor" title="Reset this color" aria-label="Reset color">&#x21BA;</button></div>
++            <div class="color-row"><label>OpenWings Logo</label><input type="color" id="adv-brandColor"><button class="color-reset-btn" data-reset-adv="brandColor" title="Reset this color" aria-label="Reset color">&#x21BA;</button></div>
+             <div class="color-row"><label title="Hamburger menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="vertical-align:-2px;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></label><input type="color" id="adv-hamburgerColor"><button class="color-reset-btn" data-reset-adv="hamburgerColor" title="Reset this color" aria-label="Reset color">&#x21BA;</button></div>
+           </div>
+         </div>
+@@ -786,7 +787,7 @@
+     <div class="sidebar-header">
+       <button class="sidebar-hamburger" id="sidebar-toggle-btn" title="Toggle sidebar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+       <div class="sidebar-brand" id="sidebar-brand-btn" style="cursor:pointer;" title="New chat">
+-        <span class="sidebar-brand-title">Odysseus</span>
++        <span class="sidebar-brand-title">OpenWings</span>
+       </div>
+     </div>
+     <div class="sidebar-inner">
+@@ -1019,12 +1020,12 @@
+          never affects layout, but always present inside the main landmark
+          (the sidebar that shows the visible brand is hidden off-canvas on
+          mobile) so the page always exposes a single level-1 heading. -->
+-    <h1 class="a11y-visually-hidden">Odysseus</h1>
++    <h1 class="a11y-visually-hidden">OpenWings</h1>
+     <div class="chat-top-bar">
+       <button type="button" class="incognito-indicator" id="incognito-indicator" title="Nobody mode active — click to deactivate" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg></button>
+-      <div class="chat-meta-overlay"><span id="current-meta">Odysseus Chat</span><span id="current-meta-count" class="chat-meta-count" aria-hidden="true"></span><span id="session-cost-display" class="session-cost-display" style="display:none;"></span><button type="button" class="chat-context-pill" id="chat-context-pill" title="Chat context" hidden><span class="chat-context-dot"></span><span id="chat-context-pill-label">0%</span></button><span class="export-dropdown-wrap" id="export-dropdown-wrap"><button type="button" class="export-dl-btn" id="export-dl-btn" title="More"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button><div class="export-dropdown-menu" id="export-dropdown-menu"><div class="export-dropdown-item" id="export-rename-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span><span>Rename</span></div><div class="export-dropdown-item" id="export-compact-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg></span><span class="export-compact-pill">Compact</span></div><div class="export-dropdown-item" id="export-copy-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span>Copy Chat</span></div><div class="export-dropdown-item" id="export-pdf-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2h2a1.5 1.5 0 0 1 0 3H9z"/></svg></span><span>PDF</span></div><div class="export-dropdown-item dropdown-item-danger" id="export-delete-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span><span>Delete Chat</span></div></div></span></div>    </div>
++      <div class="chat-meta-overlay"><span id="current-meta">OpenWings</span><span id="current-meta-count" class="chat-meta-count" aria-hidden="true"></span><span id="session-cost-display" class="session-cost-display" style="display:none;"></span><button type="button" class="chat-context-pill" id="chat-context-pill" title="Chat context" hidden><span class="chat-context-dot"></span><span id="chat-context-pill-label">0%</span></button><span class="export-dropdown-wrap" id="export-dropdown-wrap"><button type="button" class="export-dl-btn" id="export-dl-btn" title="More"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button><div class="export-dropdown-menu" id="export-dropdown-menu"><div class="export-dropdown-item" id="export-rename-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span><span>Rename</span></div><div class="export-dropdown-item" id="export-compact-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg></span><span class="export-compact-pill">Compact</span></div><div class="export-dropdown-item" id="export-copy-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span>Copy Chat</span></div><div class="export-dropdown-item" id="export-pdf-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2h2a1.5 1.5 0 0 1 0 3H9z"/></svg></span><span>PDF</span></div><div class="export-dropdown-item dropdown-item-danger" id="export-delete-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span><span>Delete Chat</span></div></div></span></div>    </div>
+     <div id="welcome-screen">
+-      <div class="welcome-name"><svg class="welcome-boat" viewBox="0 0 32 32"><path d="M16 4L16 22L6 22Z" fill="currentColor"/><path d="M16 8L16 22L24 22Z" fill="currentColor" opacity="0.6"/><path d="M4 24Q10 20 16 24Q22 28 28 24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>Odysseus</div>
++      <div class="welcome-name"><img class="welcome-boat" src="/static/openwings/openwings-tile.svg" alt="">OpenWings</div>
+       <div class="welcome-sub" id="welcome-sub">A voyage begins.</div>
+       <div class="welcome-tip" id="welcome-tip" role="note"></div>
+       <button type="button" class="incognito-btn" id="incognito-btn" title="Enable Nobody mode — no memory or skill injection, no history saved">
+@@ -1078,7 +1079,7 @@
+     <div class="chat-input-bar">
+       <div class="chat-input-top">
+         <div id="message-ghost" class="ghost-text-overlay" aria-hidden="true"></div>
+-        <textarea id="message" placeholder="Message Odysseus..." required autocomplete="off" aria-label="Message input" rows="1" autofocus></textarea>
++        <textarea id="message" placeholder="Message OpenWings..." required autocomplete="off" aria-label="Message input" rows="1" autofocus></textarea>
+         <div id="plan-mode-status" class="plan-mode-status" hidden>
+           <span class="plan-mode-status-label">Plan mode</span>
+           <button type="button" id="plan-mode-status-toggle" class="plan-mode-status-toggle" aria-label="Turn off plan mode" aria-pressed="true">
+@@ -1902,7 +1903,7 @@
+             <div class="vis-toggles">
+               <label class="vis-row">
+                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg></span>
+-                <span class="vis-label">Odysseus <span class="vis-hint">Brand name</span></span>
++                <span class="vis-label">OpenWings <span class="vis-hint">Brand name</span></span>
+                 <input type="checkbox" checked data-ui-key="sidebar-brand"><span class="vis-switch"></span>
+               </label>
+               <label class="vis-row">
+@@ -2237,7 +2238,7 @@
+           </div>
+           <div class="admin-card">
+             <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Public App URL</h2>
+-            <div class="admin-toggle-sub" style="margin-bottom:8px">Used to build clickable links back to Odysseus inside outgoing reminder / urgent-email emails (e.g. <code>https://chat.yourdomain.com</code>). Leave blank to omit links.</div>
++            <div class="admin-toggle-sub" style="margin-bottom:8px">Used to build clickable links back to OpenWings inside outgoing reminder / urgent-email emails (e.g. <code>https://chat.yourdomain.com</code>). Leave blank to omit links.</div>
+             <div class="settings-col">
+               <div class="settings-row">
+                 <label class="settings-label">URL</label>
+diff --git a/static/js/chat.js b/static/js/chat.js
+index ab7d8b2..5186b32 100644
+--- a/static/js/chat.js
++++ b/static/js/chat.js
+@@ -6154,7 +6154,7 @@ import { invalidateSettings } from './appConfig.js';
+             if (_box && sessionModule.getCurrentSessionId() === _timeoutSessionId) {
+               var _timeoutMsg = document.createElement('div');
+               _timeoutMsg.className = 'msg msg-ai';
+-              _timeoutMsg.innerHTML = '<div class="role">Odysseus</div><div class="body" style="opacity:0.6;font-style:italic;">Research clarification timed out. Toggle research again to start over.</div>';
++              _timeoutMsg.innerHTML = '<div class="role">OpenWings</div><div class="body" style="opacity:0.6;font-style:italic;">Research clarification timed out. Toggle research again to start over.</div>';
+               _box.appendChild(_timeoutMsg);
+               uiModule.scrollHistory();
+             }
+diff --git a/static/js/chatRenderer.js b/static/js/chatRenderer.js
+index dceec9b..f578416 100644
+--- a/static/js/chatRenderer.js
++++ b/static/js/chatRenderer.js
+@@ -2827,7 +2827,7 @@ export function displayMetrics(messageElement, metrics) {
+           compactMsg.className = 'msg msg-ai';
+           const compactRole = document.createElement('div');
+           compactRole.className = 'role';
+-          compactRole.textContent = 'Odysseus';
++          compactRole.textContent = 'OpenWings';
+           const compactBody = document.createElement('div');
+           compactBody.className = 'body';
+           compactBody.innerHTML = 'Compacting context <span class="compact-wave">▁▂▃▅▂▁</span>';
+@@ -3523,7 +3523,7 @@ export function addMessage(role, content, modelName, metadata) {
+     const isCompacted = metadata?.compacted;
+     const replyModels = replyModelPair(modelName, metadata);
+     const resolvedModel = replyModels.actualModel || replyModels.requestedModel;
+-    var _roleText = role === 'user' ? 'You' : (isSlash || isCompacted) ? 'Odysseus' : modelRouteLabel(
++    var _roleText = role === 'user' ? 'You' : (isSlash || isCompacted) ? 'OpenWings' : modelRouteLabel(
+       replyModels.requestedModel,
+       resolvedModel,
+       replyModels.requestedEndpointLabel,
+diff --git a/static/js/slashCommands.js b/static/js/slashCommands.js
+index d288cb3..bab2bcb 100644
+--- a/static/js/slashCommands.js
++++ b/static/js/slashCommands.js
+@@ -313,7 +313,7 @@ function slashReply(text) {
+   div.className = 'msg msg-ai';
+   const role = document.createElement('div');
+   role.className = 'role';
+-  role.textContent = 'Odysseus';
++  role.textContent = 'OpenWings';
+   div.appendChild(role);
+   const body = document.createElement('div');
+   body.className = 'body';
+@@ -432,7 +432,7 @@ function typewriterReply(text, options = {}) {
+     div.className = 'msg msg-ai';
+     const role = document.createElement('div');
+     role.className = 'role';
+-    role.textContent = 'Odysseus';
++    role.textContent = 'OpenWings';
+     div.appendChild(role);
+     const body = document.createElement('div');
+     body.className = 'body';
+@@ -472,7 +472,7 @@ function typewriterBlocksReply(blocks, options = {}) {
+     div.className = 'msg msg-ai';
+     const role = document.createElement('div');
+     role.className = 'role';
+-    role.textContent = 'Odysseus';
++    role.textContent = 'OpenWings';
+     div.appendChild(role);
+     const body = document.createElement('div');
+     body.className = 'body';
+@@ -663,7 +663,7 @@ async function connectDetectedSetupEndpoint(detected) {
+   spinnerDiv.className = 'msg msg-ai';
+   const spinnerRole = document.createElement('div');
+   spinnerRole.className = 'role';
+-  spinnerRole.textContent = 'Odysseus';
++  spinnerRole.textContent = 'OpenWings';
+   spinnerDiv.appendChild(spinnerRole);
+   const spinnerBody = document.createElement('div');
+   spinnerBody.className = 'body';
+@@ -5326,7 +5326,7 @@ function _eggRender(html) {
+   div.className = 'msg msg-ai';
+   const role = document.createElement('div');
+   role.className = 'role';
+-  role.textContent = 'Odysseus';
++  role.textContent = 'OpenWings';
+   div.appendChild(role);
+   const body = document.createElement('div');
+   body.className = 'body';
+@@ -5427,7 +5427,7 @@ async function _cmdOdyssey(args, ctx) {
+ }
+ 
+ async function _cmdAscii(args, ctx) {
+-  const text = args.join(' ') || 'Odysseus';
++  const text = args.join(' ') || 'OpenWings';
+   const FONT = {
+     'A':'  #  \n # # \n#####\n#   #\n#   #','B':'#### \n#   #\n#### \n#   #\n#### ','C':' ####\n#    \n#    \n#    \n ####',
+     'D':'#### \n#   #\n#   #\n#   #\n#### ','E':'#####\n#    \n###  \n#    \n#####','F':'#####\n#    \n###  \n#    \n#    ',
+diff --git a/static/js/theme.js b/static/js/theme.js
+index 1b9dccd..1cb0ab2 100644
+--- a/static/js/theme.js
++++ b/static/js/theme.js
+@@ -369,13 +369,14 @@ const _ROUTE_FAVICON_SHAPES = {
+ function _updateFavicon(fg) {
+   const path = (window.location.pathname || '').toLowerCase();
+   const routeShape = _ROUTE_FAVICON_SHAPES[path];
+-  let svg;
++  let href;
+   if (routeShape) {
+-    svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>${routeShape.split('__C__').join(fg)}</svg>`;
++    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>${routeShape.split('__C__').join(fg)}</svg>`;
++    href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+   } else {
+-    svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 4L16 22L6 22Z' fill='${fg}'/><path d='M16 8L16 22L24 22Z' fill='${fg}' opacity='0.6'/><path d='M4 24Q10 20 16 24Q22 28 28 24' stroke='${fg}' stroke-width='2.5' fill='none' stroke-linecap='round'/></svg>`;
++    // OpenWings: black wings on a white tile, whatever the theme color.
++    href = '/static/openwings/openwings-tile.svg';
+   }
+-  const href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+   let link = document.querySelector("link[rel='icon']");
+   if (!link) {
+     link = document.createElement('link');
+@@ -390,7 +391,7 @@ function _updateFavicon(fg) {
+     apple.rel = 'apple-touch-icon';
+     document.head.appendChild(apple);
+   }
+-  apple.href = href;
++  apple.href = routeShape ? href : '/static/icons/icon-192.png';
+ }
+ 
+ // Cache of discovered custom fonts: { "Family Name": [ {file, url, format} ] }
+diff --git a/static/login.html b/static/login.html
+index e9dfdde..da086cf 100644
+--- a/static/login.html
++++ b/static/login.html
+@@ -3,8 +3,8 @@
+ <head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
+-<title>Odysseus — Login</title>
+-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4L16 22L6 22Z' fill='%23e06c75'/%3E%3Cpath d='M16 8L16 22L24 22Z' fill='%23e06c75' opacity='0.6'/%3E%3Cpath d='M4 24Q10 20 16 24Q22 28 28 24' stroke='%23e06c75' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
++<title>OpenWings — Login</title>
++<link rel="icon" type="image/svg+xml" href="static/openwings/openwings-tile.svg">
+ <link rel="manifest" href="static/manifest.json">
+ <link rel="apple-touch-icon" href="static/icons/icon-192.png">
+ <script nonce="{{CSP_NONCE}}">
+@@ -264,6 +264,8 @@
+     border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+   }
+   .logo-boat { width: 1.6rem; height: 1.6rem; margin-right: 0.4rem; vertical-align: -0.15em; color: var(--red); }
++  .built-on { margin: -0.4rem 0 1rem; text-align: center; font-size: 0.75rem; opacity: 0.6; }
++  .built-on a { color: inherit; }
+   .version-label {
+     position: fixed; bottom: 12px; right: 16px;
+     font-size: 0.7rem; opacity: 0.25;
+@@ -275,8 +277,9 @@
+ <body>
+ <main class="card">
+   <h1 class="logo">
+-    <svg class="logo-boat" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 4L16 22L6 22Z" fill="currentColor"/><path d="M16 8L16 22L24 22Z" fill="currentColor" opacity="0.6"/><path d="M4 24Q10 20 16 24Q22 28 28 24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg><span>Odysseus</span>
++    <img class="logo-boat" src="static/openwings/openwings-tile.svg" alt=""><span>OpenWings</span>
+   </h1>
++  <p class="built-on">built on <a href="https://github.com/odysseus-dev/odysseus" rel="noopener">Odysseus</a> (AGPL 3.0)</p>
+   <p class="setup-note" id="setupNote" style="display:none"></p>
+ 
+   <div class="error" id="error" role="alert" aria-live="assertive"></div>
+diff --git a/static/manifest.json b/static/manifest.json
+index c706923..69d92e3 100644
+--- a/static/manifest.json
++++ b/static/manifest.json
+@@ -1,6 +1,6 @@
+ {
+-  "name": "Odysseus",
+-  "short_name": "Odysseus",
++  "name": "OpenWings",
++  "short_name": "OpenWings",
+   "description": "Self-hosted AI chat with memory, documents, and tools",
+   "start_url": "/",
+   "scope": "/",
+diff --git a/website/configuration-reference.md b/website/configuration-reference.md
+index d0f4797..b7d4bad 100644
+--- a/website/configuration-reference.md
++++ b/website/configuration-reference.md
+@@ -170,7 +170,7 @@ The source tree reads **118** `ODYSSEUS_*` variables: 82 an operator may want to
+ 
+ | Variable | Default | Read in | What it does |
+ |---|---|---|---|
+-| `ODYSSEUS_APP_KEY` | `''` | `src/secret_storage.py` | Security-relevant. Fernet key that encrypts stored secrets (Wings). Set, it replaces the key file in the data directory, so backups of that directory hold no key; a malformed key, or one that differs from an existing key file, stops startup instead of orphaning every stored secret. |
++| `ODYSSEUS_APP_KEY` | `''` | `src/secret_storage.py` | Security-relevant. Fernet key that encrypts stored secrets (OpenWings). Set, it replaces the key file in the data directory, so backups of that directory hold no key; a malformed key, or one that differs from an existing key file, stops startup instead of orphaning every stored secret. |
+ | `ODYSSEUS_INTERNAL_BASE` | *unset* | `src/constants.py` | Base URL the in-app tool layer uses for loopback HTTP calls. Set it when the app is not reachable at the port it thinks it is bound to. |
+ | `ODYSSEUS_INTERNAL_TOKEN` | *unset* | `core/middleware.py` | Security-relevant. Token that lets the in-app tool layer reach admin-gated routes over loopback. Unset generates a fresh per-process token, which is what you want unless something outside the process needs the same value. |
+ 

@@ -1,10 +1,10 @@
-Wings patch 0014: long commands marked #!bg run in the code runner
+OpenWings patch 0014: long commands marked #!bg run in the code runner
 
 Upstream's bash prompt asks the model to start anything over about 20
 seconds with a #!bg line, which launches a detached job. Detached jobs
 need bubblewrap containment, which Docker does not allow, so in a Docker
 install every such command failed with "containment unavailable", even
-with the Wings code runner on.
+with the OpenWings code runner on.
 
   * src/tool_execution.py: with the runner enabled, a #!bg command skips
     the detached job path and goes through the normal bash path to the

@@ -1,5 +1,5 @@
-# Wings code runner: where the agent's Python and shell code runs, isolated
-# from the Wings app (no network, no secrets, only the workspaces volume is
+# OpenWings code runner: where the agent's Python and shell code runs, isolated
+# from the OpenWings app (no network, no secrets, only the workspaces volume is
 # writable). See runner_server.py.
 ARG WINGS_RUNNER_BASE_IMAGE=docker.io/library/python:3.14.9-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
 FROM ${WINGS_RUNNER_BASE_IMAGE}
@@ -28,5 +28,5 @@ HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=5 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/health', timeout=4).read(1)"]
 CMD ["python", "/opt/wings/runner_server.py"]
 
-LABEL org.opencontainers.image.title="wings-runner" \
-      org.opencontainers.image.description="Isolated code runner for the Wings agent"
+LABEL org.opencontainers.image.title="openwings-runner" \
+      org.opencontainers.image.description="Isolated code runner for the OpenWings agent"

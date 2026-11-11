@@ -3,7 +3,7 @@
 Upstream's confirmation for agent-written mail is a setting the agent itself
 can switch off, and several paths (scheduled task output, away auto-replies,
 the agent's in-process `app_api` calls to the send route, plugin tokens) send
-with no human step at all. With WINGS_FORCE_EMAIL_CONFIRM on (the Wings
+with no human step at all. With WINGS_FORCE_EMAIL_CONFIRM on (the OpenWings
 default) the rule is enforced at the SMTP chokepoint instead:
 
 * A send is allowed only when the caller marks it ``human_approved``. Only
@@ -77,7 +77,7 @@ def require_human(request, action: str = "Sending email") -> None:
     raise HTTPException(
         status_code=403,
         detail=(
-            f"{action} needs a signed-in person in the Wings web app "
+            f"{action} needs a signed-in person in the OpenWings web app "
             "(WINGS_FORCE_EMAIL_CONFIRM is on). Agents and API tokens can create "
             "drafts; a person reviews and clicks Send."
         ),
@@ -109,7 +109,7 @@ def ensure_scheduled_flag(conn, *, approve_existing: bool = False) -> None:
     """Add the approval flag column to scheduled_emails if missing (idempotent).
 
     approve_existing=True is used once, by the container preflight, when an
-    upstream Odysseus volume is first started under Wings: rows that were
+    upstream Odysseus volume is first started under OpenWings: rows that were
     already pending were created by upstream's own Schedule Send. At runtime
     the column is added with every row unapproved."""
     try:

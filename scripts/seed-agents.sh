@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Add the Wings starter agents (saved personas with tool limits) to a running
+# Add the OpenWings starter agents (saved personas with tool limits) to a running
 # install. setup.sh runs this once on first install; re-running it skips
 # agents whose name already exists, so your edits are never overwritten.
 #

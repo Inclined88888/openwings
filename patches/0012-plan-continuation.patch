@@ -1,4 +1,4 @@
-Wings patch 0012: an approved plan survives Continue and keeps going
+OpenWings patch 0012: an approved plan survives Continue and keeps going
 
 Upstream's agent_loop.build_active_plan_note says the approved plan is
 "sent back by the frontend each turn", but static/js/chat.js sent it once
@@ -6,7 +6,7 @@ and cleared it. So when a long plan hit the step limit and the person
 pressed Continue, the plan was no longer pinned and update_plan was turned
 off (a Continue message is not a plan request), and the agent lost track of
 which steps were done. OpenManus drives a plan from outside the model, step
-after step; this gives Wings the same follow through without giving up its
+after step; this gives OpenWings the same follow through without giving up its
 plan review and approval.
 
   * static/js/chat.js: the approved plan is remembered per chat for 12

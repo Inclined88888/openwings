@@ -1,4 +1,4 @@
-"""Wings page renderer: read pages that need JavaScript, for web_fetch and
+"""OpenWings page renderer: read pages that need JavaScript, for web_fetch and
 deep research (patch 0015).
 
 Upstream's web_fetch gives up on pages that build their text with
@@ -7,7 +7,7 @@ JavaScript, and its deep research browser fallback calls private_browser
 single page apps, many news and shop sites and most dashboards came back
 empty in research.
 
-Wings renders those pages in the `renderer` container: the same locked down
+OpenWings renders those pages in the `renderer` container: the same locked down
 browser image as `browser`, but with no profile volume, so it holds no
 logins, cookies or downloads, and a hostile page there can never reach the
 person's signed in browser. Each read uses a fresh browser context that is

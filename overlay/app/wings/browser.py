@@ -1,7 +1,7 @@
-"""Wings browser backend for upstream Odysseus's ``private_browser`` tool.
+"""OpenWings browser backend for upstream Odysseus's ``private_browser`` tool.
 
 Upstream ships the tool schema and the agent-side plumbing but disables every
-page action in this build. Wings drives a real Chromium in the ``browser``
+page action in this build. OpenWings drives a real Chromium in the ``browser``
 container (compose profile ``browser``) over the DevTools protocol with
 Playwright, the way OpenManus and browser-use do:
 
@@ -47,7 +47,7 @@ _TEXT_JS = "\n".join(line for line in Path(__file__).with_name("browser_text.js"
 _READ_CHUNK = 7000
 _ACTION_TIMEOUT_S = 75
 # batch: several page actions in one call (OpenManus's browser code mode does
-# this with model written Python; Wings runs a bounded list of its own actions,
+# this with model written Python; OpenWings runs a bounded list of its own actions,
 # each through the same guards as when called alone).
 _BATCH_STEP_ACTIONS = frozenset({"open", "navigate", "read", "find", "click", "fill", "press",
                                  "scroll", "wait", "back", "forward", "drag", "hover"})
@@ -325,7 +325,7 @@ def enabled() -> bool:
 
 def interactive_actions() -> frozenset:
     """Actions the request authority grants on top of upstream's read set
-    when the Wings browser is on. Guardrails live in the backend itself."""
+    when the OpenWings browser is on. Guardrails live in the backend itself."""
     actions = {"click", "fill", "type", "press", "select", "new_page", "select_page", "close_page",
                "reload", "console", "network", "drag", "batch", "hover"}
     if policy.allow_eval():
@@ -556,7 +556,7 @@ class _Tab:
     def __init__(self, tab_id: int, page, owner: str | None = None):
         self.id = tab_id
         self.page = page
-        # Wings account that opened or claimed the tab; None for tabs the
+        # OpenWings account that opened or claimed the tab; None for tabs the
         # person opened in the live view (shared among allowed accounts).
         self.owner = owner
         # Unguessable attribute name for element refs, so a page cannot
@@ -1027,7 +1027,7 @@ async def _until_dialog(tab: _Tab, awaitable):
 def _handoff_text(what: str) -> str:
     return (f"PAUSED, needs the person: {what}\n"
             "The agent does not do this step on its own. Stop and tell the user to open the live browser "
-            f"(Live browser in the Wings sidebar, or {LIVE_VIEW_PATH}), check the page and do this step "
+            f"(Live browser in the OpenWings sidebar, or {LIVE_VIEW_PATH}), check the page and do this step "
             "themselves, then say when it is done.")
 
 
@@ -1654,7 +1654,7 @@ async def _point_info(page, x: int, y: int) -> dict:
         raise BrowserError("That point is inside an embedded frame or object; act on the refs inside it instead.")
     info = _merge_deep(info, await _deep_info(page, x, y))
     if info.get("opaque") and policy.confirm_risky():
-        raise Handoff("that point is on a page component whose label cannot be read, so Wings cannot "
+        raise Handoff("that point is on a page component whose label cannot be read, so OpenWings cannot "
                       "tell whether clicking it commits something.")
     return info
 
@@ -2000,7 +2000,7 @@ async def run(args: dict, *, owner: str | None, session_id: str | None,
                        "exit_code": 1, "error": "browser not available to delegated credentials",
                        "executed": False, "failure_kind": "browser_page_authority_unavailable"}
     if not enabled():
-        return label, {"output": "The Wings browser is not enabled on this server. It is switched on with "
+        return label, {"output": "The OpenWings browser is not enabled on this server. It is switched on with "
                                  "./scripts/setup.sh --with-browser. Use web_search and web_fetch instead.",
                        "exit_code": 1, "error": "browser not enabled"}
     if not policy.user_allowed(owner):

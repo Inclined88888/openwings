@@ -1,4 +1,4 @@
-"""Unit tests for the Wings browser guardrails and page-outline formatting
+"""Unit tests for the OpenWings browser guardrails and page-outline formatting
 (overlay/app/wings/browser_policy.py, browser.py). No browser needed.
 Run with ./tests/unit/run.sh (inside the built image, network off)."""
 from __future__ import annotations

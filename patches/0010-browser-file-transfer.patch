@@ -1,6 +1,6 @@
-Wings patch 0010: move files between the browser and the workspace
+OpenWings patch 0010: move files between the browser and the workspace
 
-OpenManus's sandbox shares files between its browser, shell and code. Wings
+OpenManus's sandbox shares files between its browser, shell and code. OpenWings
 now does the same, safely:
 
   * Downloads: the browser's downloads volume is mounted read-only inside

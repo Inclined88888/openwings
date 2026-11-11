@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upgrade Wings in place: back up, pull the new Wings revision, rebuild, restart.
+# Upgrade OpenWings in place: back up, pull the new OpenWings revision, rebuild, restart.
 #
 #   ./scripts/upgrade.sh               backup + git pull + rebuild + restart
 #   ./scripts/upgrade.sh --no-pull     rebuild from the files you already have
@@ -36,7 +36,7 @@ if [ "$PULL" -eq 1 ]; then
     if [ -n "$(git -C "$WINGS_ROOT" status --porcelain --untracked-files=no)" ]; then
       die "you have local changes to tracked files; commit or stash them, or re-run with --no-pull"
     fi
-    info "Pulling the latest Wings revision"
+    info "Pulling the latest OpenWings revision"
     git -C "$WINGS_ROOT" pull --ff-only
   else
     warn "not a git checkout; skipping pull"
@@ -45,7 +45,7 @@ fi
 
 after="$(git -C "$WINGS_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
-# Shared secrets between the app and its helper containers that newer Wings
+# Shared secrets between the app and its helper containers that newer OpenWings
 # versions added (the page renderer's, for one). Missing ones are created the
 # way setup.sh does; existing values are never changed.
 for key in WINGS_BROWSER_TOKEN WINGS_RUNNER_TOKEN WINGS_RENDERER_TOKEN; do

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Wings end-to-end checks against the stack in this checkout.
+# Run the OpenWings end-to-end checks against the stack in this checkout.
 #
 #   ./tests/e2e/run.sh
 #

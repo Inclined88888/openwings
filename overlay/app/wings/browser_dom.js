@@ -1,4 +1,4 @@
-// Page observer injected by the Wings browser backend (wings/browser.py).
+// Page observer injected by the OpenWings browser backend (wings/browser.py).
 // Runs inside one frame. Stamps interactive elements with a ref attribute
 // (args.attr, a random name per tab) and
 // returns a compact, document-ordered outline: headings, visible text and

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared helpers for the Wings scripts. Sourced, not executed.
+# Shared helpers for the OpenWings scripts. Sourced, not executed.
 # Portable to the bash 3.2 that ships with macOS: no associative arrays,
 # no ${var,,}, no mapfile.
 
@@ -76,7 +76,7 @@ require_docker() {
   case "$major" in ''|*[!0-9]*) return 0;; esac
   case "$minor" in ''|*[!0-9]*) minor=0;; esac
   if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 24 ]; }; then
-    die "Docker Compose $v is too old. Wings needs 2.24 or newer."
+    die "Docker Compose $v is too old. OpenWings needs 2.24 or newer."
   fi
 }
 
@@ -93,7 +93,7 @@ container_id() { dc ps -q "$1" 2>/dev/null | head -n 1; }
 
 # Wait until a service reports healthy. $1 service, $2 timeout seconds.
 # Fails fast when the container exits or restarts (a crash loop, e.g. the
-# Wings preflight refusing a mismatched key with exit code 78).
+# OpenWings preflight refusing a mismatched key with exit code 78).
 wait_healthy() {
   local svc="$1" timeout="${2:-600}" waited=0 cid status restarts start_restarts=""
   while [ "$waited" -lt "$timeout" ]; do
@@ -134,12 +134,12 @@ sha256_stdin_short() {
   else shasum -a 256 | cut -c1-12; fi
 }
 
-# The locally built Wings image (built on demand), for one-off helper
+# The locally built OpenWings image (built on demand), for one-off helper
 # containers that need python/tar but must not start the app.
 wings_image() {
   local img
   img="$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 '^wings/odysseus' || true)"
-  [ -n "$img" ] || die "could not resolve the Wings image name from docker-compose.yml"
+  [ -n "$img" ] || die "could not resolve the OpenWings image name from docker-compose.yml"
   if ! docker image inspect "$img" >/dev/null 2>&1; then
     info "Building ${img}" >&2
     dc build odysseus >&2

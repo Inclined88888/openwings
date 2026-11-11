@@ -85,7 +85,7 @@ def check_key_file_matches_env(path: Path, env_key: bytes) -> None:
         raise RuntimeError(
             f"{path} exists and differs from {ENV_KEY_VAR}. Secrets stored so "
             f"far were encrypted with the key in that file. Move it into the "
-            f"environment (Wings: ./scripts/adopt-key.sh --yes), or unset "
+            f"environment (OpenWings: ./scripts/adopt-key.sh --yes), or unset "
             f"{ENV_KEY_VAR}."
         )
 

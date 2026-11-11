@@ -289,7 +289,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command (with the Wings code runner: isolated, no network, in the agent workspace). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
+            "description": "Run a shell command (with the OpenWings code runner: isolated, no network, in the agent workspace). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -318,7 +318,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "python",
-            "description": "Execute Python code to compute a result or test something. Prefer a dedicated tool whenever one fits the job (reading, writing, or searching files); use python only for computation, data processing, or scripting no dedicated tool covers. With the Wings code runner, code runs isolated with no network, in the agent workspace, with pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx and pypdf available. Save charts and files in the current folder: images you save are shown in the chat.",
+            "description": "Execute Python code to compute a result or test something. Prefer a dedicated tool whenever one fits the job (reading, writing, or searching files); use python only for computation, data processing, or scripting no dedicated tool covers. With the OpenWings code runner, code runs isolated with no network, in the agent workspace, with pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx and pypdf available. Save charts and files in the current folder: images you save are shown in the chat.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -393,7 +393,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "private_browser",
-            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. For repetitive work (read every page of a table, open each invoice in a list) use batch with each or pages instead of one call per click. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
+            "description": "Use websites in a real Chromium browser (the OpenWings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. For repetitive work (read every page of a table, open each invoice in a list) use batch with each or pages instead of one call per click. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
             "parameters": {
                 "type": "object",
                 "properties": {

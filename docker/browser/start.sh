@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Entry point of the Wings browser container. Runs the virtual screen, VNC,
+# Entry point of the OpenWings browser container. Runs the virtual screen, VNC,
 # noVNC, Chromium and the guard proxy under supervisord (restarted on crash).
 set -euo pipefail
 

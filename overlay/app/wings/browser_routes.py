@@ -1,4 +1,4 @@
-"""Live view of the Wings browser, served by the Wings app itself.
+"""Live view of the OpenWings browser, served by the OpenWings app itself.
 
   GET  /wings/browser/                 viewer page (sign-in required)
   GET  /wings/browser/live.js|css      viewer code
@@ -112,7 +112,7 @@ async def viewer_redirect(request: Request):
 @router.get("/wings/browser/", include_in_schema=False)
 async def viewer_page(request: Request):
     if not browser.enabled():
-        return PlainTextResponse("The Wings browser is not enabled. Run ./scripts/setup.sh --with-browser on the server.",
+        return PlainTextResponse("The OpenWings browser is not enabled. Run ./scripts/setup.sh --with-browser on the server.",
                                  status_code=404)
     if not _allowed(request):
         return _deny(request, "The live browser is reserved for the accounts in WINGS_BROWSER_USERS.")

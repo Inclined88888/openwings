@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wings end-to-end checks against a running stack.
+"""OpenWings end-to-end checks against a running stack.
 
 Standard library only. Run through tests/e2e/run.sh, which starts the
 deterministic mock model (mock_llm.py) and a GreenMail SMTP/IMAP test server
@@ -298,7 +298,7 @@ def browser_checks(c: Client, ep_id: str) -> None:
         check("the live view lists the download", st == 200 and any(d.get("name") == name for d in listing.get("downloads", [])),
               str(listing)[:200])
         st, body = c.req("GET", "/wings/browser/downloads/" + urllib.parse.quote(name), raw=True)
-        check("the person can save the download through Wings", st == 200 and b"Amount due" in body, str(st))
+        check("the person can save the download through OpenWings", st == 200 and b"Amount due" in body, str(st))
     out = call({"action": "read", "path": "../../app/data/app.db"})
     bcheck("download names cannot escape the downloads folder", "without folders" in out, out)
     events, text = chat_tool_outputs(c, sid, "Use the browser for this. WINGS_CALL private_browser " + json.dumps({"action": "screenshot"}))

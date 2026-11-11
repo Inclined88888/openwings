@@ -1,4 +1,4 @@
-"""Wings run budget: hard token and spend caps (patch 0013).
+"""OpenWings run budget: hard token and spend caps (patch 0013).
 
 Upstream Odysseus caps an agent run by rounds and tool calls only; nothing
 stops it on tokens or money, and scheduled tasks and automatic plan

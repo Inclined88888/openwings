@@ -1,4 +1,4 @@
-Wings patch 0005: per-agent tool access
+OpenWings patch 0005: per-agent tool access
 
 Upstream agents (persona presets) carry instructions, temperature and persona
 memory but no tool restriction: chat tool access is decided only by per-turn

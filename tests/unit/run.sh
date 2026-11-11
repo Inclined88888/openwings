@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Wings unit tests inside the built image (no network, no running app).
+# Run the OpenWings unit tests inside the built image (no network, no running app).
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 . "$(cd "$(dirname "$0")/../.." && pwd)/scripts/lib.sh"

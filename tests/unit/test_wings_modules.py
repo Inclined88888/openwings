@@ -1,4 +1,4 @@
-"""Unit tests for the Wings modules shipped in overlay/app/wings.
+"""Unit tests for the OpenWings modules shipped in overlay/app/wings.
 
 Run inside the built image (no network, no running app needed):
 

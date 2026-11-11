@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # VNC server for the live view on a unix socket (no TCP port at all), so no
 # web page in this browser can reach it. The WebSocket bridge (also a unix
-# socket) is reachable only through guard_proxy.py, which requires the Wings
+# socket) is reachable only through guard_proxy.py, which requires the OpenWings
 # app's address and token, and the app relays it only to a signed-in person
 # allowed to use the browser.
 set -eu

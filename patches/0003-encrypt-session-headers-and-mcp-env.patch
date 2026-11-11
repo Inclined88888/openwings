@@ -1,4 +1,4 @@
-Wings patch 0003: encrypt API keys copied into sessions and MCP server env
+OpenWings patch 0003: encrypt API keys copied into sessions and MCP server env
 
 Endpoint API keys are encrypted in model_endpoints, but upstream copies them
 as plaintext Authorization headers into sessions.headers whenever a chat binds

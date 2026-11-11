@@ -18,7 +18,7 @@
 #   2. run this script; fix any patch that no longer applies (git apply -3)
 #   3. rebuild and run tests/e2e
 #
-# Files under overlay/app/wings/ are Wings-only additions and are left alone.
+# Files under overlay/app/wings/ are OpenWings-only additions and are left alone.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

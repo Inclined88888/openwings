@@ -1,4 +1,4 @@
-Wings patch 0015: read pages that need JavaScript in web_fetch and research
+OpenWings patch 0015: read pages that need JavaScript in web_fetch and research
 
 Upstream's web_fetch returns nothing for pages that build their text with
 JavaScript (single page apps, many news, shop and dashboard sites), and
@@ -9,7 +9,7 @@ not read those pages at all. OpenManus reads them with a headless browser
 
   * src/agent_tools/web_tools.py: when the plain fetch got no text, an
     empty body, a bot challenge or HTTP 403, or only a JavaScript app's
-    shell, web_fetch reads the page in the Wings renderer and says so.
+    shell, web_fetch reads the page in the OpenWings renderer and says so.
   * src/research_navigator.py: the research browser fallback uses the
     renderer.
 

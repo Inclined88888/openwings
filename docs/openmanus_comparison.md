@@ -1,7 +1,7 @@
-# Wings and OpenManus: what each does better, and what Wings took
+# OpenWings and OpenManus: what each does better, and what OpenWings took
 
 Compared against OpenManus at commit `3309bf4` (github.com/FoundationAgents/OpenManus)
-and Wings at patch 0018. OpenManus is an open source reimplementation of the Manus
+and OpenWings at patch 0018. OpenManus is an open source reimplementation of the Manus
 product idea, not Manus itself; the hosted Manus service is closed source and was
 not examined.
 
@@ -11,16 +11,16 @@ Nine areas were compared subsystem by subsystem, by reading both code bases
 end to end: the agent loop, planning, code execution, data analysis and charts,
 search and crawling, the sandbox and computer use, MCP and multi agent work, the
 model layer, and the browser features that still differed after patch 0011.
-Every claim that OpenManus is better, or has something Wings lacks, was given to
+Every claim that OpenManus is better, or has something OpenWings lacks, was given to
 two separate reviewers told to refute it. 94 agents ran in all.
 
-Result: 114 capabilities judged. Wings was better or alone in 68, they were equal
+Result: 114 capabilities judged. OpenWings was better or alone in 68, they were equal
 in 4, 13 OpenManus advantages were confirmed, and 29 claimed OpenManus advantages
 were refuted. In 3 of the refuted ones the reviewers still found OpenManus ahead
 on part of the claim (statistics on charts, hover and right click, desktop
 control); they are listed below with the confirmed gaps. Several confirmed gaps
 were closed while the comparison ran (patches 0009 to 0018), and the reviewers
-judged some of those features already better in Wings.
+judged some of those features already better in OpenWings.
 
 ## Facts: how OpenManus works
 
@@ -44,9 +44,9 @@ judged some of those features already better in Wings.
 * **Safety**: no rules about passwords, payments, private networks or approval;
   `AskHuman` exists but the model decides when to use it.
 
-## What Wings took from OpenManus, the Wings way
+## What OpenWings took from OpenManus, the OpenWings way
 
-| OpenManus advantage (confirmed) | Wings now | Patch |
+| OpenManus advantage (confirmed) | OpenWings now | Patch |
 | --- | --- | --- |
 | Runs the model's Python and shell | Code runner container: no network, no secrets, only the workspace writable, one approval per task; charts shown in the chat, files downloadable | 0009 |
 | Files move between browser, code and the person | Downloads land in the workspace; uploads into web forms from the workspace, each approved | 0010 |
@@ -57,11 +57,11 @@ judged some of those features already better in Wings.
 | Reads pages that need JavaScript | A stateless renderer container (no logins, public addresses only, time limited, bot checks reported) for web fetch and research | 0015 |
 | Retries with backoff | 429 and overload retries before a reply starts; no retry when the provider asks for longer than 20 seconds | 0016 |
 | MCP server instructions reach the model | Labelled as the server's words, only on turns where its tools are offered | 0017 |
-| Scripted multi step browser work in one call | `batch`: up to 20 of Wings' own actions, repeated per item or per page, each checked as if alone; no model written code against the signed in browser | 0018 |
+| Scripted multi step browser work in one call | `batch`: up to 20 of OpenWings' own actions, repeated per item or per page, each checked as if alone; no model written code against the signed in browser | 0018 |
 | Hover | `hover` by ref, text or point, so hover menus appear in the outline | 0018 |
 | Data analyst agent | A seeded Data Analyst agent that computes every figure with code and states trends and outliers | scripts/seed-agents.sh |
 
-## Where Wings is ahead (judged by the reviewers)
+## Where OpenWings is ahead (judged by the reviewers)
 
 Agent loop: step cap behaviour, stuck and loop detection, completion
 verification, context compaction and overflow recovery, tool failure handling,
@@ -85,12 +85,12 @@ guardrail (passwords, codes, cards, pay and send buttons, private addresses).
 | --- | --- | --- |
 | A plan runner that starts one agent run per step, with the plan re-injected each time | medium (reviewers split: one found its main benefit false, since OpenManus keeps one growing memory across steps) | 0012 covers the failure people hit (plans lost at the step limit). A server side runner needs pause, cancel and retry semantics and per step approval; worth doing as its own piece of work |
 | Routing plan steps to specialist agents | medium | Needs a nested agent run under the exact approval model; personas already exist and the agent can ask another model |
-| Per task sandbox lifecycle (fresh sandbox per task, auto archive, parallel sandboxes) | medium | One shared runner with one workspace volume is simpler to secure and back up; per task sandboxes need a container manager with Docker access, which Wings keeps away from the app |
+| Per task sandbox lifecycle (fresh sandbox per task, auto archive, parallel sandboxes) | medium | One shared runner with one workspace volume is simpler to secure and back up; per task sandboxes need a container manager with Docker access, which OpenWings keeps away from the app |
 | Detached long running shell sessions (start, check later, kill; named sessions) | low to medium | Upstream's detached jobs need bubblewrap, which Docker's default profile blocks; 0014 runs them in the foreground instead |
 | Azure OpenAI and AWS Bedrock as native providers | medium | Both work today through an OpenAI compatible gateway (LiteLLM and similar); native adapters are upstream's provider layer |
 | Undo of the agent's file edits | low | Workspace files are in a backed up volume; no per edit history yet |
 | Refreshing an MCP server's tool list during a run | low | Reconnecting the server refreshes it |
-| Desktop control outside the browser | low | No desktop in Wings' containers; the browser covers web work |
+| Desktop control outside the browser | low | No desktop in OpenWings' containers; the browser covers web work |
 | Several browser backends (attach to another browser, cloud browsers, upstream proxy) | low | One hardened browser holds the person's logins; more backends multiply what must be guarded |
 | Automatic statistics on charts (trend, outliers, correlation) as a tool | low | The Data Analyst agent is instructed to compute and state them with code |
 | Right click | low | Pages rarely need it; Chromium's own menu is not part of the page |
@@ -100,7 +100,7 @@ guardrail (passwords, codes, cards, pay and send buttons, private addresses).
 * OpenManus was read at one commit; later commits may change any line above.
 * "Better" means more capable for a person using it, not more code. Reviewers
   were told to refute; a claim survived only when both could not.
-* Wings features were verified on a stand in image of upstream (same source),
+* OpenWings features were verified on a stand in image of upstream (same source),
   as described in `docs/verification.md`, not on the published image.
 
 ## Risks

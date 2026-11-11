@@ -1,8 +1,8 @@
-"""Wings code runner client: upstream's python and bash tools run here.
+"""OpenWings code runner client: upstream's python and bash tools run here.
 
 Upstream Odysseus runs the agent's code only inside bubblewrap containment,
 which Docker's default security profile does not allow, so in a Docker
-deployment those tools always refuse. Wings sends the code to the `runner`
+deployment those tools always refuse. OpenWings sends the code to the `runner`
 container instead (compose profile `runner`): no network, no secrets, all
 capabilities dropped, read-only root, and the only writable place is the
 agent workspace (the same folder the app's file tools use, shared through the

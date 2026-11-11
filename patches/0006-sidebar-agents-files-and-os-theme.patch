@@ -1,4 +1,4 @@
-Wings patch 0006: Agents and Files in the sidebar, theme follows the OS
+OpenWings patch 0006: Agents and Files in the sidebar, theme follows the OS
 
 Adds an 'Agents' sidebar entry (keyboard-focusable) that opens the persona
 editor where an agent's instructions and tool access live, relabels the

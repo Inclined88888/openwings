@@ -1,10 +1,10 @@
-Wings patch 0001: read the encryption key from ODYSSEUS_APP_KEY
+OpenWings patch 0001: read the encryption key from ODYSSEUS_APP_KEY
 
 Upstream keeps its Fernet keys (data/.app_key for database secrets, data/.key
 for api_keys.json and webhook secrets) inside the data directory, so every
 copy of the data volume, including backups, carries the key that decrypts it.
 With this patch both key users take the key from ODYSSEUS_APP_KEY (or from
-wings.keyholder, where the Wings launcher moves it so child processes do not
+wings.keyholder, where the OpenWings launcher moves it so child processes do not
 inherit it) and never write a key file in that mode. A malformed key, or an
 existing key file that differs from the variable, raises instead of silently
 generating a new key and orphaning stored secrets; with WINGS_KEY_FROM_ENV=1 a

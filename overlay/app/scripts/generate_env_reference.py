@@ -769,7 +769,7 @@ VARIABLE_NOTES: dict[str, tuple[str, str, str]] = {
     # -- Auth and internal API ----------------------------------------------
     "ODYSSEUS_APP_KEY": (
         "Auth and internal API", USER,
-        "Security-relevant. Fernet key that encrypts stored secrets (Wings). Set, it "
+        "Security-relevant. Fernet key that encrypts stored secrets (OpenWings). Set, it "
         "replaces the key file in the data directory, so backups of that directory "
         "hold no key; a malformed key, or one that differs from an existing key file, "
         "stops startup instead of orphaning every stored secret.",

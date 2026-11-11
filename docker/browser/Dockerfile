@@ -1,6 +1,6 @@
-# Wings browser: a real (headful) Chromium on a virtual screen, for the agent
+# OpenWings browser: a real (headful) Chromium on a virtual screen, for the agent
 # to drive over the Chrome DevTools Protocol and for you to watch and take over
-# through the live view in the Wings web app.
+# through the live view in the OpenWings web app.
 #
 # Base: the Selenium project's Chromium image, pinned by digest. It already
 # carries Chromium, Xvfb, a window manager, x11vnc and noVNC for amd64 and
@@ -34,5 +34,5 @@ ENTRYPOINT ["/opt/wings/start.sh"]
 HEALTHCHECK --interval=20s --timeout=5s --start-period=40s --retries=5 \
   CMD ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9222/json/version', timeout=4).read(1)"]
 
-LABEL org.opencontainers.image.title="wings-browser" \
-      org.opencontainers.image.description="Chromium with live view for Wings browser automation"
+LABEL org.opencontainers.image.title="openwings-browser" \
+      org.opencontainers.image.description="Chromium with live view for OpenWings browser automation"

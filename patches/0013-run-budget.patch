@@ -1,9 +1,9 @@
-Wings patch 0013: hard token and spend caps for agent runs
+OpenWings patch 0013: hard token and spend caps for agent runs
 
 Upstream caps an agent run by rounds and tool calls only; it tracks
 tokens and estimated cost for display but nothing stops on them.
 OpenManus can stop on a token count (input tokens only, off by default).
-Wings counts input and output tokens and dollars (the provider's reported
+OpenWings counts input and output tokens and dollars (the provider's reported
 cost when it sends one, else upstream's price table), per run and per
 person per day, for every model call; see wings/budget.py.
 

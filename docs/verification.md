@@ -11,7 +11,7 @@ container registry blobs or Debian package mirrors. So the official image
 rebuilt there. Every runtime test ran on a stand in image built from the same
 upstream commit (`9d0d372`): the same Python 3.14.9 base, the same
 `requirements.txt`, the same source tree and entrypoint, but without the apt
-packages (Chromium, Node, build tools, gosu). The Wings overlay was then built
+packages (Chromium, Node, build tools, gosu). The OpenWings overlay was then built
 on top of it through the real `docker/odysseus/Dockerfile`, with
 `ODYSSEUS_BASE_IMAGE` overridden. Consequences:
 
@@ -29,15 +29,15 @@ review fixes:
 | Image | Email gate | Result |
 | --- | --- | --- |
 | Unpatched upstream | n/a | 26 failed, 4742 passed |
-| Wings | `WINGS_FORCE_EMAIL_CONFIRM=0` | identical failure set: no regressions |
-| Wings | `WINGS_FORCE_EMAIL_CONFIRM=1` | the same 26 plus 30 more, all of them tests that assert an email is sent, scheduled, connection-tested, or staged for an agent without a person's session: intended |
+| OpenWings | `WINGS_FORCE_EMAIL_CONFIRM=0` | identical failure set: no regressions |
+| OpenWings | `WINGS_FORCE_EMAIL_CONFIRM=1` | the same 26 plus 30 more, all of them tests that assert an email is sent, scheduled, connection-tested, or staged for an agent without a person's session: intended |
 
 The 26 baseline failures are environmental (no IPv6, README files excluded
 from the image, no network for some fixtures).
 
 **Full suite, 2026-11-11** (706 test files, 11,262 tests, both images, network
-off): unpatched upstream 65 failed; Wings 68 failed. The first run had 10
-failures only on Wings; 7 were real and are fixed (see "Second review pass"
+off): unpatched upstream 65 failed; OpenWings 68 failed. The first run had 10
+failures only on OpenWings; 7 were real and are fixed (see "Second review pass"
 below). The 3 left are intended: patch 0007 makes drafted skills wait for a
 person instead of auto publishing, and upstream's tests assert the auto
 publish default (`test_skill_audit_utility.py::test_audit_persists_saved_turn_estimate_from_baseline_comparison`,
@@ -48,7 +48,7 @@ which the agent can do only with the person's request or approval. Every
 other failure is identical on both images (no bubblewrap, ffmpeg, node,
 tmux or README in the image; no network).
 
-## Wings unit tests
+## OpenWings unit tests
 
 `./tests/unit/run.sh`: 171 tests (44 at first release) for the email gate (human vs agent loopback vs
 API token vs auth disabled; self address allowlist; the SMTP chokepoint),
@@ -188,7 +188,7 @@ The browser container was built from the pinned Selenium Chromium image
   with a hostile web page and a hostile container in mind. Confirmed issues,
   all fixed before release: the VNC bridge was reachable from pages on
   loopback (moved to unix sockets, guard now also needs a shared token);
-  the noVNC client was served from the browser container onto the Wings
+  the noVNC client was served from the browser container onto the OpenWings
   origin (now vendored in the app image); downloads followed symlinks (now
   refused) and HTML downloads were stripped with a quadratic regex on the
   event loop (now a linear parser in a thread); private addresses were
@@ -274,7 +274,7 @@ the code runner and both browser containers running.
 
 ## Second review pass (patches 0001 to 0017, 2026-11-11)
 
-Three independent reviewers read patches 0011 to 0017 and the new Wings
+Three independent reviewers read patches 0011 to 0017 and the new OpenWings
 modules; every serious finding went to a separate skeptic told to refute
 it. 16 were confirmed, 1 was rejected (already fixed in the tree under
 review), and all 16 plus the low ones are fixed. The full upstream suite

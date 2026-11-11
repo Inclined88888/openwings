@@ -1,4 +1,4 @@
-# The exact upstream build Wings is pinned to. scripts/dev/rebase-overlay.sh
+# The exact upstream build OpenWings is pinned to. scripts/dev/rebase-overlay.sh
 # reads this file; docker-compose.yml carries the same image reference.
 ODYSSEUS_REPO=https://github.com/odysseus-dev/odysseus
 ODYSSEUS_BRANCH=main

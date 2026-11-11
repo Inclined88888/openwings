@@ -1,4 +1,4 @@
-# HTTPS front door for Wings (profile: https).
+# HTTPS front door for OpenWings (profile: https).
 # WINGS_DOMAIN must resolve to this host, and ports 80 and 443 must be
 # reachable from the internet so Let's Encrypt can issue the certificate.
 {

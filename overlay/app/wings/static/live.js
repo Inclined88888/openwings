@@ -1,5 +1,5 @@
-// Wings live browser viewer. Uses noVNC's RFB client (relayed from the
-// browser container by the Wings app) over an authenticated WebSocket.
+// OpenWings live browser viewer. Uses noVNC's RFB client (relayed from the
+// browser container by the OpenWings app) over an authenticated WebSocket.
 import RFB from "./novnc/core/rfb.js";
 
 const screen = document.getElementById("screen");
@@ -81,7 +81,7 @@ document.getElementById("cliptext").addEventListener("click", () => {
   typeText.value = "";
 });
 
-// Files the browser downloaded, newest first. Links download through Wings.
+// Files the browser downloaded, newest first. Links download through OpenWings.
 const dlList = document.getElementById("dllist");
 const dlCount = document.getElementById("dlcount");
 let dlSignature = "";

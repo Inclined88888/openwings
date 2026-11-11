@@ -1,11 +1,11 @@
-Wings patch 0004: WINGS_FORCE_EMAIL_CONFIRM, no email without a person's click
+OpenWings patch 0004: WINGS_FORCE_EMAIL_CONFIRM, no email without a person's click
 
 Upstream's only guard on agent-written mail is the agent_email_confirm setting
 (which the agent can change through manage_settings), its staged drafts have
 no approval UI, and the agent can bypass it entirely by calling /api/email/send
 through its in-process app_api tool. Scheduled-task output, away auto-replies
 and plugin tokens send with no human step. With WINGS_FORCE_EMAIL_CONFIRM on
-(default in Wings, settable only in .env):
+(default in OpenWings, settable only in .env):
 
   * _send_smtp_message is a deny-by-default chokepoint: it refuses any message
     not marked human_approved, except automated mail whose every recipient is

@@ -1,10 +1,10 @@
-Wings patch 0009: run the agent's python and bash in the code runner
+OpenWings patch 0009: run the agent's python and bash in the code runner
 
 Upstream runs agent code only inside bubblewrap containment
 (src/containment.py). The upstream image does not ship bubblewrap and
 Docker's default seccomp profile blocks the namespaces it needs, so in a
 Docker deployment python and bash always refuse ("containment
-unavailable"). With the runner compose profile on, Wings sends the code,
+unavailable"). With the runner compose profile on, OpenWings sends the code,
 after upstream's own checks (no sudo, no ad-hoc HTTP downloads, resource
 identity), to the runner container: no network, no secrets, read-only root,
 all capabilities dropped, CPU/memory/process caps, and only the agent
@@ -29,7 +29,7 @@ workspace writable (wings/runner.py, docker/runner/).
   * app.py, static/js/wings-ui.js: "Workspace files" page and sidebar entry
     to download what the agent wrote (wings/files_routes.py, admins only).
 
-Wings also sets ODYSSEUS_WORKSPACE_DEFAULT=/workspaces/default (compose), an
+OpenWings also sets ODYSSEUS_WORKSPACE_DEFAULT=/workspaces/default (compose), an
 upstream setting the web UI already honours: without a bound workspace,
 upstream refuses every file and code tool in an ordinary chat.
 

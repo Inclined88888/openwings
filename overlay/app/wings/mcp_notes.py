@@ -3,7 +3,7 @@
 MCP servers may send `instructions` when a client connects: how their tools
 fit together, which to call first, limits. OpenManus passes them to the
 model; upstream Odysseus dropped them, so agents used such servers worse.
-Wings keeps them, cleaned and capped, and shows them with that server's
+OpenWings keeps them, cleaned and capped, and shows them with that server's
 tools in the prompt, labelled as the server's words. They are guidance, not
 authority: approval gates and tool access rules apply as before.
 """

@@ -1,4 +1,4 @@
-# Wings browser automation driver, installed into the Wings image with
+# OpenWings browser automation driver, installed into the OpenWings image with
 # --require-hashes --only-binary=:all: --no-deps (every file pinned by hash).
 # Playwright connects to the Chromium in the browser container over CDP; it
 # does not download browsers. websockets lets uvicorn serve the live view.

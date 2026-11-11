@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wings first-run setup.
+# OpenWings first-run setup.
 #
 #   ./scripts/setup.sh                      local install on http://localhost:7011
 #   ./scripts/setup.sh --with-ollama        also run a bundled Ollama for local models
@@ -200,7 +200,7 @@ if [ "$START" -eq 0 ]; then
 fi
 
 # 3. Build and start -----------------------------------------------------
-info "Building the Wings image and starting the stack (the first run downloads several GB of images)"
+info "Building the OpenWings image and starting the stack (the first run downloads several GB of images)"
 dc up -d --build
 
 info "Waiting for Odysseus to become healthy (first boot also downloads the embedding model)"
@@ -241,7 +241,7 @@ fi
 
 cat <<EOF
 
-${C_BOLD}Wings is running.${C_RESET}
+${C_BOLD}OpenWings is running.${C_RESET}
 
   Open:      ${url}
   Username:  ${admin_user}

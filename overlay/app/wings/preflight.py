@@ -1,4 +1,4 @@
-"""Wings preflight: fail fast on encryption-key misconfiguration.
+"""OpenWings preflight: fail fast on encryption-key misconfiguration.
 
 Runs as the container starts, before Odysseus itself, so a bad
 ODYSSEUS_APP_KEY stops the container with a clear message instead of
@@ -93,7 +93,7 @@ def _key_fails_existing_data(data_dir: Path, key: bytes, require_sample: bool = 
 
 
 def _migrate_scheduled_emails(data_dir: Path) -> None:
-    """First start of an upstream volume under Wings: keep pending sends that
+    """First start of an upstream volume under OpenWings: keep pending sends that
     a person scheduled with upstream's UI (patch 0004 flag column)."""
     import sqlite3
 

@@ -1,4 +1,4 @@
-"""Unit tests for the Wings page renderer decisions (overlay/app/wings/render.py).
+"""Unit tests for the OpenWings page renderer decisions (overlay/app/wings/render.py).
 Run with ./tests/unit/run.sh (inside the built image, network off)."""
 from __future__ import annotations
 

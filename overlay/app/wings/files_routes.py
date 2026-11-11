@@ -136,7 +136,7 @@ async def files_page(request: Request):
                     f'<td>{human}</td><td class="t" data-t="{item["modified"]}"></td></tr>')
     body = "\n".join(rows) or '<tr><td colspan="3" class="muted">No files yet. Files the agent writes appear here.</td></tr>'
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Workspace files · Wings</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Workspace files · OpenWings</title>
 <style>
 :root {{ --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#5b6474; --line:#dfe3ea; --accent:#2f6fec; }}
 @media (prefers-color-scheme: dark) {{ :root {{ --bg:#0f1218; --panel:#171b23; --text:#e6e9ef; --muted:#9aa3b2; --line:#2a303b; --accent:#6d9bff; }} }}
@@ -147,7 +147,7 @@ table.files {{ border-collapse:collapse; width:100%; }}
 table.files th, table.files td {{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }}
 table.files th {{ color:var(--muted); font-weight:600; }}
 </style></head>
-<body><header class="bar"><a class="back" href="/" title="Back to Wings">← Wings</a><strong class="title">Workspace files</strong>
+<body><header class="bar"><a class="back" href="/" title="Back to OpenWings">← OpenWings</a><strong class="title">Workspace files</strong>
 <span class="muted">Everything the agent wrote in {html.escape(ROOT)}, newest first</span></header>
 <main style="padding:12px 16px"><table class="files">
 <thead><tr><th>File</th><th>Size</th><th>Changed</th></tr></thead><tbody>{body}</tbody></table></main>

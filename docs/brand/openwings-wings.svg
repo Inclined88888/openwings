@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t">
+  <title id="t">OpenWings</title>
+
+  <defs>
+    <!-- One broad feather with a rounded tip, quill end at the origin, pointing right. -->
+    <path id="f" d="M0 0 C 40 -42 152 -56 236 -22 C 247 -17 247 -4 236 1 C 152 24 50 24 0 0 Z"/>
+    <g id="wing" fill="#000000" stroke="#ffffff" stroke-width="6" stroke-linejoin="round">
+      <use href="#f" transform="translate(326 206) rotate(-48) scale(0.94)"/>
+      <use href="#f" transform="translate(314 226) rotate(-34) scale(1.0)"/>
+      <use href="#f" transform="translate(302 246) rotate(-20) scale(0.95)"/>
+      <use href="#f" transform="translate(291 266) rotate(-6) scale(0.84)"/>
+      <use href="#f" transform="translate(281 286) rotate(8) scale(0.71)"/>
+      <use href="#f" transform="translate(272 306) rotate(22) scale(0.56)"/>
+      <!-- the arm, a crescent over the feather roots -->
+      <path d="M256 352 C 250 288 290 214 364 180 C 380 173 390 188 380 200 C 344 242 312 298 290 348 C 282 366 260 368 256 352 Z"/>
+    </g>
+  </defs>
+  <g transform="translate(256 262) scale(0.86) translate(-256 -190)">
+    <use href="#wing"/>
+    <use href="#wing" transform="translate(512 0) scale(-1 1)"/>
+  </g>
+</svg>

@@ -29,7 +29,7 @@ done
 [ -n "$SRC" ] || die "usage: ./scripts/restore.sh <backup-folder> --yes"
 [ -d "$SRC" ] || die "no such folder: $SRC"
 SRC="$(cd "$SRC" && pwd)"
-[ -f "$SRC/odysseus-data.tar.gz" ] || die "$SRC has no odysseus-data.tar.gz; is it a Wings backup?"
+[ -f "$SRC/odysseus-data.tar.gz" ] || die "$SRC has no odysseus-data.tar.gz; is it an OpenWings backup?"
 [ "$YES" -eq 1 ] || die "restore replaces your current data. Re-run with --yes to confirm."
 require_docker
 [ -f "$ENV_FILE" ] || die "no .env found. Put back the .env this backup was made with first."

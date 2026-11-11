@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate patches/*.patch from an upstream checkout that carries the Wings
+# Regenerate patches/*.patch from an upstream checkout that carries the OpenWings
 # changes as a patch series: one commit per patch on top of ODYSSEUS_COMMIT
 # (upstream.lock), each commit's subject being the patch name without
 # ".patch" (for example "0008-browser-automation"). Patches may touch the

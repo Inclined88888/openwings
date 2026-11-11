@@ -1,4 +1,4 @@
-"""Unit tests for the Wings model retry policy (overlay/app/wings/backoff.py).
+"""Unit tests for the OpenWings model retry policy (overlay/app/wings/backoff.py).
 Run with ./tests/unit/run.sh (inside the built image, network off)."""
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def test_compound_and_long_hints(backoff):
     assert backoff.hinted_wait("Try again in 1h2m3s") == 3723
     assert backoff.hinted_wait("try again in 2 minutes") == 120
     assert backoff.hinted_wait("Try again in 3 days.") == 3 * 86400
-    # Asked to wait longer than Wings ever waits: retrying cannot succeed.
+    # Asked to wait longer than OpenWings ever waits: retrying cannot succeed.
     for text in ("Please try again in 7m12.48s.", "try again in 120s", "Try again in 3 days."):
         assert backoff.wait_for(1, 429, text, rand=fixed) is None
 

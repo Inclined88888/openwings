@@ -1,4 +1,4 @@
-"""Safety rules for Wings browser automation. Pure functions, no I/O apart
+"""Safety rules for OpenWings browser automation. Pure functions, no I/O apart
 from DNS lookups, so they can be unit tested without a browser.
 
 What the agent may NOT do on its own, whatever the page or prompt says:
@@ -47,7 +47,7 @@ def allowed_domains() -> list[str]:
 
 
 def allowed_users() -> set[str]:
-    """Wings accounts that may use the shared browser. One browser profile
+    """OpenWings accounts that may use the shared browser. One browser profile
     holds one person's logins, so by default only the admin account."""
     raw = os.environ.get("WINGS_BROWSER_USERS", "").strip()
     if not raw:

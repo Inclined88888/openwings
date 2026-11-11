@@ -1,4 +1,4 @@
-Wings patch 0016: retry rate limits and overloads with backoff
+OpenWings patch 0016: retry rate limits and overloads with backoff
 
 Upstream's streaming model path, which every chat and agent reply uses,
 retried 502/503/504/529 once after half a second and never retried a 429

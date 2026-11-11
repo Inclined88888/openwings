@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Back up every Wings data volume into one timestamped folder.
+# Back up every OpenWings data volume into one timestamped folder.
 #
 #   ./scripts/backup.sh                     -> ./backups/wings-<timestamp>/
 #   ./scripts/backup.sh --out /mnt/nas      -> /mnt/nas/wings-<timestamp>/
@@ -42,7 +42,7 @@ DEST="${OUT_ROOT}/${NAME:-wings-${STAMP}}"
 mkdir -p "$DEST"
 HOST_UID="$(id -u)"; HOST_GID="$(id -g)"
 
-# One-off helper container from the Wings image itself (it has python, tar
+# One-off helper container from the OpenWings image itself (it has python, tar
 # and sha256sum), with the backup folder mounted at /backup.
 IMAGE="$(wings_image)"
 DATA_VOL="$(volume_name odysseus-data)"

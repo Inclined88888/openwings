@@ -1,4 +1,4 @@
-# Wings: a self-hosted AI workspace built on Odysseus
+# OpenWings: a self-hosted AI workspace built on Odysseus
 # (https://github.com/odysseus-dev/odysseus), pinned to an exact upstream build.
 #
 #   ./scripts/setup.sh            first run: writes .env, builds, starts, prints login
@@ -27,7 +27,7 @@ x-logging: &logging
 
 services:
   odysseus:
-    # Built locally: the pinned upstream image plus the Wings patch overlay
+    # Built locally: the pinned upstream image plus the OpenWings patch overlay
     # (docker/odysseus/Dockerfile). pull_policy=build means Compose never tries
     # to pull this tag from a registry, so nobody can squat the name.
     image: wings/odysseus:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w1}
@@ -60,7 +60,7 @@ services:
       # Docker cannot use the Apple GPU).
       - "host.docker.internal:host-gateway"
     environment:
-      # Wings hardening (see patches/). Encryption keys come from .env so they
+      # OpenWings hardening (see patches/). Encryption keys come from .env so they
       # never sit in the same volume (or backup) as the data they protect.
       - ODYSSEUS_APP_KEY=${ODYSSEUS_APP_KEY:?ODYSSEUS_APP_KEY is not set. Run ./scripts/setup.sh first}
       # Processes that lack the key refuse to create a new key file (patch 0001).
@@ -81,7 +81,7 @@ services:
       # so an always-open tab can stop schedules from ever running. Off by
       # default here; set true if scheduled jobs slow a single local GPU.
       - BACKGROUND_TASK_FOREGROUND_GATE=${BACKGROUND_TASK_FOREGROUND_GATE:-false}
-      # Upstream's own Playwright MCP path is not used (Wings drives the browser
+      # Upstream's own Playwright MCP path is not used (OpenWings drives the browser
       # container instead); do not download an unpinned @playwright/mcp@latest
       # from npm at every start.
       - ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=${ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE:-1}
@@ -353,7 +353,7 @@ services:
   browser:
     # Optional real browser for the agent (profile: browser). Headful Chromium
     # on a virtual screen; the agent drives it over the DevTools protocol and
-    # you watch or take over at <your Wings address>/wings/browser. No host
+    # you watch or take over at <your OpenWings address>/wings/browser. No host
     # ports: it is reachable only from the odysseus container, through a
     # guard that refuses every other address. Logins you make in the live
     # view persist in the browser-profile volume.

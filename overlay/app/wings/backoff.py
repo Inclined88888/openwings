@@ -1,13 +1,13 @@
-"""Wings model retry policy: rate limits and overloads (patch 0016).
+"""OpenWings model retry policy: rate limits and overloads (patch 0016).
 
 Upstream's streaming model path (every chat and agent reply) retried a
 502/503/504/529 once after half a second and never retried a 429 rate
 limit, so a busy hosted provider ended the reply with an error. OpenManus
-retries with exponential backoff. Wings retries 429 rate limits and 503/529
+retries with exponential backoff. OpenWings retries 429 rate limits and 503/529
 overloads before any output has been shown, waiting what the provider asks
 for when it says ("try again in 20s") and otherwise 2, 4, 8 seconds (1, 2, 4
 for overloads), each wait at most 20 seconds, with a little jitter. When the
-provider asks for longer than that (an hourly or daily quota), Wings does not
+provider asks for longer than that (an hourly or daily quota), OpenWings does not
 retry at all. The failed stream is closed (releasing the local model slot)
 before each wait. Network errors (including upstream's own "Cannot reach"
 503s), 502 and 504 keep upstream's handling, and with several models
