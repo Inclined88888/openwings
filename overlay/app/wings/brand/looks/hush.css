@@ -42,9 +42,15 @@
   --hu-rose-deep: #8E3549;
   --hu-on-rose: #FFFFFF;
   --hu-rose-tint: rgba(163, 64, 90, 0.10);
+  --hu-quill: rgba(163, 64, 90, 0.26);
   --hu-rose-soft: rgba(163, 64, 90, 0.55);
   --hu-ring: rgba(163, 64, 90, 0.34);
   --hu-avatar: #F4E6EA;
+  --hu-error: #B42318;         /* failures only: 6.4 down, 5.5 page, white on it 6.6 */
+  --hu-on-error: #FFFFFF;
+  --hu-error-tint: rgba(180, 35, 24, 0.08);
+  --hu-field: #FCFBFA;         /* form fields rest on the card colour */
+  --hu-field-line: #8A847E;    /* field edge: 3.6 on the card (WCAG 1.4.11) */
   --hu-code: #F3F1ED;
   --hu-code-head: #ECE9E4;
   --hu-code-ink: #2B2725;
@@ -91,13 +97,19 @@
   --hu-fill: #312D2A;
   --hu-fill-2: #3A3532;
   --hu-hover: rgba(255, 255, 255, 0.045);
-  --hu-rose: #E8919F;          /* 7.4 page, 6.5 down, umber on it 7.4 */
-  --hu-rose-deep: #F0A8B4;
+  --hu-rose: #D99AA5;          /* dusk rose: 7.5 page, 6.6 down, umber on it 7.5 */
+  --hu-rose-deep: #E4AEB7;
   --hu-on-rose: #1C1A19;
-  --hu-rose-tint: rgba(232, 145, 159, 0.13);
-  --hu-rose-soft: rgba(232, 145, 159, 0.6);
-  --hu-ring: rgba(232, 145, 159, 0.38);
-  --hu-avatar: #4A2E35;
+  --hu-rose-tint: rgba(217, 154, 165, 0.12);
+  --hu-quill: rgba(217, 154, 165, 0.28);
+  --hu-rose-soft: rgba(217, 154, 165, 0.6);
+  --hu-ring: rgba(217, 154, 165, 0.38);
+  --hu-avatar: #45313A;
+  --hu-error: #F08A7E;         /* 6.3 down, 7.1 page, umber on it 7.1 */
+  --hu-on-error: #1C1A19;
+  --hu-error-tint: rgba(240, 138, 126, 0.10);
+  --hu-field: #211F1D;
+  --hu-field-line: #857D77;    /* 3.8 on the card, 4.1 on the field */
   --hu-code: #151312;
   --hu-code-head: #1D1B19;
   --hu-code-ink: #EEE8E4;
@@ -119,7 +131,7 @@
   /* syntax on the owl-dark code block (#151312) */
   --hl-bg: #151312 !important;
   --hl-fg: #EEE8E4 !important;
-  --hl-keyword: #E8919F !important;
+  --hl-keyword: #E3A1AC !important;
   --hl-string: #D9C08A !important;
   --hl-number: #9FC3B0 !important;
   --hl-comment: #A39C96 !important;
@@ -155,6 +167,9 @@
   --color-muted: var(--hu-muted) !important;
   --color-muted-alt: var(--hu-muted) !important;
   --select-option-active-bg: var(--hu-rose-tint) !important;
+  --color-error: var(--hu-error) !important;
+  --color-error-light: var(--hu-error) !important;
+  --color-danger: var(--hu-error) !important;
 }
 
 :root[data-ow-skin="ow-hush"] body,
@@ -206,6 +221,7 @@
   background-color: var(--hu-side) !important;
   background-image: var(--hu-velvet) !important;
   background-size: 160px 160px !important;
+  background-attachment: fixed !important;
   border: 0 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
@@ -353,15 +369,46 @@
 :root[data-ow-skin="ow-hush"] .sidebar .list-item.active-session .grow,
 :root[data-ow-skin="ow-hush-night"] .sidebar .list-item.active-session .grow { font-weight: 500 !important; color: var(--hu-ink) !important; }
 
-/* New Chat: a down pill carrying the same rose pebble as Send */
+/* New Chat: a down pill carrying the same rose pebble as Send. It stays
+   pinned at the top of the list, resting on a shelf of sidebar velvet, so
+   the long chat list slides softly under it instead of cutting it off. */
 :root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn,
 :root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn {
   min-height: 42px !important;
   margin: 2px 0 10px !important;
   padding: 0 12px 0 7px !important;
   gap: 11px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  position: sticky !important;
+  top: 2px !important;
+  z-index: 5 !important;
+  isolation: isolate !important;
+}
+:root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn::before,
+:root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: -1 !important;
+  border-radius: 12px !important;
   background: var(--hu-down) !important;
   box-shadow: var(--hu-shadow-low) !important;
+  transition: box-shadow 160ms var(--hu-ease) !important;
+}
+:root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn::after,
+:root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn::after {
+  content: '' !important;
+  position: absolute !important;
+  inset: -8px -10px -20px !important;
+  z-index: -2 !important;
+  pointer-events: none !important;
+  background-color: var(--hu-side) !important;
+  background-image: var(--hu-velvet) !important;
+  background-size: 160px 160px !important;
+  background-attachment: fixed !important;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 17px), transparent) !important;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 17px), transparent) !important;
 }
 :root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn .grow,
 :root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn .grow,
@@ -387,7 +434,9 @@
   transition: background-color 160ms var(--hu-ease) !important;
 }
 :root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn:hover,
-:root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn:hover { background: var(--hu-down) !important; box-shadow: var(--hu-shadow) !important; }
+:root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn:hover { background: transparent !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn:hover::before,
+:root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn:hover::before { box-shadow: var(--hu-shadow) !important; }
 :root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn:hover svg,
 :root[data-ow-skin="ow-hush-night"] .sidebar #sidebar-new-chat-btn:hover svg { background: var(--hu-rose-deep) !important; color: var(--hu-on-rose) !important; }
 :root[data-ow-skin="ow-hush"] .sidebar #sidebar-new-chat-btn:active,
@@ -558,6 +607,19 @@
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px) !important;
   mask-image: linear-gradient(to bottom, transparent 0, #000 22px) !important;
 }
+/* one column: answers, prompts and the composer share the same 760px
+   measure and the same left and right edges. The right padding leaves room
+   for a classic scrollbar, and the column itself is capped at 760px, so the
+   edges line up whether or not the browser shows one. */
+:root[data-ow-skin="ow-hush"] body:not(.fullwidth-chat) .chat-history,
+:root[data-ow-skin="ow-hush-night"] body:not(.fullwidth-chat) .chat-history {
+  padding-left: max(12px, calc((100% - var(--chat-max)) / 2)) !important;
+  padding-right: max(12px, calc((100% - var(--chat-max)) / 2 - 16px)) !important;
+}
+:root[data-ow-skin="ow-hush"] body:not(.fullwidth-chat) #chat-history > *,
+:root[data-ow-skin="ow-hush-night"] body:not(.fullwidth-chat) #chat-history > * { max-width: var(--chat-max) !important; }
+:root[data-ow-skin="ow-hush"] body.fullwidth-chat .chat-history,
+:root[data-ow-skin="ow-hush-night"] body.fullwidth-chat .chat-history { --chat-max: 100% !important; }
 :root[data-ow-skin="ow-hush"] .chat-top-bar,
 :root[data-ow-skin="ow-hush-night"] .chat-top-bar { min-height: 46px !important; padding-top: 10px !important; }
 :root[data-ow-skin="ow-hush"] .chat-meta-overlay,
@@ -596,10 +658,10 @@
   align-items: center !important;
   gap: 20px !important;
   font-family: var(--hu-sans) !important;
-  font-weight: 300 !important;
-  font-size: 42px !important;
+  font-weight: 500 !important;
+  font-size: 40px !important;
   line-height: 1.05 !important;
-  letter-spacing: -0.015em !important;
+  letter-spacing: -0.01em !important;
   color: var(--hu-ink) !important;
   background: none !important;
   -webkit-text-fill-color: var(--hu-ink) !important;
@@ -636,6 +698,10 @@
   color: var(--hu-muted) !important;
   opacity: 1 !important;
   margin: 0 !important;
+  width: max-content !important;
+  max-width: min(560px, calc(100vw - 48px)) !important;
+  text-wrap: balance !important;
+  text-align: center !important;
 }
 :root[data-ow-skin="ow-hush"] #welcome-screen .welcome-tip,
 :root[data-ow-skin="ow-hush-night"] #welcome-screen .welcome-tip {
@@ -645,13 +711,14 @@
   letter-spacing: 0 !important;
   color: var(--hu-muted) !important;
   opacity: 1 !important;
-  margin: 22px 0 0 !important;
-  padding: 7px 14px !important;
-  border-radius: 999px !important;
-  background: rgba(var(--hu-shade), 0.045) !important;
+  margin: 18px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
   max-width: 520px !important;
 }
-:root[data-ow-skin="ow-hush-night"] #welcome-screen .welcome-tip { background: rgba(255, 255, 255, 0.05) !important; }
 :root[data-ow-skin="ow-hush"] #welcome-screen .incognito-btn,
 :root[data-ow-skin="ow-hush-night"] #welcome-screen .incognito-btn {
   margin-top: 10px !important;
@@ -681,7 +748,8 @@
   font-family: var(--hu-sans) !important;
   border: 0 !important;
   width: 100% !important;
-  max-width: 100% !important;
+  max-width: min(100%, var(--chat-max)) !important;
+  box-sizing: border-box !important;
   margin: 0 0 28px !important;
   align-self: stretch !important;
 }
@@ -698,14 +766,16 @@
   align-items: stretch !important;
   animation: hush-settle 240ms var(--hu-ease) both !important;
 }
-/* your words: unboxed, marked by a rose wing-tip */
+/* your words: unboxed, marked by a rose wing-tip whose quill runs down the
+   whole prompt, so a long prompt reads as one indented passage that is easy
+   to find again, and a short one still sits lightly on the page */
 :root[data-ow-skin="ow-hush"] #chat-history .msg-user,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg-user {
   background: transparent !important;
   color: var(--hu-ink) !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  padding: 0 0 0 20px !important;
+  padding: 0 0 0 22px !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
   align-items: stretch !important;
@@ -717,10 +787,13 @@
   position: absolute !important;
   left: 2px !important;
   top: 3px !important;
+  bottom: 4px !important;
   width: 4px !important;
-  height: 20px !important;
+  height: auto !important;
   border-radius: 3px !important;
-  background: var(--hu-rose) !important;
+  background:
+    linear-gradient(var(--hu-rose), var(--hu-rose)) top left / 4px 20px no-repeat,
+    linear-gradient(var(--hu-quill), var(--hu-quill)) 1px 0 / 2px 100% no-repeat !important;
   transform-origin: top !important;
   animation: hush-tip 180ms var(--hu-ease) both !important;
 }
@@ -749,6 +822,19 @@
 }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .role::before,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .role::before { display: none !important; }
+:root[data-ow-skin="ow-hush"] #chat-history .msg-ai:not(.agent-thinking-dots) .role:not(.has-logo)::before,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg-ai:not(.agent-thinking-dots) .role:not(.has-logo)::before {
+  display: block !important;
+  content: '' !important;
+  flex: 0 0 22px !important;
+  width: 22px !important;
+  height: 22px !important;
+  margin-right: 2px !important;
+  border-radius: 7px !important;
+  background: var(--hu-fill) var(--hu-wings) center / 100% 100% no-repeat !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--hu-shade), 0.05) !important;
+}
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg-ai:not(.agent-thinking-dots) .role:not(.has-logo)::before { background-color: var(--hu-fill-2) !important; box-shadow: none !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg-user .role,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg-user .role { color: var(--hu-muted) !important; margin-bottom: 4px !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .role .role-timestamp,
@@ -779,10 +865,11 @@
 }
 :root[data-ow-skin="ow-hush"] #chat-history .msg-user .body,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg-user .body {
-  font-size: 16.5px !important;
-  font-weight: 460 !important;
-  line-height: 1.6 !important;
+  font-size: 16px !important;
+  font-weight: 420 !important;
+  line-height: 1.65 !important;
   text-align: left !important;
+  overflow-wrap: anywhere !important;
 }
 :root[data-ow-skin="ow-hush"] #chat-history .msg-user .role .user-mode-pill,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg-user .role .user-mode-pill {
@@ -815,21 +902,21 @@
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body h4,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h4 {
   font-family: var(--hu-sans) !important;
-  font-weight: 500 !important;
-  letter-spacing: -0.005em !important;
+  font-weight: 620 !important;
+  letter-spacing: -0.01em !important;
   line-height: 1.35 !important;
   color: var(--hu-ink) !important;
   margin-top: 1.3em !important;
   margin-bottom: 0.5em !important;
 }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body h1,
-:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h1 { font-size: 21px !important; }
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h1 { font-size: 21.5px !important; font-weight: 640 !important; letter-spacing: -0.015em !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body h2,
-:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h2 { font-size: 18.5px !important; }
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h2 { font-size: 18.5px !important; font-weight: 630 !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body h3,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h3,
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body h4,
-:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h4 { font-size: 16.5px !important; }
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body h4 { font-size: 16.5px !important; font-weight: 620 !important; letter-spacing: 0 !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body a,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body a {
   color: var(--hu-rose) !important;
@@ -1106,8 +1193,9 @@
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread {
   margin: -4px 0 16px 0 !important;
   padding: 2px 0 2px 22px !important;
-  max-width: 100% !important;
+  max-width: min(100%, var(--chat-max)) !important;
   width: 100% !important;
+  box-sizing: border-box !important;
 }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread::before,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread::before {
@@ -1129,7 +1217,7 @@
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-node.running .agent-thread-dot,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.running .agent-thread-dot { background: var(--hu-rose) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-node.error .agent-thread-dot,
-:root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.error .agent-thread-dot { background: var(--hu-rose) !important; }
+:root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.error .agent-thread-dot { background: var(--hu-error) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-header,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-header {
   font-family: var(--hu-sans) !important;
@@ -1143,7 +1231,7 @@
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-icon,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-icon { color: var(--hl-number) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-node.error .agent-thread-icon,
-:root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.error .agent-thread-icon { color: var(--hu-rose) !important; }
+:root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.error .agent-thread-icon { color: var(--hu-error) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-tool-icon,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-tool-icon { color: var(--hu-muted) !important; opacity: 1 !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-tool,
@@ -1158,7 +1246,7 @@
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-status,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-status { font-size: 12.5px !important; opacity: 1 !important; color: var(--hu-muted) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-node.error .agent-thread-status,
-:root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.error .agent-thread-status { color: var(--hu-rose) !important; }
+:root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-node.error .agent-thread-status { color: var(--hu-error) !important; font-weight: 500 !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-chevron,
 :root[data-ow-skin="ow-hush-night"] #chat-history .agent-thread-chevron { opacity: 1 !important; color: var(--hu-muted) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .agent-thread-cmd,
@@ -1343,6 +1431,45 @@
 :root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn.tool-indicator .tool-indicator-x { width: 13px !important; height: 13px !important; color: var(--hu-muted) !important; }
 :root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn.tool-indicator:hover .tool-indicator-x,
 :root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn.tool-indicator:hover .tool-indicator-x { color: var(--hu-rose) !important; }
+/* at desktop widths the tools wear their names, so nobody has to guess
+   what a chevron, a lens or a prompt sign does */
+@media (min-width: 1024px) {
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator),
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator) {
+    width: auto !important;
+    gap: 7px !important;
+    padding: 0 12px 0 10px !important;
+    color: var(--hu-ink-2) !important;
+  }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator) svg,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator) svg { color: var(--hu-muted) !important; }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator):hover svg,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator):hover svg,
+:root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)[aria-pressed="true"] svg,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)[aria-pressed="true"] svg,
+:root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator).active svg,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator).active svg { color: var(--hu-ink) !important; }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after {
+    content: attr(aria-label) !important;
+    font-family: var(--hu-sans) !important;
+    font-size: 13.5px !important;
+    font-weight: 400 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    color: inherit !important;
+  }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom #overflow-plus-btn::after,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom #overflow-plus-btn::after { content: 'Tools' !important; }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom #bash-toggle-btn::after,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom #bash-toggle-btn::after { content: 'Shell' !important; }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom #overflow-plus-btn .plus-active-dot,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom #overflow-plus-btn .plus-active-dot { right: 5px !important; top: 8px !important; }
+  :root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)[aria-pressed="true"]::after,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)[aria-pressed="true"]::after,
+:root[data-ow-skin="ow-hush"] .chat-input-bottom .input-icon-btn:not(.tool-indicator).active::after,
+:root[data-ow-skin="ow-hush-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator).active::after { font-weight: 500 !important; }
+}
 :root[data-ow-skin="ow-hush"] .plus-active-dot,
 :root[data-ow-skin="ow-hush-night"] .plus-active-dot {
   top: 7px !important;
@@ -1478,7 +1605,38 @@
 :root[data-ow-skin="ow-hush"] .export-dropdown-item.dropdown-item-danger,
 :root[data-ow-skin="ow-hush-night"] .export-dropdown-item.dropdown-item-danger,
 :root[data-ow-skin="ow-hush"] .export-dropdown-item.dropdown-item-danger svg,
-:root[data-ow-skin="ow-hush-night"] .export-dropdown-item.dropdown-item-danger svg { color: var(--hu-rose) !important; }
+:root[data-ow-skin="ow-hush-night"] .export-dropdown-item.dropdown-item-danger svg,
+:root[data-ow-skin="ow-hush"] .dropdown-item.danger,
+:root[data-ow-skin="ow-hush-night"] .dropdown-item.danger,
+:root[data-ow-skin="ow-hush"] .dropdown-item-danger,
+:root[data-ow-skin="ow-hush-night"] .dropdown-item-danger,
+:root[data-ow-skin="ow-hush"] .dropdown-item-danger svg,
+:root[data-ow-skin="ow-hush-night"] .dropdown-item-danger svg { color: var(--hu-error) !important; }
+:root[data-ow-skin="ow-hush"] .dropdown-item-danger:hover,
+:root[data-ow-skin="ow-hush-night"] .dropdown-item-danger:hover,
+:root[data-ow-skin="ow-hush"] .export-dropdown-item.dropdown-item-danger:hover,
+:root[data-ow-skin="ow-hush-night"] .export-dropdown-item.dropdown-item-danger:hover { background: var(--hu-error-tint) !important; }
+/* failures and destructive actions: their own brick red, never the rose */
+:root[data-ow-skin="ow-hush"] .code-runner-error,
+:root[data-ow-skin="ow-hush-night"] .code-runner-error,
+:root[data-ow-skin="ow-hush"] .theme-save-error,
+:root[data-ow-skin="ow-hush-night"] .theme-save-error,
+:root[data-ow-skin="ow-hush"] .recording-error,
+:root[data-ow-skin="ow-hush-night"] .recording-error { color: var(--hu-error) !important; }
+:root[data-ow-skin="ow-hush"] .toast.error,
+:root[data-ow-skin="ow-hush-night"] .toast.error { color: var(--hu-error) !important; box-shadow: inset 3px 0 0 var(--hu-error), var(--hu-shadow-pop) !important; }
+:root[data-ow-skin="ow-hush"] .toast.error .toast-error-icon,
+:root[data-ow-skin="ow-hush-night"] .toast.error .toast-error-icon { color: var(--hu-error) !important; }
+:root[data-ow-skin="ow-hush"] .confirm-btn-danger,
+:root[data-ow-skin="ow-hush-night"] .confirm-btn-danger {
+  background: var(--hu-error) !important;
+  color: var(--hu-on-error) !important;
+  border-color: transparent !important;
+  border-radius: 12px !important;
+}
+:root[data-ow-skin="ow-hush"] .confirm-btn-danger:hover,
+:root[data-ow-skin="ow-hush-night"] .confirm-btn-danger:hover { background: var(--hu-error) !important; filter: brightness(0.94) !important; }
+:root[data-ow-skin="ow-hush-night"] .confirm-btn-danger:hover { filter: brightness(1.06) !important; }
 :root[data-ow-skin="ow-hush"] .scroll-nav-btn,
 :root[data-ow-skin="ow-hush-night"] .scroll-nav-btn {
   background: var(--hu-down) !important;
@@ -1557,9 +1715,9 @@
 :root[data-ow-skin="ow-hush"] main.card h1.logo span,
 :root[data-ow-skin="ow-hush-night"] main.card h1.logo span {
   font-family: var(--hu-sans) !important;
-  font-weight: 300 !important;
-  font-size: 32px !important;
-  letter-spacing: -0.015em !important;
+  font-weight: 500 !important;
+  font-size: 30px !important;
+  letter-spacing: -0.01em !important;
   color: var(--hu-ink) !important;
   background: none !important;
   -webkit-text-fill-color: var(--hu-ink) !important;
@@ -1581,30 +1739,43 @@
   color: var(--hu-ink) !important;
   margin-bottom: 7px !important;
 }
+/* fields: one control at rest and in focus. The 1px edge is always there
+   (3.6:1 by day, 3.8:1 by night); focus only turns it rose and adds a halo */
 :root[data-ow-skin="ow-hush"] main.card input[type="text"],
 :root[data-ow-skin="ow-hush-night"] main.card input[type="text"],
 :root[data-ow-skin="ow-hush"] main.card input[type="password"],
 :root[data-ow-skin="ow-hush-night"] main.card input[type="password"] {
   height: 46px !important;
   border-radius: 12px !important;
-  border: 0 !important;
-  background: var(--hu-page) !important;
+  border: 1px solid var(--hu-field-line) !important;
+  background: var(--hu-field) !important;
   color: var(--hu-ink) !important;
   font-family: var(--hu-sans) !important;
   font-size: 16px !important;
   padding: 0 44px 0 14px !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--hu-shade), 0.04) !important;
-  transition: box-shadow 160ms var(--hu-ease), background-color 160ms var(--hu-ease) !important;
+  box-shadow: none !important;
+  transition: border-color 160ms var(--hu-ease), box-shadow 160ms var(--hu-ease) !important;
 }
-:root[data-ow-skin="ow-hush-night"] main.card input[type="text"],
-:root[data-ow-skin="ow-hush-night"] main.card input[type="password"] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05) !important; }
+:root[data-ow-skin="ow-hush"] main.card input[type="text"]:hover,
+:root[data-ow-skin="ow-hush-night"] main.card input[type="text"]:hover,
+:root[data-ow-skin="ow-hush"] main.card input[type="password"]:hover,
+:root[data-ow-skin="ow-hush-night"] main.card input[type="password"]:hover { border-color: var(--hu-muted) !important; }
 :root[data-ow-skin="ow-hush"] main.card input[type="text"]:focus,
 :root[data-ow-skin="ow-hush-night"] main.card input[type="text"]:focus,
 :root[data-ow-skin="ow-hush"] main.card input[type="password"]:focus,
 :root[data-ow-skin="ow-hush-night"] main.card input[type="password"]:focus {
-  background: var(--hu-down) !important;
-  box-shadow: 0 0 0 1.5px var(--hu-rose), 0 0 0 5px var(--hu-rose-tint) !important;
+  background: var(--hu-field) !important;
+  border-color: var(--hu-rose) !important;
+  box-shadow: 0 0 0 0.5px var(--hu-rose), 0 0 0 4px var(--hu-rose-tint) !important;
   outline: none !important;
+}
+:root[data-ow-skin="ow-hush"] main.card input:-webkit-autofill,
+:root[data-ow-skin="ow-hush-night"] main.card input:-webkit-autofill,
+:root[data-ow-skin="ow-hush"] main.card input:-webkit-autofill:focus,
+:root[data-ow-skin="ow-hush-night"] main.card input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--hu-ink) !important;
+  -webkit-box-shadow: 0 0 0 40px var(--hu-field) inset !important;
+  caret-color: var(--hu-ink) !important;
 }
 :root[data-ow-skin="ow-hush"] main.card .pw-wrapper,
 :root[data-ow-skin="ow-hush-night"] main.card .pw-wrapper { margin-bottom: 18px !important; }
@@ -1639,7 +1810,7 @@
 :root[data-ow-skin="ow-hush"] main.card .toggle a,
 :root[data-ow-skin="ow-hush-night"] main.card .toggle a { color: var(--hu-rose) !important; }
 :root[data-ow-skin="ow-hush"] main.card .error,
-:root[data-ow-skin="ow-hush-night"] main.card .error { color: var(--hu-rose) !important; }
+:root[data-ow-skin="ow-hush-night"] main.card .error { color: var(--hu-error) !important; }
 :root[data-ow-skin="ow-hush"] .version-label,
 :root[data-ow-skin="ow-hush-night"] .version-label { color: var(--hu-muted) !important; opacity: 0.8 !important; font-family: var(--hu-sans) !important; }
 
@@ -1647,6 +1818,10 @@
 @keyframes hush-settle {
   from { opacity: 0; transform: translateY(4px); box-shadow: none; }
   to { opacity: 1; transform: none; }
+}
+@keyframes hush-veil {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @keyframes hush-tip {
   from { transform: scaleY(0); }
@@ -1658,7 +1833,9 @@
 :root[data-ow-skin="ow-hush"] #chat-history .msg::before,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg::before,
 :root[data-ow-skin="ow-hush"] .sidebar .list-item::before,
-:root[data-ow-skin="ow-hush-night"] .sidebar .list-item::before { animation: none !important; }
+:root[data-ow-skin="ow-hush-night"] .sidebar .list-item::before,
+:root[data-ow-skin="ow-hush"] .chat-container::after,
+:root[data-ow-skin="ow-hush-night"] .chat-container::after { animation: none !important; }
   :root[data-ow-skin="ow-hush"] *,
 :root[data-ow-skin="ow-hush-night"] *,
 :root[data-ow-skin="ow-hush"] *::before,
@@ -1679,7 +1856,9 @@
 /* ================= phones ================= */
 @media (max-width: 768px) {
   :root[data-ow-skin="ow-hush"] .chat-history,
-:root[data-ow-skin="ow-hush-night"] .chat-history { padding-left: 4px !important; padding-right: 4px !important; }
+:root[data-ow-skin="ow-hush-night"] .chat-history,
+:root[data-ow-skin="ow-hush"] body:not(.fullwidth-chat) .chat-history,
+:root[data-ow-skin="ow-hush-night"] body:not(.fullwidth-chat) .chat-history { padding-left: 4px !important; padding-right: 4px !important; }
   :root[data-ow-skin="ow-hush"] .chat-input-bar,
 :root[data-ow-skin="ow-hush-night"] .chat-input-bar {
     border-radius: 20px !important;
@@ -1696,6 +1875,18 @@
 :root[data-ow-skin="ow-hush-night"] #mobile-backdrop,
 :root[data-ow-skin="ow-hush"] #sidebar-backdrop,
 :root[data-ow-skin="ow-hush-night"] #sidebar-backdrop { background: var(--hu-scrim) !important; }
+  /* while the sheet is open, the page behind it dims. The veil never takes
+     taps or swipes (upstream keeps its own backdrop off for that reason) */
+  :root[data-ow-skin="ow-hush"]:not(.ody-sidebar-off):not(.ody-mobile-startup-sidebar-hidden) body:not(.sidebar-collapsed):has(> .sidebar:not(.hidden)) .chat-container::after,
+:root[data-ow-skin="ow-hush-night"]:not(.ody-sidebar-off):not(.ody-mobile-startup-sidebar-hidden) body:not(.sidebar-collapsed):has(> .sidebar:not(.hidden)) .chat-container::after {
+    content: '' !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 60 !important;
+    background: var(--hu-scrim) !important;
+    pointer-events: none !important;
+    animation: hush-veil 220ms var(--hu-ease) both !important;
+  }
 }
 @media (max-width: 640px) {
   :root[data-ow-skin="ow-hush"] #chat-history .msg-ai,

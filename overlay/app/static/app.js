@@ -3544,6 +3544,12 @@ function initializeEventListeners() {
         }
         e.preventDefault();
         e.stopPropagation();
+        // OpenWings: Enter on an empty box sends nothing. Upstream submitted
+        // it, which hid the welcome screen and the Incognito switch. Enter
+        // still reaches upstream while a reply is running, to stop it.
+        const _owSend = document.querySelector('.send-btn');
+        const _owFiles = fileHandlerModule.getPendingCount && fileHandlerModule.getPendingCount() > 0;
+        if (!(textarea.value || '').trim() && !_owFiles && !(_owSend && _owSend.dataset.mode === 'streaming')) return;
         // Check if already submitting before triggering form submission
         const form = el('chat-form');
         if (form) {
@@ -4015,6 +4021,14 @@ function startOdysseusApp() {
     return true;
   }
 
+  // OpenWings: screen readers hear what the button does now (its title),
+  // not upstream's fixed "New chat".
+  if (sendBtn) {
+    const _owSyncSendLabel = () => { if (sendBtn.title) sendBtn.setAttribute('aria-label', sendBtn.title); };
+    new MutationObserver(_owSyncSendLabel).observe(sendBtn, { attributes: true, attributeFilter: ['title'] });
+    _owSyncSendLabel();
+  }
+
   function _updateSendBtnIcon() {
     if (!sendBtn) return;
     if (sendBtn.dataset.mode === 'streaming') {
@@ -4185,9 +4199,6 @@ function startOdysseusApp() {
 	          if (railNew) railNew.click();
 	          return;
 	        }
-        // OpenWings: Enter on an empty box sends nothing (while a reply is
-        // running it still reaches upstream's handling).
-        if (!_isForegroundChatBusy() && !(messageInput.value || '').trim() && !_hasAttachments()) return;
         if (_isForegroundChatBusy() && messageInput.value && messageInput.value.trim()) {
           if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
             return;

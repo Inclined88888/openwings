@@ -12,9 +12,9 @@ export const THEMES = {
   // OpenWings looks: each also changes type, shapes and textures through
   // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
   'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
-  'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#8FC6CF' },
+  'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#9DC4BA' },
   'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
-  'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#E8919F' },
+  'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#D99AA5' },
   dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
   light:      { bg:'#f3f5f7', fg:'#26313a', panel:'#ffffff', border:'#cbd3da', red:'#b34d5c' },
   midnight:   { bg:'#0d1117', fg:'#c9d1d9', panel:'#161b22', border:'#30363d', red:'#f85149' },
@@ -539,7 +539,38 @@ export function getSaved() {
 export function applyOpenWingsSkin(name) {
   try {
     document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(String(name || '')) ? String(name) : '');
+    _syncOwCustomizeLock();
   } catch (_) {}
+}
+
+// OpenWings: a look sets its own colours and type, so while one is active the
+// colour, colour harmony and font controls are locked behind a short note.
+// Otherwise the first colour edit would save a plain custom theme and drop
+// the whole look without warning.
+function _syncOwCustomizeLock() {
+  const panel = document.getElementById('theme-tab-customize');
+  if (!panel) return;
+  const on = !!document.documentElement.getAttribute('data-ow-skin');
+  let note = document.getElementById('ow-customize-note');
+  if (on && !note) {
+    note = document.createElement('p');
+    note.id = 'ow-customize-note';
+    note.className = 'ow-customize-note';
+    note.setAttribute('role', 'note');
+    note.textContent = 'OpenWings looks set their own colours and type. To choose your own colours or font (OpenDyslexic included), first pick one of the other themes.';
+    panel.prepend(note);
+  }
+  if (note) note.hidden = !on;
+  const custom = document.getElementById('themeCustom');
+  const boxes = [custom && custom.closest('.admin-card'), document.getElementById('theme-adv-toggle'),
+                 document.getElementById('themeAdvanced'), document.getElementById('theme-harmony-card')];
+  for (const box of boxes) {
+    if (!box) continue;
+    box.inert = on;
+    box.classList.toggle('ow-locked', on);
+  }
+  const font = document.getElementById('theme-font-select');
+  if (font) font.disabled = on;
 }
 
 export function save(name, colors, opts) {
@@ -1024,6 +1055,7 @@ export function initThemeUI() {
       Storage.remove(LS_KEY);
       const colors = THEMES[DEFAULT_THEME];
       applyColors(colors);
+      applyOpenWingsSkin(DEFAULT_THEME);
       syncPickers(colors);
       applyFontDensity(DEFAULT_FONT, DEFAULT_DENSITY);
       applyBgPattern('none');
@@ -1461,6 +1493,7 @@ export function initThemeUI() {
   }
 
   // Theme popup now uses standard modal frame (not draggable)
+  _syncOwCustomizeLock();
 }
 
 // ── Zone highlighter ───────────────────────────────────────────────────
@@ -2307,7 +2340,7 @@ const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize, applyBgEffectSpeed,
                        applyFrostedGlass,
                        save, getSaved, saveCustomTheme, deleteCustomTheme,
-                       getCustomThemes };
+                       getCustomThemes, DEFAULT_THEME };
 
 export default themeModule;
 

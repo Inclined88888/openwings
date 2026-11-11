@@ -2511,7 +2511,7 @@ export async function materializePendingSession() {
     const incognitoChk = document.getElementById('incognito-toggle');
     const isIncognito = incognitoChk && incognitoChk.checked;
     const base = (pending.modelId || 'model').split('/').pop();
-    const name = isIncognito ? 'Incognito' : `${base} ${new Date().toLocaleTimeString()}`;
+    const name = isIncognito ? 'Nobody' : `${base} ${new Date().toLocaleTimeString()}`;
 
     const fd = new FormData();
     fd.append('name', name);

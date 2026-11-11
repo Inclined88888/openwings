@@ -1478,7 +1478,7 @@ async function _cmdTheme(args, ctx) {
     const saveName = args[1].toLowerCase().replace(/\s+/g, '-');
     if (tm.THEMES[saveName]) { slashReply('Cannot overwrite a built-in theme.'); return true; }
     const s = tm.getSaved();
-    const colors = s ? s.colors : tm.THEMES.dark;
+    const colors = s ? s.colors : (tm.THEMES[tm.DEFAULT_THEME] || tm.THEMES.dark);
     tm.saveCustomTheme(saveName, colors);
     tm.save(saveName, colors);
     await typewriterReply(`Custom theme "${saveName}" saved`);
@@ -5171,7 +5171,7 @@ async function _cmdSetup(args, ctx) {
         return true;
       }
 
-      const current = (Storage.getJSON(Storage.KEYS.THEME, {}).name) || 'dark';
+      const current = (Storage.getJSON(Storage.KEYS.THEME, {}).name) || (tm && tm.DEFAULT_THEME) || 'dark';
       const customLabel = customKeys.length ? `\n\nCustom: ${customKeys.join(', ')}` : '';
       await typewriterReply(`Current theme: ${current}\n\nAvailable: ${presets.join(', ')}${customLabel}\n\nType a theme name to switch.`);
       setupMode = 'theme';

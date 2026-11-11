@@ -9,6 +9,12 @@
    its entry in static/js/theme.js THEMES (tests/unit/test_wings_looks.py
    checks they match). A saved theme's inline colours override these. */
 html[data-ow-skin="ow-duet"]            { --bg: #E5EAE8; --fg: #1D2A2E; --panel: #FDFBF7; --border: #C9D4D3; --red: #1E5A68; }
-html[data-ow-skin="ow-duet-night"]      { --bg: #1B1F21; --fg: #E6E9E7; --panel: #252A2C; --border: #3A4346; --red: #8FC6CF; }
+html[data-ow-skin="ow-duet-night"]      { --bg: #1B1F21; --fg: #E6E9E7; --panel: #252A2C; --border: #3A4346; --red: #9DC4BA; }
 html[data-ow-skin="ow-hush"]            { --bg: #ECEAE6; --fg: #23201F; --panel: #FCFBFA; --border: #DAD6D0; --red: #A3405A; }
-html[data-ow-skin="ow-hush-night"]      { --bg: #1C1A19; --fg: #ECE7E2; --panel: #282523; --border: #3B3633; --red: #E8919F; }
+html[data-ow-skin="ow-hush-night"]      { --bg: #1C1A19; --fg: #ECE7E2; --panel: #282523; --border: #3B3633; --red: #D99AA5; }
+
+/* Theme panel, Customize tab: while a look is active its colour and font
+   controls are locked (static/js/theme.js _syncOwCustomizeLock). */
+.ow-customize-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5;
+  color: var(--fg); background: color-mix(in srgb, var(--red) 12%, transparent); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+.ow-locked { opacity: .45; filter: saturate(.6); }

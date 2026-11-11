@@ -15,8 +15,61 @@ before.
 Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
+diff --git a/src/agent_loop.py b/src/agent_loop.py
+index 7ad98ce..28c5b2e 100644
+--- a/src/agent_loop.py
++++ b/src/agent_loop.py
+@@ -8127,7 +8127,7 @@ If a calendar create/update request lacks a required date, time, or target event
+     "send_to_session": "- ```send_to_session``` — Send a message to another session. Line 1 = session_id, rest = message. Use for orchestrating work across sessions.",
+     "search_chats": "- ```search_chats``` — Search past session transcripts for direct conversation evidence. Use when user asks 'did we discuss X?', 'find the conversation about Y', or when prior chat context is more appropriate than persistent memory.",
+     "pipeline": "- ```pipeline``` — Run a multi-step AI pipeline. Args (JSON) with ordered steps, each specifying a model and prompt. Use for complex workflows.",
+-    "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook), `open_panel calendar month|week|year|agenda [YYYY-MM or YYYY-MM-DD]` (open calendar directly to a view/range), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open calendar\" / \"open schedule\" / \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open theme\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo. For any other vibe/name, use create_theme.",
++    "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook), `open_panel calendar month|week|year|agenda [YYYY-MM or YYYY-MM-DD]` (open calendar directly to a view/range), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open calendar\" / \"open schedule\" / \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open theme\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night. For any other vibe/name, use create_theme.",
+     "ask_user": "- ```ask_user``` — Ask the user a question when the task is genuinely ambiguous and the answer changes what you do next (pick an approach, confirm an assumption, choose a target). Args (JSON): {\"question\": \"...\", \"options\": [{\"label\": \"...\", \"description\": \"...\"?}, ...], \"multi\": false?}. 2-6 options. The user gets clickable buttons; calling this ENDS your turn and their choice comes back as your next message. For open-ended missing data such as an exact calendar date, include an \"Exact date\" option and ask the user to type the date; do not invent arbitrary choices. Prefer sensible defaults — only ask when you truly can't proceed well without their input.",
+     "update_plan": "- ```update_plan``` — While executing an approved plan, write the plan back: tick steps done or revise them. Args (JSON): {\"plan\": \"- [x] done step\\n- [ ] next step\"}. Always pass the COMPLETE checklist, not a diff. Call it after finishing each step (mark it `- [x]`) and whenever the user asks to change the plan. The user's docked plan window updates live. Does nothing if there's no active plan.",
+     "list_served_models": "- ```list_served_models``` — Show what the Cookbook (LLM-serving subsystem) is currently running. NO args. Use this for ANY 'what's running' / 'what's serving' / 'show my cookbook' / 'is anything up' query. DO NOT shell out (`ps aux`, `docker ps`, etc.) — this tool is the source of truth. Failed serve tasks include recent logs plus diagnosis/retry suggestions; use those suggestions to call `serve_model` again with an adjusted command when appropriate.",
+diff --git a/src/ai_interaction.py b/src/ai_interaction.py
+index c8f7979..019e28e 100644
+--- a/src/ai_interaction.py
++++ b/src/ai_interaction.py
+@@ -704,7 +704,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
+       toggle <name> <on|off>  — Toggle a setting (web, bash, rag, research, incognito, document_editor)
+       set_mode <agent|chat>   — Switch between agent and chat mode
+       switch_model <model>    — Change the model for the current session
+-      set_theme <preset>      — Apply a built-in theme preset (dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo)
++      set_theme <preset>      — Apply a built-in theme preset (dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night)
+       create_theme <name> <bg> <fg> <panel> <border> <accent> [key=val ...] — Create custom theme. Optional key=val: advanced color overrides AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false
+       get_theme               — Return the last server-synchronized theme for this user
+       open_panel <name> [view] — Open a panel; Cookbook views are download/models, launch/serve, active/running, dependencies, settings
+diff --git a/src/theme_palette.py b/src/theme_palette.py
+index f93de26..5bad276 100644
+--- a/src/theme_palette.py
++++ b/src/theme_palette.py
+@@ -1,7 +1,8 @@
+ """Normalize the small theme palette without discarding explicit choices."""
+ import re
+ 
+-THEME_PRESETS = ('dark', 'light', 'midnight', 'cyberpunk', 'retrowave', 'forest',
++THEME_PRESETS = ('ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night',
++                 'dark', 'light', 'midnight', 'cyberpunk', 'retrowave', 'forest',
+                  'ocean', 'ume', 'terminal', 'organs', 'gpt', 'claude', 'cute',
+                  'eclipse', 'porcelain', 'arcade', 'blueprint', 'monolith', 'yoyo')
+ 
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 9057a18..3447d20 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -912,7 +912,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "ui_control",
+-            "description": "Control the user interface. Actions: toggle (turn tools on/off), open_panel (open a modal: documents/library, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook; calendar supports month/week/year/agenda plus a date; Cookbook supports models/download, launch/serve, active/running, dependencies, and settings views), open_email_reply (legacy UI-only reply opener; prefer email MCP draft_email_reply for assistant-written reply drafts so a normal document-backed email draft is created), set_mode, switch_model, set_theme (built-in presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo), create_theme (CREATE any custom theme with a name + colors object — pick distinctive, evocative hex colors that match the requested aesthetic, NOT generic defaults. The theme auto-applies after creation), get_theme, and get_toggles. When a user asks for ANY theme not in the built-in preset list, ALWAYS use create_theme.",
++            "description": "Control the user interface. Actions: toggle (turn tools on/off), open_panel (open a modal: documents/library, gallery, calendar/schedule, email, sessions, notes, memories/brain, skills, settings, theme, cookbook; calendar supports month/week/year/agenda plus a date; Cookbook supports models/download, launch/serve, active/running, dependencies, and settings views), open_email_reply (legacy UI-only reply opener; prefer email MCP draft_email_reply for assistant-written reply drafts so a normal document-backed email draft is created), set_mode, switch_model, set_theme (built-in presets: dark, light, midnight, cyberpunk, retrowave, forest, ocean, ume, terminal, organs, gpt, claude, cute, eclipse, porcelain, arcade, blueprint, monolith, yoyo; OpenWings looks: ow-duet (the default), ow-duet-night, ow-hush, ow-hush-night), create_theme (CREATE any custom theme with a name + colors object — pick distinctive, evocative hex colors that match the requested aesthetic, NOT generic defaults. The theme auto-applies after creation), get_theme, and get_toggles. When a user asks for ANY theme not in the built-in preset list, ALWAYS use create_theme.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
 diff --git a/static/app.js b/static/app.js
-index 3ce00e9..17f015a 100644
+index 3ce00e9..f69ddb0 100644
 --- a/static/app.js
 +++ b/static/app.js
 @@ -2455,7 +2455,7 @@ function initializeEventListeners() {
@@ -75,7 +128,35 @@ index 3ce00e9..17f015a 100644
          if (welcomeName && welcomeName.dataset.originalHtml) {
            welcomeName.innerHTML = welcomeName.dataset.originalHtml;
            // Restart the L→R clip-wipe reveal on the restored label
-@@ -4043,27 +4043,18 @@ function startOdysseusApp() {
+@@ -3544,6 +3544,12 @@ function initializeEventListeners() {
+         }
+         e.preventDefault();
+         e.stopPropagation();
++        // OpenWings: Enter on an empty box sends nothing. Upstream submitted
++        // it, which hid the welcome screen and the Incognito switch. Enter
++        // still reaches upstream while a reply is running, to stop it.
++        const _owSend = document.querySelector('.send-btn');
++        const _owFiles = fileHandlerModule.getPendingCount && fileHandlerModule.getPendingCount() > 0;
++        if (!(textarea.value || '').trim() && !_owFiles && !(_owSend && _owSend.dataset.mode === 'streaming')) return;
+         // Check if already submitting before triggering form submission
+         const form = el('chat-form');
+         if (form) {
+@@ -4015,6 +4021,14 @@ function startOdysseusApp() {
+     return true;
+   }
+ 
++  // OpenWings: screen readers hear what the button does now (its title),
++  // not upstream's fixed "New chat".
++  if (sendBtn) {
++    const _owSyncSendLabel = () => { if (sendBtn.title) sendBtn.setAttribute('aria-label', sendBtn.title); };
++    new MutationObserver(_owSyncSendLabel).observe(sendBtn, { attributes: true, attributeFilter: ['title'] });
++    _owSyncSendLabel();
++  }
++
+   function _updateSendBtnIcon() {
+     if (!sendBtn) return;
+     if (sendBtn.dataset.mode === 'streaming') {
+@@ -4043,27 +4057,18 @@ function startOdysseusApp() {
          newMode = 'idle';
          sendBtn.classList.remove('mic-mode', 'newchat-mode', 'newchat-expanded');
        } else {
@@ -109,7 +190,7 @@ index 3ce00e9..17f015a 100644
        }
        } // close group-else
      } else {
-@@ -4147,6 +4138,12 @@ function startOdysseusApp() {
+@@ -4147,6 +4152,12 @@ function startOdysseusApp() {
          return;
        }
  
@@ -122,18 +203,8 @@ index 3ce00e9..17f015a 100644
        // If input is empty and STT is enabled, start recording
        if (!hasText && !hasFiles && _isSttEnabled()) {
          sendBtn.innerHTML = _stopIcon;
-@@ -4188,6 +4185,9 @@ function startOdysseusApp() {
- 	          if (railNew) railNew.click();
- 	          return;
- 	        }
-+        // OpenWings: Enter on an empty box sends nothing (while a reply is
-+        // running it still reaches upstream's handling).
-+        if (!_isForegroundChatBusy() && !(messageInput.value || '').trim() && !_hasAttachments()) return;
-         if (_isForegroundChatBusy() && messageInput.value && messageInput.value.trim()) {
-           if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
-             return;
 diff --git a/static/index.html b/static/index.html
-index a117b24..050e3c2 100644
+index a117b24..2664e19 100644
 --- a/static/index.html
 +++ b/static/index.html
 @@ -26,6 +26,14 @@
@@ -185,8 +256,17 @@ index a117b24..050e3c2 100644
          'Tip: Agent mode can use tools.',
          'Tip: Compare tests models side by side.',
          'Tip: Use + to attach files.',
+@@ -1257,7 +1265,7 @@
+             <button type="button" class="mode-toggle-btn active" id="mode-agent-btn" aria-pressed="true">Agent</button>
+             <button type="button" class="mode-toggle-btn" id="mode-chat-btn" aria-pressed="false">Chat</button>
+           </div>
+-          <button type="submit" form="chat-form" class="send-btn newchat-mode" data-mode="newchat" aria-label="New chat">
++          <button type="submit" form="chat-form" class="send-btn newchat-mode" data-mode="idle" aria-label="Send message" title="Send message">
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="send-btn-label">+ New</span>
+           </button>
+         </div>
 diff --git a/static/js/sessions.js b/static/js/sessions.js
-index 0a910ef..84f02fa 100644
+index 0a910ef..1bf95ca 100644
 --- a/static/js/sessions.js
 +++ b/static/js/sessions.js
 @@ -66,8 +66,8 @@ function _forceExitIncognitoUi() {
@@ -200,17 +280,8 @@ index 0a910ef..84f02fa 100644
    }
  
    const welcomeName = document.querySelector('.welcome-name');
-@@ -2511,7 +2511,7 @@ export async function materializePendingSession() {
-     const incognitoChk = document.getElementById('incognito-toggle');
-     const isIncognito = incognitoChk && incognitoChk.checked;
-     const base = (pending.modelId || 'model').split('/').pop();
--    const name = isIncognito ? 'Nobody' : `${base} ${new Date().toLocaleTimeString()}`;
-+    const name = isIncognito ? 'Incognito' : `${base} ${new Date().toLocaleTimeString()}`;
- 
-     const fd = new FormData();
-     fd.append('name', name);
 diff --git a/static/js/slashCommands.js b/static/js/slashCommands.js
-index bab2bcb..b4b806b 100644
+index bab2bcb..05d893d 100644
 --- a/static/js/slashCommands.js
 +++ b/static/js/slashCommands.js
 @@ -1223,7 +1223,7 @@ async function _cmdToggleIncognito(args, ctx) {
@@ -222,8 +293,26 @@ index bab2bcb..b4b806b 100644
      return true;
    }
    const v = (args[0]||'').toLowerCase();
+@@ -1478,7 +1478,7 @@ async function _cmdTheme(args, ctx) {
+     const saveName = args[1].toLowerCase().replace(/\s+/g, '-');
+     if (tm.THEMES[saveName]) { slashReply('Cannot overwrite a built-in theme.'); return true; }
+     const s = tm.getSaved();
+-    const colors = s ? s.colors : tm.THEMES.dark;
++    const colors = s ? s.colors : (tm.THEMES[tm.DEFAULT_THEME] || tm.THEMES.dark);
+     tm.saveCustomTheme(saveName, colors);
+     tm.save(saveName, colors);
+     await typewriterReply(`Custom theme "${saveName}" saved`);
+@@ -5171,7 +5171,7 @@ async function _cmdSetup(args, ctx) {
+         return true;
+       }
+ 
+-      const current = (Storage.getJSON(Storage.KEYS.THEME, {}).name) || 'dark';
++      const current = (Storage.getJSON(Storage.KEYS.THEME, {}).name) || (tm && tm.DEFAULT_THEME) || 'dark';
+       const customLabel = customKeys.length ? `\n\nCustom: ${customKeys.join(', ')}` : '';
+       await typewriterReply(`Current theme: ${current}\n\nAvailable: ${presets.join(', ')}${customLabel}\n\nType a theme name to switch.`);
+       setupMode = 'theme';
 diff --git a/static/js/theme.js b/static/js/theme.js
-index 1cb0ab2..0b2a66d 100644
+index 1cb0ab2..c3b4e42 100644
 --- a/static/js/theme.js
 +++ b/static/js/theme.js
 @@ -9,6 +9,12 @@ import { makeWindowDraggable } from './windowDrag.js';
@@ -233,9 +322,9 @@ index 1cb0ab2..0b2a66d 100644
 +  // OpenWings looks: each also changes type, shapes and textures through
 +  // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
 +  'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
-+  'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#8FC6CF' },
++  'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#9DC4BA' },
 +  'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
-+  'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#E8919F' },
++  'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#D99AA5' },
    dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
    light:      { bg:'#f3f5f7', fg:'#26313a', panel:'#ffffff', border:'#cbd3da', red:'#b34d5c' },
    midnight:   { bg:'#0d1117', fg:'#c9d1d9', panel:'#161b22', border:'#30363d', red:'#f85149' },
@@ -261,7 +350,7 @@ index 1cb0ab2..0b2a66d 100644
  const LS_KEY = 'odysseus-theme';
  const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
  
-@@ -522,7 +533,17 @@ export function getSaved() {
+@@ -522,7 +533,48 @@ export function getSaved() {
    return obj;
  }
  
@@ -271,7 +360,38 @@ index 1cb0ab2..0b2a66d 100644
 +export function applyOpenWingsSkin(name) {
 +  try {
 +    document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(String(name || '')) ? String(name) : '');
++    _syncOwCustomizeLock();
 +  } catch (_) {}
++}
++
++// OpenWings: a look sets its own colours and type, so while one is active the
++// colour, colour harmony and font controls are locked behind a short note.
++// Otherwise the first colour edit would save a plain custom theme and drop
++// the whole look without warning.
++function _syncOwCustomizeLock() {
++  const panel = document.getElementById('theme-tab-customize');
++  if (!panel) return;
++  const on = !!document.documentElement.getAttribute('data-ow-skin');
++  let note = document.getElementById('ow-customize-note');
++  if (on && !note) {
++    note = document.createElement('p');
++    note.id = 'ow-customize-note';
++    note.className = 'ow-customize-note';
++    note.setAttribute('role', 'note');
++    note.textContent = 'OpenWings looks set their own colours and type. To choose your own colours or font (OpenDyslexic included), first pick one of the other themes.';
++    panel.prepend(note);
++  }
++  if (note) note.hidden = !on;
++  const custom = document.getElementById('themeCustom');
++  const boxes = [custom && custom.closest('.admin-card'), document.getElementById('theme-adv-toggle'),
++                 document.getElementById('themeAdvanced'), document.getElementById('theme-harmony-card')];
++  for (const box of boxes) {
++    if (!box) continue;
++    box.inert = on;
++    box.classList.toggle('ow-locked', on);
++  }
++  const font = document.getElementById('theme-font-select');
++  if (font) font.disabled = on;
 +}
 +
  export function save(name, colors, opts) {
@@ -279,7 +399,32 @@ index 1cb0ab2..0b2a66d 100644
    const obj = { name, colors };
    if (opts) {
      if (normalizeFont(opts.font) !== DEFAULT_FONT) obj.font = normalizeFont(opts.font);
-@@ -2304,6 +2325,7 @@ async function _initWithSync() {
+@@ -1003,6 +1055,7 @@ export function initThemeUI() {
+       Storage.remove(LS_KEY);
+       const colors = THEMES[DEFAULT_THEME];
+       applyColors(colors);
++      applyOpenWingsSkin(DEFAULT_THEME);
+       syncPickers(colors);
+       applyFontDensity(DEFAULT_FONT, DEFAULT_DENSITY);
+       applyBgPattern('none');
+@@ -1440,6 +1493,7 @@ export function initThemeUI() {
+   }
+ 
+   // Theme popup now uses standard modal frame (not draggable)
++  _syncOwCustomizeLock();
+ }
+ 
+ // ── Zone highlighter ───────────────────────────────────────────────────
+@@ -2286,7 +2340,7 @@ const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
+                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize, applyBgEffectSpeed,
+                        applyFrostedGlass,
+                        save, getSaved, saveCustomTheme, deleteCustomTheme,
+-                       getCustomThemes };
++                       getCustomThemes, DEFAULT_THEME };
+ 
+ export default themeModule;
+ 
+@@ -2304,6 +2358,7 @@ async function _initWithSync() {
        }
        Storage.setJSON(LS_KEY, serverTheme);
        applyColors(serverTheme.colors);
@@ -287,7 +432,7 @@ index 1cb0ab2..0b2a66d 100644
      }
    }
    // Also sync custom themes from server
-@@ -2328,3 +2350,11 @@ if (document.readyState === 'loading') {
+@@ -2328,3 +2383,11 @@ if (document.readyState === 'loading') {
  } else {
    _initWithSync();
  }
