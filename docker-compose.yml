@@ -123,7 +123,14 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7011,http://127.0.0.1:7011}
       - SECURE_COOKIES=${SECURE_COOKIES:-}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
-      - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-}
+      # Where sign-ins (app connectors, OpenRouter) return when the browser's
+      # own address is not in ALLOWED_ORIGINS. The container cannot see the
+      # host port, so it is spelled out here; --domain sets the https URL.
+      - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-http://127.0.0.1:${APP_PORT:-7011}}
+      # 1 = also offer the sign-ins that pose as another company's app
+      # (ChatGPT Subscription, GitHub Copilot) and Kimi's borrowed
+      # User-Agent. Off by default: accounts used that way can be closed.
+      - WINGS_ALLOW_UNOFFICIAL_SIGNIN=${WINGS_ALLOW_UNOFFICIAL_SIGNIN:-}
       # Models. Providers are normally added in Settings; these are optional
       # bootstrap values for hosts without a browser at hand.
       - LLM_HOST=${LLM_HOST:-localhost}
