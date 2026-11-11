@@ -28,3 +28,55 @@ if (document.readyState === 'loading') {
 } else {
   wire();
 }
+
+// Wings: sidebar entry for the live browser (patch 0008). Shown only when the
+// browser container is enabled and this account may use it. Opens the live
+// view in its own tab so the chat stays usable while you watch or take over.
+const LIVE_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.5;" '
+  + 'aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 8h18"/>'
+  + '<circle cx="6" cy="6" r="0.6"/><circle cx="8.5" cy="6" r="0.6"/><path d="M8 22h8M12 18v4"/></svg>';
+
+function openLiveBrowser() {
+  window.open('/wings/browser/', 'wings-live-browser', 'noopener');
+}
+
+async function addLiveBrowserEntry() {
+  if (document.getElementById('wings-live-browser-btn')) return;
+  const anchor = document.getElementById('tool-agents-btn');
+  if (!anchor) return;
+  let status;
+  try {
+    const res = await fetch('/api/wings/browser/status', { credentials: 'same-origin' });
+    if (!res.ok) return;
+    status = await res.json();
+  } catch (e) {
+    return;
+  }
+  if (!status || !status.enabled || !status.allowed) return;
+  const item = document.createElement('div');
+  item.className = 'list-item';
+  item.id = 'wings-live-browser-btn';
+  item.setAttribute('role', 'button');
+  item.tabIndex = 0;
+  item.title = 'Live browser: watch the agent browse, sign in, or take over';
+  item.innerHTML = LIVE_ICON;
+  const label = document.createElement('span');
+  label.className = 'grow';
+  label.textContent = 'Live browser';
+  item.appendChild(label);
+  item.addEventListener('click', openLiveBrowser);
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openLiveBrowser();
+    }
+  });
+  anchor.insertAdjacentElement('afterend', item);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', addLiveBrowserEntry);
+} else {
+  addLiveBrowserEntry();
+}

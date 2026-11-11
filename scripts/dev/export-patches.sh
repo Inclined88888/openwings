@@ -1,35 +1,43 @@
 #!/usr/bin/env bash
-# Regenerate patches/*.patch from an upstream checkout you have edited.
+# Regenerate patches/*.patch from an upstream checkout that carries the Wings
+# changes as a patch series: one commit per patch on top of ODYSSEUS_COMMIT
+# (upstream.lock), each commit's subject being the patch name without
+# ".patch" (for example "0008-browser-automation"). Patches may touch the
+# same file; each one is the diff of its own commit, so they apply in order.
 #
 #   scripts/dev/export-patches.sh /path/to/odysseus-checkout
 #
-# The checkout must be at ODYSSEUS_COMMIT (upstream.lock) with all Wings
-# changes applied in its working tree (new files added with `git add -N`).
-# Each patch keeps its description header (everything up to and including the
-# "License:" line) and gets a fresh diff of the files listed in PATCH_FILES.
-# Then run scripts/dev/rebase-overlay.sh to refresh overlay/.
+# To change a patch: check out the series, edit, then `git commit --fixup`
+# and `git rebase --autosquash ODYSSEUS_COMMIT` (or amend the last commit).
+# Each patch file keeps its description header (everything up to and
+# including the "License:" line). Then run scripts/dev/rebase-overlay.sh to
+# refresh overlay/.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="${1:?usage: export-patches.sh /path/to/odysseus-checkout}"
+# shellcheck disable=SC1091
+. "$ROOT/upstream.lock"
 
-PATCH_FILES=(
-  "0001-encryption-key-from-env.patch|src/secret_storage.py src/api_key_manager.py"
-  "0002-scrub-secrets-from-child-processes.patch|src/mcp_manager.py routes/cookbook_routes.py routes/shell_routes.py"
-  "0003-encrypt-session-headers-and-mcp-env.patch|core/database.py routes/mcp/mcp_routes.py"
-  "0004-email-send-requires-a-person.patch|routes/email mcp_servers/email_server.py"
-  "0005-per-agent-tool-access.patch|src/request_models.py routes/preset_routes.py src/preset_manager.py routes/chat_routes.py routes/model_routes.py static/js/presets.js static/js/wings-agent-tools.js static/js/group.js"
-  "0006-sidebar-agents-files-and-os-theme.patch|static/index.html static/js/theme.js static/js/wings-ui.js"
-  "0007-safer-defaults-and-caldav-fix.patch|src/task_scheduler.py src/agent_loop.py services/skills/publication.py services/memory/skills.py static/js/memory.js src/caldav_writeback.py"
-)
+if ! git -C "$SRC" diff --quiet || ! git -C "$SRC" diff --cached --quiet; then
+  echo "$SRC has uncommitted changes; commit them into the series first" >&2
+  exit 1
+fi
 
-for entry in "${PATCH_FILES[@]}"; do
-  name="${entry%%|*}"; files="${entry#*|}"
-  patch="$ROOT/patches/$name"
-  [ -f "$patch" ] || { echo "missing $patch" >&2; exit 1; }
+count=0
+while read -r sha subject; do
+  patch="$ROOT/patches/${subject}.patch"
+  [ -f "$patch" ] || { echo "commit $sha '$subject' has no patches/${subject}.patch (create it with a header ending in a License: line)" >&2; exit 1; }
   header="$(sed -n '1,/^License:/p' "$patch")"
-  # shellcheck disable=SC2086  # $files is a space separated path list
-  diff="$(git -C "$SRC" diff -- $files)"
-  [ -n "$diff" ] || { echo "no changes for $name in $SRC" >&2; exit 1; }
+  diff="$(git -C "$SRC" diff "${sha}^" "$sha")"
+  [ -n "$diff" ] || { echo "commit $sha '$subject' is empty" >&2; exit 1; }
   printf '%s\n\n%s\n' "$header" "$diff" > "$patch"
-  echo "wrote $name"
+  echo "wrote ${subject}.patch"
+  count=$((count + 1))
+done < <(git -C "$SRC" log --reverse --format='%H %s' "${ODYSSEUS_COMMIT}..HEAD")
+
+[ "$count" -gt 0 ] || { echo "no commits on top of ${ODYSSEUS_COMMIT} in $SRC" >&2; exit 1; }
+for patch in "$ROOT"/patches/*.patch; do
+  name="$(basename "$patch" .patch)"
+  git -C "$SRC" log --format='%s' "${ODYSSEUS_COMMIT}..HEAD" | grep -qx "$name" \
+    || echo "warning: patches/${name}.patch has no matching commit in $SRC (stale?)" >&2
 done

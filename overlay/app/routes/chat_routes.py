@@ -308,13 +308,19 @@ def _authorizes_exact_url_fetch(text: str) -> bool:
 
 def _is_explicit_browser_automation_request(text: str) -> bool:
     """Distinguish interactive navigation from ordinary URL/PDF retrieval."""
-    return bool(re.search(
+    if re.search(
         r"\b(brow(?:ser|esr|sr)|browse|visit|go\s+to|navigate\s+to|"
         r"open\s+(?:the\s+)?(?:site|page|url|link)|click|fill(?:\s+out)?|"
         r"submit|send\s+(?:the\s+)?form|contact\s+form|form\s+submission)\b",
         str(text or ""),
         re.IGNORECASE,
-    ))
+    ):
+        return True
+    # Wings: with the browser container enabled, everyday web-task wording
+    # (sign in to a portal, book or order online, fill in a form) also asks
+    # for the browser.
+    from wings import browser as _wings_browser
+    return _wings_browser.enabled() and _wings_browser.is_web_task(text)
 
 
 def _is_external_discovery_request(text: str) -> bool:

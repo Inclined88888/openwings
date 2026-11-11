@@ -911,6 +911,12 @@ _BARE_WEB_DOMAIN_RE = (
 
 def _looks_like_explicit_browser_interaction(text: str) -> bool:
     value = str(text or "")
+    # Wings: with the browser container on, a request that names the browser
+    # or reads as a web task (sign in to a portal, order online, fill in a
+    # form) is browser work, never a "web search is off" refusal.
+    from wings import browser as _wings_browser
+    if _wings_browser.enabled() and _wings_browser.is_browser_request(value):
+        return True
     if re.search(
         rf"https?://|www\.|{_BARE_WEB_DOMAIN_RE}",
         value,
@@ -15903,9 +15909,18 @@ def _append_tool_results(
     # exists, retaining older full trees only confuses element refs and grows
     # the prompt by thousands of tokens per round. Keep action/result history
     # as compact provenance while preserving the newest complete page state.
+    # Wings: its browser marks each page outline, so only the outlines are
+    # retired and page text the agent read stays in context.
+    from wings import browser as _wings_browser
+    _wings_states = _wings_browser.enabled()
     browser_state_indices: list[int] = []
     for index, record in enumerate(tool_result_records):
         if not isinstance(record, dict) or record.get("tool_name") != "private_browser":
+            continue
+        if _wings_states:
+            _wings_result = record.get("result") if isinstance(record.get("result"), dict) else {}
+            if _wings_browser.STATE_BEGIN in str(_wings_result.get("output") or ""):
+                browser_state_indices.append(index)
             continue
         raw_content = str(record.get("content") or "")
         try:
@@ -15928,6 +15943,8 @@ def _append_tool_results(
                 and metadata.get("source") == "tool result: private_browser"
             ):
                 prior["content"] = (
+                    _wings_browser.strip_state(str(prior.get("content") or ""))
+                    if _wings_states else
                     "[Prior private-browser DOM state retired; the newest page snapshot follows.]"
                 )
     # A visual tool result only needs to survive until the next model round.
@@ -16060,6 +16077,8 @@ def _append_tool_results(
                 and j < latest_browser_state_index
             ):
                 result_text = (
+                    _wings_browser.strip_state(result_text)
+                    if _wings_states else
                     "[Earlier private-browser step completed; superseded by the "
                     "newest page snapshot in this batch.]"
                 )

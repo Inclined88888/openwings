@@ -9,6 +9,19 @@ ARG ODYSSEUS_BASE_IMAGE=ghcr.io/odysseus-dev/odysseus:1.0.3-9d0d372@sha256:5117c
 FROM ${ODYSSEUS_BASE_IMAGE}
 
 COPY overlay/ /tmp/wings/
+COPY docker/odysseus/requirements-browser.txt /tmp/wings-requirements-browser.txt
+
+# Browser automation driver (Playwright, CDP client only, no bundled browsers)
+# and websockets for the live view. Every file is pinned by SHA-256. The
+# optional "ca" build secret only exists for builds behind a TLS-intercepting
+# proxy; normal builds do not need it.
+RUN --mount=type=secret,id=ca,required=false \
+    set -eu; \
+    if [ -s /run/secrets/ca ]; then export PIP_CERT=/run/secrets/ca; fi; \
+    python -m pip install --no-cache-dir --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps \
+      -r /tmp/wings-requirements-browser.txt; \
+    rm -f /tmp/wings-requirements-browser.txt; \
+    python -c "import playwright.async_api, websockets.asyncio.client"
 
 # 1. Guard: every file we replace must still be byte-identical to the upstream
 #    version the patches were written against. If the base image is bumped and

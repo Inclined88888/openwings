@@ -20,6 +20,7 @@ ALWAYS_SCRUB = frozenset({
     "SEARXNG_SECRET",
     "RADICALE_PASSWORD",
     "DATABASE_URL",
+    "WINGS_BROWSER_TOKEN",
 })
 
 # Anything that looks like a credential by name.

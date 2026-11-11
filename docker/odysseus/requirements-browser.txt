@@ -1,0 +1,17 @@
+# Wings browser automation driver, installed into the Wings image with
+# --require-hashes --only-binary=:all: --no-deps (every file pinned by hash).
+# Playwright connects to the Chromium in the browser container over CDP; it
+# does not download browsers. websockets lets uvicorn serve the live view.
+# Bump together, after checking each release is at least a few weeks old.
+playwright==1.64.1 \
+    --hash=sha256:577b8d88778c245cfbd145ae17cf53044f084b1b46c55c69081d4069d56057e2 \
+    --hash=sha256:a29fda44725e11b0b625c4bff6458a1f6dbee97b88c9788d12e18a8344458c2d
+pyee==14.0.0 \
+    --hash=sha256:3ac2d3229a9677f7de2c33d7f52fe25b638a46b19c413fea2edc8c6d0a644e4d
+greenlet==3.5.6 \
+    --hash=sha256:9a09d59bef1db94f384b5bcc2d523694d338f3df6b757aeeaf7baca5d0c0be88 \
+    --hash=sha256:c59acfa8eb73a1e0d484392dc002bdf001fd4ce73394e0132df3d1ab6093d7cb
+websockets==17.3 \
+    --hash=sha256:8dbb3862aa649de95660b6337d97101977f160b5b354d07b82fe309874d2c8bc \
+    --hash=sha256:af37a1e6b6bd506b597d5fb4cf111fb527d1b2223608a5d441d4738827cfd166 \
+    --hash=sha256:dc2b495a92b3971966bf102e73589f950db3ec1ca6713265355ce7771d97b199

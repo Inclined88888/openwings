@@ -1,0 +1,327 @@
+Wings patch 0008: browser automation through the Wings browser container
+
+Upstream ships the private_browser tool, its schema and the agent-side
+plumbing, but this build answers every page action with UNSUPPORTED. With
+the browser compose profile on, Wings routes those actions to
+wings/browser.py, which drives a headful Chromium in the browser container
+over the DevTools protocol (Playwright) and returns each page as a numbered
+outline the model acts on by ref.
+
+  * src/tool_execution.py: page actions go to wings.browser.run() when the
+    Wings browser is enabled; otherwise upstream behaviour is unchanged.
+  * src/agent_runtime/authority.py: a browser task may click, fill and press
+    without repeating each verb in the request. The backend itself hands
+    passwords, one-time codes, card numbers and pay/order/send/publish/delete
+    clicks to the person, and blocks private addresses and non-web schemes.
+  * routes/chat_routes.py: everyday web-task wording (sign in to a portal,
+    book or order online, fill in a form, add to cart) routes to the browser.
+  * src/agent_loop.py: older page outlines are dropped from the context when a
+    newer one arrives; page text the agent read is kept.
+  * src/tool_schemas.py, src/tool_index.py: describe what the tool does now.
+  * src/settings.py: agent_max_rounds defaults to 40 (was 20); web tasks take
+    many small steps. Settings > Agent still controls it.
+  * app.py: mounts the live view routes (wings/browser_routes.py).
+  * static/js/wings-ui.js: a "Live browser" sidebar entry, shown only when
+    the browser is enabled and the account may use it.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/app.py b/app.py
+index b0e6f9d..5d518a9 100644
+--- a/app.py
++++ b/app.py
+@@ -681,6 +681,10 @@ webhook_manager = WebhookManager(api_key_manager=api_key_manager)
+ auth_router = setup_auth_routes(auth_manager)
+ app.include_router(auth_router)
+ 
++# Wings: live view of the browser container (wings/browser_routes.py).
++from wings.browser_routes import router as _wings_browser_router
++app.include_router(_wings_browser_router)
++
+ 
+ @app.post("/api/activity/heartbeat")
+ async def activity_heartbeat():
+diff --git a/routes/chat_routes.py b/routes/chat_routes.py
+index 331b695..16567a8 100644
+--- a/routes/chat_routes.py
++++ b/routes/chat_routes.py
+@@ -308,13 +308,19 @@ def _authorizes_exact_url_fetch(text: str) -> bool:
+ 
+ def _is_explicit_browser_automation_request(text: str) -> bool:
+     """Distinguish interactive navigation from ordinary URL/PDF retrieval."""
+-    return bool(re.search(
++    if re.search(
+         r"\b(brow(?:ser|esr|sr)|browse|visit|go\s+to|navigate\s+to|"
+         r"open\s+(?:the\s+)?(?:site|page|url|link)|click|fill(?:\s+out)?|"
+         r"submit|send\s+(?:the\s+)?form|contact\s+form|form\s+submission)\b",
+         str(text or ""),
+         re.IGNORECASE,
+-    ))
++    ):
++        return True
++    # Wings: with the browser container enabled, everyday web-task wording
++    # (sign in to a portal, book or order online, fill in a form) also asks
++    # for the browser.
++    from wings import browser as _wings_browser
++    return _wings_browser.enabled() and _wings_browser.is_web_task(text)
+ 
+ 
+ def _is_external_discovery_request(text: str) -> bool:
+diff --git a/src/agent_loop.py b/src/agent_loop.py
+index 65af608..aaca7bd 100644
+--- a/src/agent_loop.py
++++ b/src/agent_loop.py
+@@ -911,6 +911,12 @@ _BARE_WEB_DOMAIN_RE = (
+ 
+ def _looks_like_explicit_browser_interaction(text: str) -> bool:
+     value = str(text or "")
++    # Wings: with the browser container on, a request that names the browser
++    # or reads as a web task (sign in to a portal, order online, fill in a
++    # form) is browser work, never a "web search is off" refusal.
++    from wings import browser as _wings_browser
++    if _wings_browser.enabled() and _wings_browser.is_browser_request(value):
++        return True
+     if re.search(
+         rf"https?://|www\.|{_BARE_WEB_DOMAIN_RE}",
+         value,
+@@ -15903,10 +15909,19 @@ def _append_tool_results(
+     # exists, retaining older full trees only confuses element refs and grows
+     # the prompt by thousands of tokens per round. Keep action/result history
+     # as compact provenance while preserving the newest complete page state.
++    # Wings: its browser marks each page outline, so only the outlines are
++    # retired and page text the agent read stays in context.
++    from wings import browser as _wings_browser
++    _wings_states = _wings_browser.enabled()
+     browser_state_indices: list[int] = []
+     for index, record in enumerate(tool_result_records):
+         if not isinstance(record, dict) or record.get("tool_name") != "private_browser":
+             continue
++        if _wings_states:
++            _wings_result = record.get("result") if isinstance(record.get("result"), dict) else {}
++            if _wings_browser.STATE_BEGIN in str(_wings_result.get("output") or ""):
++                browser_state_indices.append(index)
++            continue
+         raw_content = str(record.get("content") or "")
+         try:
+             browser_args = json.loads(raw_content or "{}")
+@@ -15928,6 +15943,8 @@ def _append_tool_results(
+                 and metadata.get("source") == "tool result: private_browser"
+             ):
+                 prior["content"] = (
++                    _wings_browser.strip_state(str(prior.get("content") or ""))
++                    if _wings_states else
+                     "[Prior private-browser DOM state retired; the newest page snapshot follows.]"
+                 )
+     # A visual tool result only needs to survive until the next model round.
+@@ -16060,6 +16077,8 @@ def _append_tool_results(
+                 and j < latest_browser_state_index
+             ):
+                 result_text = (
++                    _wings_browser.strip_state(result_text)
++                    if _wings_states else
+                     "[Earlier private-browser step completed; superseded by the "
+                     "newest page snapshot in this batch.]"
+                 )
+diff --git a/src/agent_runtime/authority.py b/src/agent_runtime/authority.py
+index cd51973..0b8acdd 100644
+--- a/src/agent_runtime/authority.py
++++ b/src/agent_runtime/authority.py
+@@ -361,6 +361,23 @@ def interpret_request(request_text, *, history=(), workspace=None, active_docume
+     return SemanticIntent(families, selected, required_read_operation_for_request(request_text, history))
+ 
+ 
++def _wings_trusted_user_texts(history):
++    """Recent user messages that interpret_request would also trust (Wings)."""
++    texts = []
++    for row in tuple(history or ())[-12:]:
++        get = row.get if isinstance(row, dict) else lambda key, default=None: getattr(row, key, default)
++        metadata = get("metadata") or {}
++        if isinstance(metadata, str):
++            try:
++                metadata = json.loads(metadata)
++            except ValueError:
++                metadata = {}
++        if (get("role") == "user" and isinstance(metadata, dict)
++                and metadata.get("trusted") is not False and not metadata.get("tool_gate_untrusted")):
++            texts.append(str(get("content", "") or ""))
++    return texts
++
++
+ def create_request_authority(request_text, *, owner=None, session_id=None, workspace=None,
+                              history=(), policy=None, active_document=False,
+                              image_attachment=False, capabilities=None, client_runtime_context=None):
+@@ -389,9 +406,18 @@ def create_request_authority(request_text, *, owner=None, session_id=None, works
+         actions = inputs = None
+         if name == "private_browser":
+             actions = _BROWSER_READ_ACTIONS
++            from wings import browser as _wings_browser
++            if _wings_browser.enabled() and _wings_browser.browser_task_requested(
++                    request_text, _wings_trusted_user_texts(history)):
++                # Wings: the browser container hands passwords, payments and
++                # other committing steps to the person itself, so a browser
++                # task the person asked for (now or in their recent messages)
++                # may click, fill and press without naming each verb. A
++                # browser offered only as a search fallback stays read-only.
++                actions = actions | _wings_browser.interactive_actions()
+             # Explicit interaction intent admits its operation class. A
+             # browser offered only as static-Web fallback gets no such grant.
+-            if re.search(r"\b(?:browser|browse|private_browser)\b", request_text, re.I):
++            elif re.search(r"\b(?:browser|browse|private_browser)\b", request_text, re.I):
+                 actions |= frozenset(action for action in ("click", "fill", "type", "press", "evaluate", "select")
+                                      if re.search(r"\b" + action + r"\b", request_text, re.I))
+         if operation is not None and name == canonical_tool(operation.tool):
+diff --git a/src/settings.py b/src/settings.py
+index 202af01..c5c8817 100644
+--- a/src/settings.py
++++ b/src/settings.py
+@@ -113,7 +113,7 @@ DEFAULT_SETTINGS = {
+     # Tune via Settings or by editing data/settings.json.
+     "research_run_timeout_seconds": 1800,
+     "agent_max_tool_calls": 0,
+-    "agent_max_rounds": 20,  # per-message agent step cap (clamped 1..200)
++    "agent_max_rounds": 40,  # per-message agent step cap (clamped 1..200); Wings: 40, browser tasks take many steps
+     # Soft input-token budget for the agent loop. The DEFAULT value (6000) is the
+     # "auto" sentinel: it means "scale the budget to the model's context window"
+     # (#1230) — so long-context models aren't capped at 6000. Set ANY OTHER value
+diff --git a/src/tool_execution.py b/src/tool_execution.py
+index bde68df..f8aec9a 100644
+--- a/src/tool_execution.py
++++ b/src/tool_execution.py
+@@ -1722,6 +1722,14 @@ async def execute_tool_block(
+             _, browser_args = parse_browser_operation(operation.input)
+         except (ValueError, TypeError):
+             return f"{transport}: UNSUPPORTED", {**page_unavailable(), "error": "Browser raw commands, flags and batches are unsupported."}
++        # Wings: page actions run in the Wings browser container, which applies
++        # its own guardrails (wings/browser.py, wings/browser_policy.py).
++        from wings import browser as _wings_browser
++        if _wings_browser.enabled():
++            return await _wings_browser.run(
++                browser_args, owner=owner, session_id=session_id,
++                delegated=bool(isinstance(security_context, ToolRunSecurityContext)
++                               and security_context.delegated_credential))
+         if browser_args["action"] not in SESSION_ACTIONS:
+             return f"{transport}: UNSUPPORTED", page_unavailable()
+     # Raw global Playwright MCP has no authoritative session/page observation.
+diff --git a/src/tool_index.py b/src/tool_index.py
+index 3333721..ec763ea 100644
+--- a/src/tool_index.py
++++ b/src/tool_index.py
+@@ -112,7 +112,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
+     "web_fetch": "Fetch and read the text content of a specific URL/website the user names (e.g. 'check example.com', 'open this link'). Use when you have a concrete URL; for open-ended lookups use web_search instead.",
+     "pdf_extract": "Extract focused, source-attributed passages and exact table values from an online PDF or task-local /workspace/*.pdf. Use for arXiv papers, reports, manuals, PDF tables, evaluation metrics, and multi-document PDF extraction. Prefer this over Python requests, curl, downloading, pdftotext, or guessing. Include target model names, metrics, and table headings in query.",
+     "youtube_tool": "Read YouTube-specific data without fighting the JS page: video comments, transcripts, metadata, or latest video from a channel. Use for YouTube comments/transcript/channel latest-video tasks.",
+-    "private_browser": "Trusted metadata for an existing server-registered browser session only. Page/document reads and interactions are unavailable because the configured producer cannot guarantee exact target binding. No model batch or raw browser commands. Use web_search or web_fetch for supported web access.",
++    "private_browser": "Use websites in a real browser (Wings browser service): open, read, click, fill forms, press keys, scroll, tabs. Acts on numbered [eN] refs from the newest page outline. Hands passwords, payments and send/order/publish clicks to the user (PAUSED). Prefer web_fetch/web_search for plain reading.",
+     "inspect_media": "Inspect local workspace images, SVGs, videos, and PDF pages with the current multimodal model. Samples bounded timestamped video frames uniformly, at scene cuts, or from temporally diverse motion peaks; renders SVG to PNG; exports stills or clips; concatenates ranges; changes clip speed while preserving audio pitch; and renders query-relevant PDF pages. Prefer these native operations over raw ffmpeg. Increase max_dimension only for small visual details; saved exports keep source quality.",
+     "extract_text": "Extract exact visible text, confidence, and pixel centers from a local workspace image with Odysseus local OCR. Use for screenshots, scans, labels, numbers, receipts, and text-location tasks; use inspect_media for general visual understanding.",
+     "transcribe_media": "Transcribe dialogue, narration, names, and spoken timing from a local audio or video file with Odysseus local Whisper. Returns [START --> END] TEXT segments and always persists them to a workspace text file. For a named chapter, question, scene, or topic, locate its boundaries and restrict filtering to that interval. This handles audio speech; combine with inspect_media for audiovisual tasks or visually burned-in subtitles.",
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 4e399a0..ae12102 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -393,25 +393,25 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "private_browser",
+-            "description": "Trusted browser session metadata only. Page/document operations are unavailable because the local producer cannot atomically bind a captured target. No batch or raw CLI flags. Use web_search/web_fetch for supported web access.",
+-            "parameters": {
+-                "type": "object",
+-                "properties": {
+-                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page"]},
+-                    "page": {"type": "string", "pattern": "^t[1-9][0-9]*$", "description": "Observed alias only; page commands remain disabled for the current producer."},
+-                    "url": {"type": "string"},
+-                    "selector": {"type": "string"},
+-                    "target": {"type": "string"},
+-                    "ref": {"type": "string"},
+-                    "key": {"type": "string"},
+-                    "direction": {"type": "string"},
+-                    "text": {"type": "string"},
+-                    "value": {"type": "string"},
+-                    "script": {"type": "string"},
+-                    "path": {"type": "string"},
+-                    "find": {"type": "string"},
+-                    "amount": {"type": "integer"},
+-                    "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 20000}
++            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
++            "parameters": {
++                "type": "object",
++                "properties": {
++                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page."},
++                    "page": {"type": "string", "pattern": "^t[1-9][0-9]*$", "description": "Tab alias tN (from tabs or the outline) for select_page, close_page, or acting on another tab."},
++                    "url": {"type": "string", "description": "open, navigate, new_page: the http(s) address."},
++                    "ref": {"type": "string", "description": "Element ref from the newest outline, for example e12."},
++                    "text": {"type": "string", "description": "fill: the value (option label for a select; true or false for a checkbox). press without key: text typed key by key into the focused or ref element. find, wait, scroll: visible text to look for."},
++                    "value": {"type": "string", "description": "fill: same as text."},
++                    "find": {"type": "string", "description": "click, fill, press, scroll: visible text, label or placeholder of the element when no ref is known. find action: the words to search for."},
++                    "key": {"type": "string", "description": "press: a key or combination such as Enter, Tab, Escape, ArrowDown, PageDown, Control+A. Enter or Escape also answer a waiting browser dialog."},
++                    "direction": {"type": "string", "enum": ["down", "up", "left", "right"], "description": "scroll direction (default down)."},
++                    "amount": {"type": "integer", "minimum": 1, "description": "scroll: screens to move (default 1). read: which part of a long page."},
++                    "selector": {"type": "string", "description": "CSS selector, only when no ref or visible text identifies the element."},
++                    "target": {"type": "string", "description": "Same as selector."},
++                    "script": {"type": "string", "description": "evaluate: JavaScript to run in the page (refused unless the admin enabled it)."},
++                    "path": {"type": "string", "description": "Unused."},
++                    "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 60000, "description": "wait: milliseconds (default 2000, max 30000). open: page load timeout."}
+                 },
+                 "required": ["action"],
+                 "additionalProperties": False
+diff --git a/static/js/wings-ui.js b/static/js/wings-ui.js
+index 219f3f4..08f38ed 100644
+--- a/static/js/wings-ui.js
++++ b/static/js/wings-ui.js
+@@ -28,3 +28,55 @@ if (document.readyState === 'loading') {
+ } else {
+   wire();
+ }
++
++// Wings: sidebar entry for the live browser (patch 0008). Shown only when the
++// browser container is enabled and this account may use it. Opens the live
++// view in its own tab so the chat stays usable while you watch or take over.
++const LIVE_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
++  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.5;" '
++  + 'aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 8h18"/>'
++  + '<circle cx="6" cy="6" r="0.6"/><circle cx="8.5" cy="6" r="0.6"/><path d="M8 22h8M12 18v4"/></svg>';
++
++function openLiveBrowser() {
++  window.open('/wings/browser/', 'wings-live-browser', 'noopener');
++}
++
++async function addLiveBrowserEntry() {
++  if (document.getElementById('wings-live-browser-btn')) return;
++  const anchor = document.getElementById('tool-agents-btn');
++  if (!anchor) return;
++  let status;
++  try {
++    const res = await fetch('/api/wings/browser/status', { credentials: 'same-origin' });
++    if (!res.ok) return;
++    status = await res.json();
++  } catch (e) {
++    return;
++  }
++  if (!status || !status.enabled || !status.allowed) return;
++  const item = document.createElement('div');
++  item.className = 'list-item';
++  item.id = 'wings-live-browser-btn';
++  item.setAttribute('role', 'button');
++  item.tabIndex = 0;
++  item.title = 'Live browser: watch the agent browse, sign in, or take over';
++  item.innerHTML = LIVE_ICON;
++  const label = document.createElement('span');
++  label.className = 'grow';
++  label.textContent = 'Live browser';
++  item.appendChild(label);
++  item.addEventListener('click', openLiveBrowser);
++  item.addEventListener('keydown', (e) => {
++    if (e.key === 'Enter' || e.key === ' ') {
++      e.preventDefault();
++      openLiveBrowser();
++    }
++  });
++  anchor.insertAdjacentElement('afterend', item);
++}
++
++if (document.readyState === 'loading') {
++  document.addEventListener('DOMContentLoaded', addLiveBrowserEntry);
++} else {
++  addLiveBrowserEntry();
++}

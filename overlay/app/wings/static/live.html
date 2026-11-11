@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live browser · Wings</title>
+<link rel="stylesheet" href="live.css">
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="../../" title="Back to Wings">← Wings</a>
+  <strong class="title">Live browser</strong>
+  <span id="status" class="status connecting" role="status" aria-live="polite">Connecting…</span>
+  <span class="spacer"></span>
+  <label class="toggle" title="Watch without sending clicks or keys to the browser">
+    <input type="checkbox" id="viewonly"> Watch only
+  </label>
+  <label class="toggle" title="Shrink the browser to fit this window">
+    <input type="checkbox" id="scale" checked> Fit to window
+  </label>
+  <button type="button" id="reconnect" hidden>Reconnect</button>
+</header>
+<details class="typebox">
+  <summary>Type or paste text into the browser</summary>
+  <p>Your password manager cannot fill the remote browser directly. Paste here, click the field in the
+  browser below, then press <b>Type it</b>. The text goes straight to the browser and is not saved by Wings.</p>
+  <div class="row">
+    <input type="password" id="typetext" autocomplete="off" spellcheck="false" aria-label="Text to type into the browser">
+    <label class="toggle"><input type="checkbox" id="showtext"> Show</label>
+    <button type="button" id="typeit">Type it</button>
+    <button type="button" id="cliptext" title="Put the text on the remote clipboard, then press Ctrl+V in the browser">Copy to remote clipboard</button>
+  </div>
+</details>
+<details class="typebox" id="downloads">
+  <summary>Downloads <span id="dlcount"></span></summary>
+  <ul id="dllist" class="dllist"><li class="muted">Nothing downloaded yet.</li></ul>
+</details>
+<main id="screen" tabindex="-1" aria-label="Remote browser screen"></main>
+<script type="module" src="live.js"></script>
+</body>
+</html>

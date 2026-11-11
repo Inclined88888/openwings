@@ -9,6 +9,9 @@ with_key().
 from __future__ import annotations
 
 APP_KEY: str | None = None
+# Shared secret the browser container's guard requires on every connection
+# (WINGS_BROWSER_TOKEN); held here for the same reason as APP_KEY.
+BROWSER_TOKEN: str | None = None
 
 
 def with_key(env: dict) -> dict:
