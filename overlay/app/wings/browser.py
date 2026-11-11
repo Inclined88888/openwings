@@ -42,6 +42,8 @@ LIVE_VIEW_PATH = "/wings/browser"
 # Leading // comment lines are dropped so Playwright sees a plain function.
 _DOM_JS = "\n".join(line for line in Path(__file__).with_name("browser_dom.js").read_text(encoding="utf-8").splitlines()
                     if not line.startswith("//")).strip()
+_TEXT_JS = "\n".join(line for line in Path(__file__).with_name("browser_text.js").read_text(encoding="utf-8").splitlines()
+                     if not line.startswith("//")).strip()
 _READ_CHUNK = 7000
 _ACTION_TIMEOUT_S = 75
 _OP_TIMEOUT_MS = 8000
@@ -312,7 +314,7 @@ def interactive_actions() -> frozenset:
     """Actions the request authority grants on top of upstream's read set
     when the Wings browser is on. Guardrails live in the backend itself."""
     actions = {"click", "fill", "type", "press", "select", "new_page", "select_page", "close_page",
-               "reload", "console", "network"}
+               "reload", "console", "network", "drag"}
     if policy.allow_eval():
         actions.add("evaluate")
     return frozenset(actions)
@@ -445,6 +447,9 @@ def format_item(item: dict) -> str:
         parts.append("→ " + item["href"])
     if item.get("newTab"):
         parts.append("(opens new tab)")
+    if item.get("box"):
+        x, y, w, h = item["box"]
+        parts.append(f"at x={x}..{x + w} y={y}..{y + h} (click or drag inside it with x,y)")
     if item.get("covered"):
         parts.append("(covered by another element)")
     if item.get("hiddenInput"):
@@ -1121,7 +1126,10 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
             text = await locator.inner_text(timeout=_OP_TIMEOUT_MS)
             source = label
         else:
-            text = await page.main_frame.evaluate("() => document.body ? document.body.innerText : ''")
+            try:
+                text = await asyncio.wait_for(page.main_frame.evaluate(_TEXT_JS), 20)
+            except Exception:
+                text = await page.main_frame.evaluate("() => document.body ? document.body.innerText : ''")
             source = page.url
         await driver.require_allowed_url(tab)  # the page may have redirected while it was read
         text = re.sub(r"[ \t]+\n", "\n", text or "")
@@ -1198,21 +1206,27 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
         await page.bring_to_front()
         if await driver.dialog_pending(tab):
             raise BrowserError("A browser dialog is waiting. Use press key=Enter to accept or key=Escape to dismiss it.")
-        locator, label = await driver.locate(tab, args)
-        info = await locator.evaluate(_INFO_JS)
-        if policy.confirm_risky():
-            risky = policy.risky_label(info.get("label"), info.get("text"), info.get("value"), info.get("title"),
-                                       info.get("actionLabel"))
-            if risky:
-                raise Handoff(f"clicking {_q(risky)} would commit something on your behalf (pay, order, send, "
-                              "publish, apply, delete or similar).")
+        point = _point(args, "x", "y")
+        if point is not None and not any(args.get(k) for k in ("ref", "selector", "target", "find")):
+            info = await _point_info(page, *point)
+            label = f"the point ({point[0]}, {point[1]})"
+
+            def perform():
+                return page.mouse.click(*point)
+        else:
+            locator, label = await driver.locate(tab, args)
+            info = await locator.evaluate(_INFO_JS)
+
+            def perform():
+                return locator.click(timeout=_OP_TIMEOUT_MS)
+        _check_risky_click(info)
         if info.get("href") and not info["href"].startswith(("javascript:", "#")):
             ok, reason, _ = policy.check_url(info["href"])
             if not ok and not info["href"].startswith(page.url.split("#", 1)[0] + "#"):
                 raise BrowserError(f"That link is blocked: {reason}")
         before = set(driver.context.pages)
         try:
-            if await _until_dialog(tab, locator.click(timeout=_OP_TIMEOUT_MS)):
+            if await _until_dialog(tab, perform()):
                 return await _state_result(driver, tab, key, "click", f"Clicked {label}; the page opened a dialog.")
         except Exception as exc:
             message = _short_error(exc)
@@ -1236,6 +1250,26 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
             note += f" It opened a new tab, t{new_tab.id}, which this chat now uses."
             tab = new_tab
         return await _state_result(driver, tab, key, "click", note)
+
+    if action == "drag":
+        await page.bring_to_front()
+        if await driver.dialog_pending(tab):
+            raise BrowserError("A browser dialog is waiting. Use press key=Enter or key=Escape first.")
+        start = await _drag_end(driver, tab, args.get("ref"), _point(args, "x", "y"), args.get("find"))
+        end = await _drag_end(driver, tab, args.get("to_ref"), _point(args, "to_x", "to_y"), args.get("text"))
+        for info in (start[2], end[2]):
+            _check_risky_click(info)
+        await page.mouse.move(start[0], start[1])
+        await page.mouse.down()
+        # A small first move starts an HTML5 drag (Playwright only picks the
+        # drag up between separate moves), then glide to the target so pages
+        # that track plain mouse events see the path too.
+        await page.mouse.move(start[0] + 6, start[1])
+        await page.mouse.move(end[0], end[1], steps=12)
+        await page.mouse.up()
+        await driver.settle(page)
+        return await _state_result(driver, tab, key, "drag",
+                                   f"Dragged from ({start[0]:.0f}, {start[1]:.0f}) to ({end[0]:.0f}, {end[1]:.0f}).")
 
     if action == "fill":
         await page.bring_to_front()
@@ -1373,6 +1407,64 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
         return "evaluate", {"output": text[:4000], "exit_code": 0}
 
     raise BrowserError(f"Unsupported action {action}.")
+
+
+_POINT_JS = "([x, y]) => {" + _LABEL_FN + """
+  if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return { outside: true };
+  const el = document.elementFromPoint(x, y);
+  if (!el) return { outside: true };
+  if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') return { frame: true };
+  return describe(el);
+}"""
+
+
+def _point(args: dict, kx: str, ky: str):
+    if args.get(kx) is None or args.get(ky) is None:
+        return None
+    try:
+        x, y = int(args[kx]), int(args[ky])
+    except (TypeError, ValueError):
+        raise BrowserError(f"{kx} and {ky} must be whole numbers (pixels in the latest screenshot).") from None
+    if x < 0 or y < 0 or x > 20000 or y > 20000:
+        raise BrowserError(f"{kx}, {ky} are outside the page.")
+    return x, y
+
+
+async def _point_info(page, x: int, y: int) -> dict:
+    """What is under a screen point, described like a ref'd element, so the
+    same guards apply to pointer clicks as to clicks by ref."""
+    info = await page.evaluate(_POINT_JS, [x, y])
+    if not info or info.get("outside"):
+        raise BrowserError(f"({x}, {y}) is outside the visible page. Take a screenshot to see the current layout.")
+    if info.get("frame"):
+        raise BrowserError("That point is inside an embedded frame; act on the refs inside it instead.")
+    return info
+
+
+async def _drag_end(driver: _Driver, tab: _Tab, ref, point, text=None):
+    """(x, y, info) for one end of a drag: a ref's centre, a screen point, or
+    the centre of the element showing some visible text (drop zones usually
+    have no ref)."""
+    if ref or text:
+        locator, _ = await driver.locate(tab, {"ref": ref} if ref else {"find": text})
+        await locator.scroll_into_view_if_needed(timeout=_OP_TIMEOUT_MS)
+        box = await locator.bounding_box()
+        if not box:
+            raise BrowserError(f"{ref} is not visible.")
+        info = await locator.evaluate(_INFO_JS)
+        return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, info
+    if point is not None:
+        return point[0], point[1], await _point_info(tab.page, *point)
+    raise BrowserError("drag needs ref, find or x,y for the start and to_ref, text or to_x,to_y for the end.")
+
+
+def _check_risky_click(info: dict):
+    if policy.confirm_risky():
+        risky = policy.risky_label(info.get("label"), info.get("text"), info.get("value"), info.get("title"),
+                                   info.get("actionLabel"))
+        if risky:
+            raise Handoff(f"clicking {_q(risky)} would commit something on your behalf (pay, order, send, "
+                          "publish, apply, delete or similar).")
 
 
 async def _navigate(driver: _Driver, tab: _Tab, key: str, args: dict) -> tuple[str, dict]:

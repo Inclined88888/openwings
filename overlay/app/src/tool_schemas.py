@@ -397,7 +397,7 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page."},
+                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page", "drag"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page. drag: drag from ref (or x,y, or the element showing find=text) to to_ref (or to_x,to_y, or the element showing text=, for drop zones without a ref)."},
                     "page": {"type": "string", "pattern": "^t[1-9][0-9]*$", "description": "Tab alias tN (from tabs or the outline) for select_page, close_page, or acting on another tab."},
                     "url": {"type": "string", "description": "open, navigate, new_page: the http(s) address."},
                     "ref": {"type": "string", "description": "Element ref from the newest outline, for example e12."},
@@ -411,6 +411,11 @@ FUNCTION_TOOL_SCHEMAS = [
                     "target": {"type": "string", "description": "Same as selector."},
                     "script": {"type": "string", "description": "evaluate: JavaScript to run in the page (refused unless the admin enabled it)."},
                     "path": {"type": "string", "description": "fill on a file upload field: the workspace file to attach (for example report.pdf or downloads/invoice.pdf); the person approves each upload. read: a downloaded file's name, to read its text."},
+                    "x": {"type": "integer", "minimum": 0, "description": "click or drag start: horizontal pixel in the latest screenshot, for canvas apps without refs."},
+                    "y": {"type": "integer", "minimum": 0, "description": "click or drag start: vertical pixel in the latest screenshot."},
+                    "to_ref": {"type": "string", "description": "drag: the ref to drop on."},
+                    "to_x": {"type": "integer", "minimum": 0, "description": "drag: horizontal pixel to drop at."},
+                    "to_y": {"type": "integer", "minimum": 0, "description": "drag: vertical pixel to drop at."},
                     "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 60000, "description": "wait: milliseconds (default 2000, max 30000). open: page load timeout."}
                 },
                 "required": ["action"],

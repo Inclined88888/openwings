@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Canvas and table</title>
+<style>body{margin:0;font:14px sans-serif} #c{display:block;border:1px solid #888} .box{width:120px;height:60px;border:2px dashed #555;display:inline-block;margin:8px}</style></head>
+<body>
+<h1>Quarterly figures</h1>
+<table><caption>Sales by region</caption>
+<tr><th>Region</th><th>Q1</th><th>Q2</th></tr>
+<tr><td>North</td><td>120</td><td>135</td></tr>
+<tr><td>South</td><td>95</td><td>101</td></tr></table>
+<ul><li>Figures in thousands</li><li>Unaudited</li></ul>
+<canvas id="c" width="400" height="150"></canvas>
+<p id="hit">No canvas click yet.</p>
+<div id="src" class="box" draggable="true">Drag me</div><div id="dst" class="box">Drop here</div>
+<p id="drop">Nothing dropped.</p>
+<button id="pay" style="position:absolute;left:600px;top:120px">Pay now</button>
+<script>
+const c = document.getElementById('c');
+c.addEventListener('click', (e) => { const r = c.getBoundingClientRect();
+  document.getElementById('hit').textContent = 'Canvas clicked at ' + Math.round(e.clientX - r.left) + ',' + Math.round(e.clientY - r.top); });
+let dragging = false;
+document.getElementById('src').addEventListener('mousedown', () => { dragging = true; });
+document.addEventListener('mouseup', (e) => { if (!dragging) return; dragging = false;
+  const d = document.getElementById('dst').getBoundingClientRect();
+  if (e.clientX >= d.left && e.clientX <= d.right && e.clientY >= d.top && e.clientY <= d.bottom)
+    document.getElementById('drop').textContent = 'Dropped on target'; });
+const dst = document.getElementById('dst');
+dst.addEventListener('dragover', (e) => e.preventDefault());
+dst.addEventListener('drop', (e) => { e.preventDefault(); dragging = false; document.getElementById('drop').textContent = 'Dropped on target'; });
+document.getElementById('pay').addEventListener('click', () => { document.title = 'PAID'; });
+</script></body></html>

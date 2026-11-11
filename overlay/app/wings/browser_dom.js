@@ -19,6 +19,7 @@
     "menuitemradio", "option", "switch", "combobox", "textbox", "searchbox", "slider", "spinbutton",
     "listbox", "treeitem", "gridcell"]);
   const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "HEAD", "META", "LINK", "IFRAME", "OBJECT"]);
+  // Canvas elements are listed (as interactive) but never descended into.
   const clean = (s, n) => {
     s = String(s || "").replace(/\s+/g, " ").trim();
     return n && s.length > n ? s.slice(0, n - 1) + "…" : s;
@@ -49,6 +50,8 @@
     if (role && ROLES.has(role)) return true;
     if (el.isContentEditable && el.getAttribute("contenteditable") !== null) return true;
     if (el.hasAttribute("onclick")) return true;
+    if (tag === "CANVAS") return true;
+    if (el.getAttribute("draggable") === "true") return true;
     const s = style(el);
     if (s.cursor === "pointer") {
       const p = el.parentElement;
@@ -112,6 +115,8 @@
       return "textbox";
     }
     if (el.isContentEditable) return "textbox";
+    if (tag === "CANVAS") return "canvas";
+    if (el.getAttribute("draggable") === "true") return "draggable";
     return "clickable";
   };
   const covered = (el, r) => {
@@ -163,6 +168,10 @@
       out.submits = true;
     }
     if (inView && covered(el, r)) out.covered = true;
+    if (tag === "CANVAS") {
+      // Pixel box, so a model without vision can still target points in it.
+      out.box = [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
+    }
     return out;
   };
   const isBlock = (el) => {

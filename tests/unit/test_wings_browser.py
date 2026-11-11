@@ -299,3 +299,47 @@ def test_html_download_stripping_is_linear(browser):
     start = time.monotonic()
     text = browser._download_text("page.html", html.encode())
     assert time.monotonic() - start < 5 and "Total 42" in text
+
+
+# ----------------------------------------------------- pointer, drag, read
+def test_screen_points_are_validated(browser):
+    assert browser._point({}, "x", "y") is None
+    assert browser._point({"x": 5}, "x", "y") is None
+    assert browser._point({"x": 10, "y": "20"}, "x", "y") == (10, 20)
+    with pytest.raises(browser.BrowserError):
+        browser._point({"x": -1, "y": 5}, "x", "y")
+    with pytest.raises(browser.BrowserError):
+        browser._point({"to_x": "left", "to_y": 5}, "to_x", "to_y")
+    with pytest.raises(browser.BrowserError):
+        browser._point({"x": 5, "y": 999999}, "x", "y")
+
+
+def test_canvas_outline_gives_its_area(browser):
+    line = browser.format_item({"kind": "el", "ref": "e1", "role": "canvas", "box": [10, 200, 400, 150]})
+    assert line.startswith("[e1] canvas")
+    assert "x=10..410 y=200..350" in line
+
+
+def test_pointer_clicks_get_the_same_commit_guard(browser):
+    with pytest.raises(browser.Handoff):
+        browser._check_risky_click({"text": "Pay now"})
+    with pytest.raises(browser.Handoff):
+        browser._check_risky_click({"label": "Place order"})
+    browser._check_risky_click({"text": "Drag me"})
+    browser._check_risky_click({})
+
+
+def test_structured_read_script_is_one_function(browser):
+    assert browser._TEXT_JS.startswith("() =>")
+    assert "//" not in browser._TEXT_JS.splitlines()[0]
+    assert browser._DOM_JS and browser._TEXT_JS != browser._DOM_JS
+
+
+def test_drag_and_points_are_allowed_browser_arguments():
+    from src import browser_identity as bi
+    assert "drag" in bi.PAGE_ACTIONS
+    import json
+    bi.parse_operation(json.dumps({"action": "drag", "ref": "e2", "to_x": 5, "to_y": 9}))
+    bi.parse_operation(json.dumps({"action": "click", "x": 25, "y": 40}))
+    with pytest.raises(bi.ResourceIdentityError):
+        bi.parse_operation(json.dumps({"action": "drag", "ref": "e2", "button": "right"}))

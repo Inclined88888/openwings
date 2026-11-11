@@ -1,0 +1,69 @@
+Wings patch 0011: pointer clicks and drag for canvas apps
+
+OpenManus's sandbox browser can click screen coordinates and drag and drop;
+canvas based apps (maps, whiteboards, some spreadsheet and design tools)
+and drag lists have no element refs to act on.
+
+  * src/browser_identity.py: private_browser accepts the drag action and
+    the x, y, to_ref, to_x, to_y arguments (still no raw flags or batches).
+  * src/tool_schemas.py: documents them (pixels in the latest screenshot).
+
+wings/browser.py describes whatever is under the pointer the same way it
+describes a ref'd element, so the pay/order/send guard applies to pointer
+clicks and to both ends of a drag; points inside embedded frames are
+refused.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/browser_identity.py b/src/browser_identity.py
+index 71131bf..a136935 100644
+--- a/src/browser_identity.py
++++ b/src/browser_identity.py
+@@ -45,7 +45,9 @@ CDP_METHODS = frozenset({"Target.getTargets", "Target.getTargetInfo", "Target.at
+                          "Page.getFrameTree", "Target.detachFromTarget"})
+ PAGE_ACTIONS = frozenset({"open", "read", "snapshot", "find", "evaluate", "click", "fill",
+     "press", "scroll", "wait", "screenshot", "navigate", "reload", "back", "forward",
+-    "select_page", "close_page", "network", "console", "new_page", "tabs"})
++    "select_page", "close_page", "network", "console", "new_page", "tabs",
++    # Wings: drag (mouse drag between refs or screen points), see wings/browser.py.
++    "drag"})
+ SESSION_ACTIONS = frozenset({"session_info"})
+ PAGE_FAILURE = "browser_page_authority_unavailable"
+ _ACTIVE = ContextVar("browser_resource_operation", default=None)
+@@ -93,7 +95,9 @@ def parse_operation(content):
+     if not isinstance(action, str) or action not in PAGE_ACTIONS | SESSION_ACTIONS | {"close"}:
+         raise ResourceIdentityError("Unsupported browser action; raw commands and batch are forbidden")
+     allowed = {"action", "page", "url", "selector", "target", "ref", "key", "direction", "amount",
+-               "timeout_ms", "timeout_s", "text", "value", "script", "path", "find"}
++               "timeout_ms", "timeout_s", "text", "value", "script", "path", "find",
++               # Wings: screen points for click/drag on canvas apps, and the drag target.
++               "x", "y", "to_ref", "to_x", "to_y"}
+     if set(args) - allowed:
+         raise ResourceIdentityError("Browser flags, labels, configuration and raw targetIds are forbidden")
+     if "page" in args and (not isinstance(args["page"], str) or not re.fullmatch(r"t[1-9][0-9]*", args["page"])):
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 15f3377..525198f 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -397,7 +397,7 @@ FUNCTION_TOOL_SCHEMAS = [
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+-                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page."},
++                    "action": {"type": "string", "enum": ["session_info", "tabs", "open", "read", "snapshot", "find", "evaluate", "click", "fill", "press", "scroll", "wait", "screenshot", "close", "navigate", "reload", "back", "forward", "select_page", "close_page", "network", "console", "new_page", "drag"], "description": "open/navigate: go to url. snapshot: current outline. read: full page text (amount=part). find: search the page for text. click/fill/press/scroll: act on ref. wait: pause or wait for text. tabs/new_page/select_page/close_page: tabs. back/forward/reload. screenshot: picture of the visible page. drag: drag from ref (or x,y, or the element showing find=text) to to_ref (or to_x,to_y, or the element showing text=, for drop zones without a ref)."},
+                     "page": {"type": "string", "pattern": "^t[1-9][0-9]*$", "description": "Tab alias tN (from tabs or the outline) for select_page, close_page, or acting on another tab."},
+                     "url": {"type": "string", "description": "open, navigate, new_page: the http(s) address."},
+                     "ref": {"type": "string", "description": "Element ref from the newest outline, for example e12."},
+@@ -411,6 +411,11 @@ FUNCTION_TOOL_SCHEMAS = [
+                     "target": {"type": "string", "description": "Same as selector."},
+                     "script": {"type": "string", "description": "evaluate: JavaScript to run in the page (refused unless the admin enabled it)."},
+                     "path": {"type": "string", "description": "fill on a file upload field: the workspace file to attach (for example report.pdf or downloads/invoice.pdf); the person approves each upload. read: a downloaded file's name, to read its text."},
++                    "x": {"type": "integer", "minimum": 0, "description": "click or drag start: horizontal pixel in the latest screenshot, for canvas apps without refs."},
++                    "y": {"type": "integer", "minimum": 0, "description": "click or drag start: vertical pixel in the latest screenshot."},
++                    "to_ref": {"type": "string", "description": "drag: the ref to drop on."},
++                    "to_x": {"type": "integer", "minimum": 0, "description": "drag: horizontal pixel to drop at."},
++                    "to_y": {"type": "integer", "minimum": 0, "description": "drag: vertical pixel to drop at."},
+                     "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 60000, "description": "wait: milliseconds (default 2000, max 30000). open: page load timeout."}
+                 },
+                 "required": ["action"],
