@@ -344,6 +344,50 @@ Checked after the fixes, on the rebuilt image:
   all, 2.9 s before the wait moved after the stream closed).
 * Code runner: `runner_checks` 14 of 14 pass, including approved runs.
 
+## Third review pass (patch 0018 and the reworked caps, 2026-11-11)
+
+Two reviewers read the batch and hover actions and the reworked spend caps;
+skeptics checked each serious finding (two checks did not run: the
+reviewing agents hit their usage limit; those two findings were assessed
+and fixed directly). Fixed:
+
+* **Pointer guard (high)**: looking inside shadow DOM had lost the label of
+  the button around an icon, so a click on the icon inside a labelled
+  "Delete" button, or a labelled icon component, passed the guard, and a
+  link's address was missed. The point check now walks the whole composed
+  path (nearest button or link across shadow boundaries, labels of the
+  shadow hosts) and also asks Chromium's own hit test, which sees inside
+  closed shadow roots. Checked in Chromium on all five cases: an icon in a
+  labelled Delete button, a labelled icon component and an icon in a link
+  to a private address are all recognised, a closed shadow root's "Place
+  order" button is read, and a canvas still has no label.
+* **Drag**: a drag starting at a ref inside an iframe was refused; the
+  start is now checked in its own frame. What is under the release point is
+  checked after the glide (boards that show a Delete zone only while
+  dragging); if it commits something the item is dropped back.
+* **Batch**: any browser error now stops the batch with its log of what was
+  done; a Next control that is covered, blocked or opens a dialog stops it
+  with an error instead of "no more pages"; page checks have time limits
+  and the outer limit leaves room for the step in flight; a batch whose
+  reply would be too long stops and says where; downloads made by a step
+  are listed, and each step waits only for its own downloads; upstream's
+  checks on the addresses a batch opens now see its steps.
+* **Spend caps**: a teacher run that takes over continues the request's
+  totals (it started from zero); the chat route charges calls without a
+  request authority (research mode, titles) to the caller; `/api/rewrite`
+  and `/api/v1/chat` check the day cap and charge the caller; the cached
+  owner of a chat expires after a minute.
+* **Plans**: an automatic continue yields to anything the person sends or
+  is typing, never continues a run the loop breaker stopped, ticks are kept
+  while the chat runs in the background, and Execute under a plan approves
+  that plan, not the last one stored for any chat.
+
+Not changed: a deep research job the agent starts counts toward the
+person's day but not toward the run (it is a separate request); the day cap
+bounds it.
+
+Unit tests: 181 pass.
+
 ## Operations
 
 * `setup.sh`: fresh `.env`, secrets generated, mode 600, CalDAV user bcrypt

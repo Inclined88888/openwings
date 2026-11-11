@@ -16,13 +16,16 @@ person per day, for every model call; see wings/budget.py.
     itself; its rounds and its scope classifier are counted the same way,
     and the caps are checked before each of its rounds.
   * src/agent_loop.py: a run starts its RunUsage before the compact branch;
-    all calls made under the run's request (child runs and tools included)
-    count toward it. A person whose daily cap is used up gets a message
+    all calls made under the run's request (child runs, tools and a teacher
+    run that takes over included) count toward it, and a run under a
+    request already over its cap does not start. A person whose daily cap is used up gets a message
     instead of a run. Before any tool of a round runs, a run or daily cap
     that is reached stops the run through upstream's budget_exceeded path.
   * routes/chat_helpers.py: _enforce_chat_privileges refuses a new chat
     or agent message with 429 when the daily cap is used up (admins
-    included).
+    included), and charges the request's model calls to that person.
+  * routes/chat_routes.py (/api/rewrite), routes/webhook/webhook_routes.py
+    (/api/v1/chat): the same day cap check and owner.
   * routes/research/research_routes.py, src/task_scheduler.py: a research
     job (panel, agent tool or schedule) does not start when the person's
     daily cap is used up, and its calls count toward that person.
@@ -35,10 +38,10 @@ Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
 diff --git a/routes/chat_helpers.py b/routes/chat_helpers.py
-index eb0bfc3..f9d4509 100644
+index eb0bfc3..aee4681 100644
 --- a/routes/chat_helpers.py
 +++ b/routes/chat_helpers.py
-@@ -485,6 +485,12 @@ def _enforce_chat_privileges(request, sess) -> None:
+@@ -485,6 +485,15 @@ def _enforce_chat_privileges(request, sess) -> None:
          user = effective_user(request)
      except Exception:
          user = None
@@ -48,9 +51,31 @@ index eb0bfc3..f9d4509 100644
 +    _wings_stop = _wings_budget.day_exhausted(user or None)
 +    if _wings_stop:
 +        raise HTTPException(429, _wings_stop)
++    # Model calls made for this request without a request authority (plain
++    # chat, research mode, titles) are charged to this person.
++    _wings_budget.set_owner(user or None)
      if not user:
          return
      auth_manager = getattr(getattr(request.app, "state", None), "auth_manager", None)
+diff --git a/routes/chat_routes.py b/routes/chat_routes.py
+index 16567a8..c46f4ba 100644
+--- a/routes/chat_routes.py
++++ b/routes/chat_routes.py
+@@ -5133,6 +5133,14 @@ def setup_chat_routes(
+             raise HTTPException(400, "session_id, original_text, and instruction are required")
+ 
+         _verify_session_owner(request, session_id)
++        # Wings: daily token and spend caps (wings/budget.py), as for chat.
++        from wings import budget as _wings_budget
++        from src.auth_helpers import effective_user as _wings_effective_user
++        _wings_who = _wings_effective_user(request)
++        _wings_stop = _wings_budget.day_exhausted(_wings_who)
++        if _wings_stop:
++            raise HTTPException(429, _wings_stop)
++        _wings_budget.set_owner(_wings_who)
+ 
+         try:
+             sess = session_manager.get_session(session_id)
 diff --git a/routes/research/research_routes.py b/routes/research/research_routes.py
 index 98897a8..5bfd644 100644
 --- a/routes/research/research_routes.py
@@ -69,11 +94,30 @@ index 98897a8..5bfd644 100644
          session_id = f"rp-{uuid.uuid4().hex[:12]}"
          delivery = getattr(request.app.state, 'background_tool_jobs', None)
          if body.origin_chat_id:
+diff --git a/routes/webhook/webhook_routes.py b/routes/webhook/webhook_routes.py
+index 8d3a704..2410976 100644
+--- a/routes/webhook/webhook_routes.py
++++ b/routes/webhook/webhook_routes.py
+@@ -242,6 +242,14 @@ def setup_webhook_routes(
+         if "chat" not in scopes:
+             raise HTTPException(403, "API token is not scoped for chat")
+         token_owner = getattr(request.state, "api_token_owner", None)
++        # Wings: daily token and spend caps (wings/budget.py); this call is
++        # charged to the token's person.
++        from wings import budget as _wings_budget
++        _wings_who = token_owner or getattr(request.state, "user", None)
++        _wings_stop = _wings_budget.day_exhausted(_wings_who)
++        if _wings_stop:
++            raise HTTPException(429, _wings_stop)
++        _wings_budget.set_owner(_wings_who)
+ 
+         from core.models import ChatMessage
+         from src.llm_core import llm_call_async
 diff --git a/src/agent_loop.py b/src/agent_loop.py
-index aaca7bd..d95417a 100644
+index aaca7bd..a618f28 100644
 --- a/src/agent_loop.py
 +++ b/src/agent_loop.py
-@@ -21121,6 +21121,18 @@ async def stream_agent_loop(
+@@ -21121,6 +21121,19 @@ async def stream_agent_loop(
          set(tool_policy.all_disabled_names()) if tool_policy else set()
      ))
  
@@ -82,7 +126,8 @@ index aaca7bd..d95417a 100644
 +    # below checks the caps itself before each round.
 +    from wings import budget as _wings_budget
 +    _wings_run = _wings_budget.RunUsage(owner)
-+    _wings_budget_stop = _wings_budget.day_exhausted(owner)
++    # Also stops a second run under an exhausted request (a teacher takeover).
++    _wings_budget_stop = _wings_run.exceeded()
 +    if _wings_budget_stop:
 +        yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
 +        yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
@@ -92,7 +137,7 @@ index aaca7bd..d95417a 100644
      if is_compact_preview_contract(turn_contract):
          from src.clean_agent_preview import stream_preview
          async for chunk in stream_preview(
-@@ -24739,7 +24751,9 @@ async def stream_agent_loop(
+@@ -24739,7 +24752,9 @@ async def stream_agent_loop(
      actual_endpoint_id = requested_endpoint_id
      actual_endpoint_label = requested_endpoint_label
      actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
@@ -103,7 +148,7 @@ index aaca7bd..d95417a 100644
      total_tool_calls = 0  # for budget enforcement
      _ody_notes_tool_completed = False
      _qwen_terminal_summary_completed = False
-@@ -32215,6 +32229,15 @@ async def stream_agent_loop(
+@@ -32215,6 +32230,15 @@ async def stream_agent_loop(
                  _workspace_mutation_epoch,
                  _browser_state_epoch,
              )
@@ -301,10 +346,10 @@ index 8f6af62..5f83e92 100644
          from src.deep_research import DeepResearcher
          from src.research_handler import RESEARCH_DATA_DIR, ResearchHandler
 diff --git a/static/js/chat.js b/static/js/chat.js
-index dcee932..029ccaa 100644
+index 1a718e9..ab7d8b2 100644
 --- a/static/js/chat.js
 +++ b/static/js/chat.js
-@@ -5317,7 +5317,9 @@ import { invalidateSettings } from './appConfig.js';
+@@ -5335,7 +5335,9 @@ import { invalidateSettings } from './appConfig.js';
                  _removeThinkingSpinner();
                  const budgetDiv = document.createElement('div');
                  budgetDiv.style.cssText = 'font-size:11px;opacity:0.6;font-style:italic;padding:4px 8px;margin:4px 0;';

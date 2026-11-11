@@ -411,7 +411,8 @@ class _FakeDriver:
         return None if self.page is None else type("T", (), {"page": self.page})()
 
 
-def _fake_act(browser, driver, calls, *, last_page=3, handoff_on=None, fail_on=None):
+def _fake_act(browser, driver, calls, *, last_page=3, handoff_on=None, fail_on=None, covered_on=None,
+              crash_on=None, text_size=0):
     async def act(drv, args, key):
         calls.append(dict(args))
         what = args["action"]
@@ -422,9 +423,13 @@ def _fake_act(browser, driver, calls, *, last_page=3, handoff_on=None, fail_on=N
             raise browser.BrowserError(f"nothing on the page matches {target!r}")
         if what == "click" and target == "Next":
             if driver.page.number >= last_page:
-                raise browser.BrowserError("nothing on the page matches 'Next'")
+                raise browser.BrowserError('No visible element matches "Next".')
+            if covered_on and driver.page.number == covered_on:
+                raise browser.BrowserError('Could not click "Next": another element is on top of it.')
+            if crash_on and driver.page.number == crash_on:
+                raise RuntimeError("Execution context was destroyed")
             driver.page.number += 1
-        text = f"text of {target or 'page ' + str(driver.page.number if driver.page else 0)}"
+        text = f"text of {target or 'page ' + str(driver.page.number if driver.page else 0)}" + "x" * text_size
         return what, {"output": f"{text}\n{browser.STATE_BEGIN}\nURL: x\n{browser.STATE_END}", "exit_code": 0}
     return act
 
@@ -457,7 +462,7 @@ def test_batch_follows_pages_until_there_is_no_next(browser, monkeypatch):
     reads = [line for line in result["output"].splitlines() if "step 1 read" in line]
     assert reads == ["[page 1, step 1 read] text of page 1", "[page 2, step 1 read] text of page 2",
                      "[page 3, step 1 read] text of page 3"]
-    assert '3 page(s); no "Next" control' in result["output"]
+    assert '3 page(s); there is no "Next" control' in result["output"]
 
 
 def test_batch_stops_for_the_person_and_on_errors(browser, monkeypatch):
@@ -485,3 +490,59 @@ def test_batch_is_granted_only_with_the_interactive_actions(browser):
     op, args = bi.parse_operation(json.dumps({"action": "batch", "steps": [{"action": "read"}],
                                               "pages": {"next": "Next"}}))
     assert args["action"] == "batch"
+
+
+def _no_state(browser, monkeypatch):
+    async def no_state(drv, tab, key, what, note):
+        return what, {"output": note, "exit_code": 0}
+
+    async def no_error_state(drv, key):
+        return ""
+
+    monkeypatch.setattr(browser, "_state_result", no_state)
+    monkeypatch.setattr(browser, "_error_state", no_error_state)
+
+
+def test_batch_pages_stop_with_an_error_when_next_cannot_be_clicked(browser, monkeypatch):
+    import asyncio
+    driver, calls = _FakeDriver(), []
+    _no_state(browser, monkeypatch)
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls, last_page=9, covered_on=2))
+    args = {"action": "batch", "pages": {"next": "Next", "max": 10}, "steps": [{"action": "read"}]}
+    _, result = asyncio.run(browser._batch(driver, args, "k"))
+    assert result["exit_code"] == 1 and "another element is on top" in result["output"]
+    assert "[page 2, step 1 read] text of page 2" in result["output"]   # the log is kept
+
+
+def test_batch_keeps_its_log_when_the_browser_throws(browser, monkeypatch):
+    import asyncio
+    driver, calls = _FakeDriver(), []
+    _no_state(browser, monkeypatch)
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls, last_page=9, crash_on=3))
+    args = {"action": "batch", "pages": {"next": "Next", "max": 10}, "steps": [{"action": "read"}]}
+    _, result = asyncio.run(browser._batch(driver, args, "k"))
+    assert result["exit_code"] == 1 and "Execution context was destroyed" in result["output"]
+    assert "[page 3, step 1 read] text of page 3" in result["output"]
+
+
+def test_batch_stops_when_its_reply_is_full(browser, monkeypatch):
+    import asyncio
+    driver, calls = _FakeDriver(), []
+    _no_state(browser, monkeypatch)
+    monkeypatch.setattr(browser, "_act", _fake_act(browser, driver, calls, last_page=25, text_size=7000))
+    args = {"action": "batch", "pages": {"next": "Next", "max": 25}, "steps": [{"action": "read"}]}
+    _, result = asyncio.run(browser._batch(driver, args, "k"))
+    out = result["output"]
+    assert result["exit_code"] == 0 and "too long" in out and "Run another batch" in out
+    assert driver.page.number < 25   # it stopped navigating instead of going on blind
+
+
+def test_point_lookup_walks_the_composed_path(browser):
+    for js in (browser._POINT_JS, browser._POINT_AT_JS, browser._DEEP_FN):
+        assert "getRootNode" in js and "hostLabel" in js
+    with pytest.raises(browser.Handoff):
+        browser._check_risky_click({"tag": "svg", "hostLabel": "Delete"})
+    with pytest.raises(browser.Handoff):
+        browser._check_risky_click({"tag": "div", "deep": {"tag": "button", "text": "Place order"}})
+    with pytest.raises(browser.Handoff):
+        browser._check_drop_target({"tag": "div", "deep": {"tag": "input", "autocomplete": "one-time-code"}})

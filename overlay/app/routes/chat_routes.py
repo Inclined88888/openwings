@@ -5133,6 +5133,14 @@ def setup_chat_routes(
             raise HTTPException(400, "session_id, original_text, and instruction are required")
 
         _verify_session_owner(request, session_id)
+        # Wings: daily token and spend caps (wings/budget.py), as for chat.
+        from wings import budget as _wings_budget
+        from src.auth_helpers import effective_user as _wings_effective_user
+        _wings_who = _wings_effective_user(request)
+        _wings_stop = _wings_budget.day_exhausted(_wings_who)
+        if _wings_stop:
+            raise HTTPException(429, _wings_stop)
+        _wings_budget.set_owner(_wings_who)
 
         try:
             sess = session_manager.get_session(session_id)

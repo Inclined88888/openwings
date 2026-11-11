@@ -17965,7 +17965,8 @@ def _private_browser_uses_unrequested_placeholder(
     if action in {"open", "read"}:
         urls.append(str(args.get("url") or ""))
     elif action == "batch":
-        for command in args.get("commands") or []:
+        # Wings: its batch carries "steps" (patch 0018); upstream's "commands".
+        for command in args.get("steps") or args.get("commands") or []:
             if isinstance(command, (list, tuple)) and len(command) >= 2 and str(command[0]).lower() in {"open", "read"}:
                 urls.append(str(command[1]))
             elif isinstance(command, dict) and str(command.get("action") or "").lower() in {"open", "read"}:
@@ -18572,7 +18573,8 @@ def _contextual_browser_opens_to_web_search(
     if not isinstance(args, dict):
         return block
     action = str(args.get("action") or "").strip().lower()
-    commands = args.get("commands") if action == "batch" else [args]
+    # Wings: its batch carries "steps" (patch 0018); upstream's "commands".
+    commands = (args.get("steps") or args.get("commands")) if action == "batch" else [args]
     if not isinstance(commands, list) or not commands:
         return block
     actions: list[str] = []
@@ -21126,7 +21128,8 @@ async def stream_agent_loop(
     # below checks the caps itself before each round.
     from wings import budget as _wings_budget
     _wings_run = _wings_budget.RunUsage(owner)
-    _wings_budget_stop = _wings_budget.day_exhausted(owner)
+    # Also stops a second run under an exhausted request (a teacher takeover).
+    _wings_budget_stop = _wings_run.exceeded()
     if _wings_budget_stop:
         yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
         yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'

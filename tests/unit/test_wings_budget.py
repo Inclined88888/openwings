@@ -182,11 +182,22 @@ def test_the_meter_counts_toward_the_run_it_was_started_in(budget, monkeypatch):
     assert budget.today("hal")["tokens"] == 60
 
 
-def test_runs_are_forgotten_when_they_end(budget, monkeypatch):
+def test_a_later_run_under_the_same_request_continues_its_totals(budget, monkeypatch):
+    # Upstream's teacher takeover starts a second run under the same request
+    # after the first one has ended; it must not get a fresh budget.
     import gc
-    _as(budget, monkeypatch, "ivy", "req-gone")
-    run = budget.RunUsage("ivy")
-    assert "req-gone" in budget._RUNS
-    del run
+    monkeypatch.setenv("WINGS_RUN_MAX_TOKENS", "100")
+    _as(budget, monkeypatch, "ivy", "req-teacher")
+    student = budget.RunUsage("ivy")
+    budget.count(model="m", url=LOCAL, input_tokens=150, output_tokens=0)
+    del student
     gc.collect()
-    assert "req-gone" not in budget._RUNS
+    teacher = budget.RunUsage("ivy")
+    assert "Run token limit" in (teacher.exceeded() or "")
+
+
+def test_recent_requests_are_bounded(budget, monkeypatch):
+    for i in range(budget._RECENT_MAX + 20):
+        _as(budget, monkeypatch, "x", f"r{i}")
+        budget.RunUsage("x")
+    assert len(budget._RECENT) == budget._RECENT_MAX

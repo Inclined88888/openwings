@@ -491,6 +491,9 @@ def _enforce_chat_privileges(request, sess) -> None:
     _wings_stop = _wings_budget.day_exhausted(user or None)
     if _wings_stop:
         raise HTTPException(429, _wings_stop)
+    # Model calls made for this request without a request authority (plain
+    # chat, research mode, titles) are charged to this person.
+    _wings_budget.set_owner(user or None)
     if not user:
         return
     auth_manager = getattr(getattr(request.app, "state", None), "auth_manager", None)

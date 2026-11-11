@@ -33,7 +33,9 @@ else the person a research job was started for, else the owner of the chat
 session the call names, else "default".
 
 Run: every call made under one request (an agent run, the child agents and
-tools it starts) counts toward that run. The run caps are checked before
+tools it starts, a teacher run that takes over) counts toward that run. A
+deep research job the agent starts runs as its own request: it counts
+toward the person's day, not the run. The run caps are checked before
 each round's tools run and before each compact round, so a run can go past
 a cap by the round in flight (and its closing summary). The day caps are
 also checked before every chat message, agent run and research start.
@@ -230,6 +232,19 @@ class _Totals:
 
 _RUNS: "weakref.WeakValueDictionary[str, _Totals]" = weakref.WeakValueDictionary()
 _RUNS_LOCK = threading.Lock()
+# Recent requests' totals stay alive after their run object is gone, so a
+# second run under the same request (upstream's teacher takeover runs after
+# the student run has ended) continues the same totals instead of starting
+# a fresh budget.
+_RECENT: "OrderedDict[str, _Totals]" = OrderedDict()
+_RECENT_MAX = 256
+
+
+def _keep(request_id: str, totals: "_Totals") -> None:
+    _RECENT[request_id] = totals
+    _RECENT.move_to_end(request_id)
+    while len(_RECENT) > _RECENT_MAX:
+        _RECENT.popitem(last=False)
 
 
 def _authority():
@@ -256,10 +271,11 @@ class RunUsage(list):
         totals = None
         if request_id:
             with _RUNS_LOCK:
-                totals = _RUNS.get(request_id)
+                totals = _RUNS.get(request_id) or _RECENT.get(request_id)
                 if totals is None:
                     totals = _Totals()
-                    _RUNS[request_id] = totals
+                _RUNS[request_id] = totals
+                _keep(request_id, totals)
         self._totals = totals or _Totals()
 
     @property
@@ -299,7 +315,8 @@ def current_stop() -> str | None:
     if authority is None:
         return None
     with _RUNS_LOCK:
-        totals = _RUNS.get(getattr(authority, "request_id", "") or "")
+        rid = getattr(authority, "request_id", "") or ""
+        totals = _RUNS.get(rid) or _RECENT.get(rid)
     return _run_message(totals) or day_exhausted(getattr(authority, "owner", None))
 
 
@@ -314,16 +331,18 @@ def set_owner(owner) -> None:
     _OWNER.set(str(owner or "") or None)
 
 
-_SESSION_OWNERS: "OrderedDict[str, str | None]" = OrderedDict()
+_SESSION_OWNERS: "OrderedDict[str, tuple[float, str | None]]" = OrderedDict()
+_SESSION_OWNER_TTL_S = 60.0
 
 
 def _session_owner(session_id) -> str | None:
     sid = str(session_id or "")
     if not sid:
         return None
-    if sid in _SESSION_OWNERS:
+    cached = _SESSION_OWNERS.get(sid)
+    if cached is not None and time.monotonic() - cached[0] < _SESSION_OWNER_TTL_S:
         _SESSION_OWNERS.move_to_end(sid)
-        return _SESSION_OWNERS[sid]
+        return cached[1]
     owner = None
     try:
         from core.database import SessionLocal, Session as DBSession
@@ -335,7 +354,8 @@ def _session_owner(session_id) -> str | None:
             db.close()
     except Exception:
         return None
-    _SESSION_OWNERS[sid] = owner
+    _SESSION_OWNERS[sid] = (time.monotonic(), owner)
+    _SESSION_OWNERS.move_to_end(sid)
     while len(_SESSION_OWNERS) > 512:
         _SESSION_OWNERS.popitem(last=False)
     return owner
@@ -355,7 +375,7 @@ def count(*, model: str, url: str, input_tokens: int, output_tokens: int, report
         request_id = getattr(authority, "request_id", None)
         if request_id:
             with _RUNS_LOCK:
-                totals = _RUNS.get(request_id)
+                totals = _RUNS.get(request_id) or _RECENT.get(request_id)
             if totals is not None:
                 totals.tokens += tokens
                 totals.usd += usd

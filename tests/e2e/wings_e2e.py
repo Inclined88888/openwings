@@ -313,10 +313,11 @@ def browser_checks(c: Client, ep_id: str) -> None:
     out = call({"action": "batch", "pages": {"next": "Next page", "max": 10}, "steps": [{"action": "read"}]})
     bcheck("batch reads every page of a paginated table in one call",
            all(f"Statement {n}-B" in out for n in (1, 2, 3)) and "3 page(s)" in out, out[-600:])
-    call({"action": "open", "url": f"{site}/statements1.html"})
-    out = call({"action": "batch", "each": ["Open details for page 1"],
-                "steps": [{"action": "click", "find": "{item}"}, {"action": "read"}, {"action": "back"}]})
-    bcheck("batch repeats steps per item and reads what each opens", "Details of statement page 1" in out, out[-600:])
+    out = call({"action": "batch", "each": ["1", "2"],
+                "steps": [{"action": "open", "url": f"{site}/statements{{item}}.html"},
+                          {"action": "click", "find": "Open details for page {item}"}, {"action": "read"}]})
+    bcheck("batch repeats steps per item and reads what each opens",
+           "Details of statement page 1" in out and "Details of statement page 2" in out, out[-600:])
     call({"action": "open", "url": f"{site}/checkout.html"})
     out = call({"action": "batch", "steps": [{"action": "read"}, {"action": "click", "find": "Place order"}, {"action": "read"}]})
     bcheck("a batch stops for the person at an order button", "PAUSED" in out and "Batch stopped here" in out and "ORDER PLACED" not in out, out[-600:])

@@ -1515,6 +1515,8 @@ import { invalidateSettings } from './appConfig.js';
   const WINGS_PLAN_TTL_MS = 12 * 3600 * 1000;
   const WINGS_STEP_RE = /^(\s*(?:[-*]|\d+\.)\s+\[)( |x|X)(\]\s+)(.*)$/;
   let _wingsStreamPlanSession = '';
+  let _wingsSendSeq = 0;            // every send; an automatic continue yields to the person's own message
+  let _wingsLoopBrokenSession = ''; // the loop breaker stopped this chat's run: never continue it automatically
   function _wingsSessionNow() {
     try {
       const sm = _liveSessionModule();
@@ -1681,7 +1683,9 @@ import { invalidateSettings } from './appConfig.js';
 	      </button>
 	      <button type="button" class="plan-inline-clear">Clear</button>`;
 	    actions.querySelector('.plan-inline-execute')?.addEventListener('click', () => {
-	      const approved = _getStoredPlan() || _extractPlanText(plan);
+	      // Wings: the plan shown in this message, not the last plan stored for
+	      // any chat (the agent may have rewritten that one since).
+	      const approved = _extractPlanText(plan) || _getStoredPlan();
 	      if (!approved.trim()) return;
 	      _pendingApprovedPlan = approved;
 	      _wingsRememberPlan(approved);
@@ -2742,6 +2746,8 @@ import { invalidateSettings } from './appConfig.js';
 	      // Wings: remember which chat's run carries the approved plan, so only
 	      // that run continues on its own at the step limit.
 	      _wingsStreamPlanSession = (!isPlanMode && _pendingApprovedPlan) ? _wingsSessionNow() : '';
+	      _wingsSendSeq += 1;
+	      if (_wingsLoopBrokenSession === _wingsSessionNow()) _wingsLoopBrokenSession = '';
 	      if (!isPlanMode && _pendingApprovedPlan) {
 	        fd.append('approved_plan', _pendingApprovedPlan.slice(0, 8192));
 	        _pendingApprovedPlan = '';
@@ -4656,7 +4662,9 @@ import { invalidateSettings } from './appConfig.js';
                   note.appendChild(contBtn);
                   const _planSid = streamSessionId;
                   const _done = _wingsAutoContinueCount(_planSid);
+                  const _seq0 = _wingsSendSeq;
                   if (_wingsStreamPlanSession && _wingsStreamPlanSession === _planSid
+                      && _wingsLoopBrokenSession !== _planSid
                       && _wingsActivePlan() && _done < WINGS_PLAN_AUTO_CONTINUE_MAX) {
                     _wingsSetAutoContinue(_planSid, _done + 1);
                     label.textContent = `Reached the ${json.rounds || ''} step limit with plan steps left. Continuing the approved plan (${_done + 1} of ${WINGS_PLAN_AUTO_CONTINUE_MAX})...`;
@@ -4669,9 +4677,16 @@ import { invalidateSettings } from './appConfig.js';
                     // Send only once this reply has fully finished and the
                     // person is still in the same chat (a click while the
                     // stream is open would queue it behind the reply).
+                    const _yield = () => {
+                      stopAuto.remove();
+                      label.textContent = `Reached the ${json.rounds || ''} step limit. Not finished; press Continue when ready.`;
+                    };
                     const _tryContinue = () => {
                       if (!note.isConnected) return;
                       if (_wingsSessionNow() !== _planSid) return;
+                      // The person sent something, or is typing: their words win.
+                      const _composer = uiModule.el('message');
+                      if (_wingsSendSeq !== _seq0 || (_composer && _composer.value.trim())) { _yield(); return; }
                       if (isStreaming || _sendInFlight) {
                         if (Date.now() - _started < 10 * 60 * 1000) _timer = setTimeout(_tryContinue, 500);
                         return;
@@ -5233,12 +5248,15 @@ import { invalidateSettings } from './appConfig.js';
                 chatRenderer.renderAskUserCard(json.data || {});
 
               } else if (json.type === 'plan_update') {
+                // Wings: keep the approved plan's ticks even while this chat
+                // runs in the background (storage only, no page changes).
+                const _wpu = (json.data && json.data.plan) ? json.data.plan : '';
+                if (_wpu && streamSessionId) _wingsTickPlan(_wpu, streamSessionId);
                 if (_isBg) continue;
                 // Agent wrote back to the plan (ticked a step / revised). Update
                 // the stored plan + live-refresh the docked plan window.
-                const _pu = (json.data && json.data.plan) ? json.data.plan : '';
+                const _pu = _wpu;
                 if (_pu) _setStoredPlan(_pu);
-                if (_pu && streamSessionId) _wingsTickPlan(_pu, streamSessionId);
 
               } else if (json.type === 'agent_step') {
                 if (!_turnRendering.accepts(json)) continue;
@@ -5324,6 +5342,7 @@ import { invalidateSettings } from './appConfig.js';
                 chatBox.appendChild(budgetDiv);
 
               } else if (json.type === 'loop_breaker_triggered' || json.type === 'intent_nudge_exhausted') {
+                if (json.type === 'loop_breaker_triggered' && streamSessionId) _wingsLoopBrokenSession = streamSessionId;
                 if (_isBg) continue;
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
