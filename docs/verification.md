@@ -559,6 +559,29 @@ silent exit on a Mac that had never run Colima (a failed read inside a pipe
 under strict mode); fixed, with every piped read in the installer guarded.
 Not run on a real Mac.
 
+## Colima that "started" but never answered (2026-11-11)
+
+On the first real Mac, after a Ctrl+C during a Colima restart, the installer
+waited forever. Colima's source shows why: `colima start` exits 0 with
+"already running, ignoring" whenever its machine is up, without restarting
+Docker, reconnecting the `colima` Docker context or applying new memory (it
+still saves the memory to colima.yaml); an interrupted `colima stop` can
+leave exactly that state (Docker stopped, context removed, machine up).
+The installer now reaches Docker through Colima's socket, judges Colima only
+by whether Docker answers, reads memory from Docker, puts a time limit on
+every colima command, and recovers in steps (stop, then stop --force, then
+start; one forced retry). It never runs `colima delete`.
+
+Checked against a simulated Colima built from that source behaviour, under
+bash 3.2: the user's state (machine up, Docker down, context gone, config
+saying 4 GB, machine at 2 GB) recovers in one restart to 4 GB with the
+context back; a hanging stop is cut off and forced; a broken machine is
+forced and started; a stopped one starts at 4 GB; a healthy 2 GB one is
+resized once; healthy 8 GB, a missing context, and a foreign DOCKER_HOST
+need no restart; Docker Desktop with an unused Colima is left alone; a
+Colima that never brings Docker up stops after two tries with Colima's own
+error and advice. A full Linux install still passes. Not run on a real Mac.
+
 ## Not verified: please check on your server
 
 1. Build on the real upstream image: `./scripts/setup.sh`, then

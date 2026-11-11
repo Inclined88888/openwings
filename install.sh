@@ -35,7 +35,7 @@ openwings_install() {
   local DIR="${OPENWINGS_DIR:-$HOME/openwings}"
   local REF="${OPENWINGS_REF:-}"
   local WAIT="${OPENWINGS_DOCKER_WAIT:-300}"
-  local OS USE_SG=0 SUDO="" arg no_start=0
+  local OS USE_SG=0 SUDO="" arg no_start=0 COLIMA_MODE=0 COLIMA_MARK=0
 
   local G="" Y="" R="" N=""
   if [ -t 1 ]; then G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'; fi
@@ -153,7 +153,31 @@ openwings_install() {
   ( umask 077; : >> "$LOGF" )
   printf '\n==== %s install\n' "$(date)" >> "$LOGF"
   min_gb="$( { sed -n 's/^WINGS_MIN_MEM_GB=//p' "$DIR/scripts/lib.sh" 2>/dev/null || true; } | head -n 1)"; min_gb="${min_gb:-4}"
-  docker_ok() { docker info >/dev/null 2>&1; }
+  # run_for SECS OUT CMD...: run CMD with its output appended to OUT and stop
+  # it after SECS (macOS has no timeout command). Slow steps logged to the
+  # install log print a dot every 5 seconds.
+  run_for() {
+    local secs="$1" out="$2" pid n=0 rc=0; shift 2
+    "$@" >> "$out" 2>&1 &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$n" -ge "$secs" ]; then
+        # Quiet the shell's own "Terminated" notice while the job is reaped.
+        exec 3>&2 2>/dev/null
+        kill "$pid" || true; sleep 1; kill -9 "$pid" || true
+        wait "$pid" || true
+        exec 2>&3 3>&-
+        if [ "$out" = "$LOGF" ] && [ "$n" -ge 5 ]; then printf '\n'; fi
+        return 124
+      fi
+      sleep 1; n=$((n + 1))
+      if [ "$out" = "$LOGF" ] && [ $((n % 5)) -eq 0 ]; then printf '.'; fi
+    done
+    wait "$pid" || rc=$?
+    if [ "$out" = "$LOGF" ] && [ "$n" -ge 5 ]; then printf '\n'; fi
+    return "$rc"
+  }
+  docker_ok() { run_for 20 /dev/null docker info; }
   # On Linux the daemon can be running while this user may not use it yet.
   # (The output is matched, not piped: under pipefail docker's own failure
   # would hide the match.)
@@ -207,17 +231,6 @@ openwings_install() {
           say "Starting Docker Desktop"; open -a Docker
         elif [ -d /Applications/OrbStack.app ] || [ -d "$HOME/Applications/OrbStack.app" ]; then
           say "Starting OrbStack"; open -a OrbStack
-        elif command -v colima >/dev/null 2>&1; then
-          # Start it with enough memory straight away (its default is 2 GB).
-          local conf cur
-          conf="${COLIMA_HOME:-$HOME/.colima}/default/colima.yaml"
-          cur="$( { sed -n 's/^memory: *\([0-9][0-9]*\).*/\1/p' "$conf" 2>/dev/null || true; } | head -n 1)"
-          say "Starting Docker (Colima)"
-          if [ -z "$cur" ] || [ "$cur" -lt "$min_gb" ]; then
-            colima start --memory "$min_gb" >> "$LOGF" 2>&1 || die "Colima did not start. Details: $LOGF"
-          else
-            colima start >> "$LOGF" 2>&1 || die "Colima did not start. Details: $LOGF"
-          fi
         else
           die "Docker is installed but no Docker app was found to start. Start your Docker engine, then run this again."
         fi ;;
@@ -245,17 +258,107 @@ openwings_install() {
   }
 
   wait_docker() {
-    local waited=0
+    local limit="${1:-$WAIT}" waited=0
     printf 'Waiting for Docker'
     while ! docker_ok && ! docker_needs_group; do
-      if [ "$waited" -ge "$WAIT" ]; then printf '\n'; return 1; fi
-      if [ "$waited" -eq 30 ]; then
+      if [ "$waited" -ge "$limit" ]; then printf '\n'; return 1; fi
+      if [ "$waited" -eq 30 ] && [ "${COLIMA_MODE:-0}" -eq 0 ]; then
         printf '\n'; warn "Docker is still starting. The first start can take a minute or two; if Docker shows a window, accept it."
         printf 'Waiting for Docker'
       fi
       printf '.'; sleep 2; waited=$((waited + 2))
     done
     printf ' ready\n'
+  }
+
+  # --- Colima (macOS) ---------------------------------------------------
+  # Colima answers "start" with success whenever its machine is up, even when
+  # Docker inside it is down (an interrupted stop leaves exactly that), and it
+  # saves new settings such as memory to colima.yaml without applying them.
+  # So Docker is reached through Colima's own socket and judged only by
+  # whether it answers, memory is read from Docker, and every colima command
+  # has a time limit (it can hang on a stuck machine). Nothing here deletes
+  # Colima's machine, images or volumes.
+  colima_base() {
+    if [ -n "${COLIMA_HOME:-}" ] && [ -d "$COLIMA_HOME" ]; then printf '%s' "$COLIMA_HOME"
+    elif [ -d "$HOME/.colima" ]; then printf '%s' "$HOME/.colima"
+    elif [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s' "$XDG_CONFIG_HOME/colima"
+    elif [ -d "$HOME/.config/colima" ]; then printf '%s' "$HOME/.config/colima"
+    else printf '%s' "$HOME/.colima"; fi
+  }
+  colima_use_socket() { DOCKER_HOST="unix://$(colima_base)/default/docker.sock"; export DOCKER_HOST; }
+  colima_state() {
+    local line
+    line="$( { colima list --json 2>/dev/null | grep -E '"name": ?"default"' || true; } | head -n 1)"
+    case "$line" in
+      '') echo Missing ;;
+      *'"Running"'*) echo Running ;;
+      *'"Stopped"'*) echo Stopped ;;
+      *) echo Other ;;
+    esac
+  }
+  docker_mem_gb() {
+    local bytes
+    bytes="$(run_for 20 /dev/stdout docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
+    case "$bytes" in ''|*[!0-9]*) echo 0 ;; *) echo $(( (bytes + 536870912) / 1073741824 )) ;; esac
+  }
+  # Stop whatever state Colima is in (gently, then by force), then start it.
+  colima_fresh_start() {
+    case "$(colima_state)" in
+      Missing|Stopped) ;;
+      Running) run_for "${OPENWINGS_COLIMA_STOP_LIMIT:-120}" "$LOGF" colima stop || run_for 60 "$LOGF" colima stop --force || true ;;
+      *) run_for 60 "$LOGF" colima stop --force || true ;;
+    esac
+    run_for 300 "$LOGF" colima start --memory "$1" || true
+    colima_use_socket
+  }
+  colima_give_up() {
+    warn "Docker (Colima) did not come up. What Colima said:"
+    { tail -n +"$((COLIMA_MARK + 1))" "$LOGF" | grep -iE 'error|fatal|warn' || true; } | tail -n 8 >&2
+    die "Restart your Mac, then run this command again. If it still fails, run: colima delete   then this command again (that erases Colima's virtual machine and may remove downloaded Docker images; OpenWings downloads them again)."
+  }
+  colima_ensure() {
+    local cfg start_mem have
+    COLIMA_MODE=1
+    COLIMA_MARK=$(wc -l < "$LOGF")
+    cfg="$( { sed -n 's/^memory: *\([0-9][0-9]*\).*/\1/p' "$(colima_base)/default/colima.yaml" 2>/dev/null || true; } | head -n 1)"
+    start_mem="$min_gb"
+    if [ -n "$cfg" ] && [ "$cfg" -gt "$min_gb" ]; then start_mem="$cfg"; fi
+    colima_use_socket
+    if ! docker_ok; then
+      case "$(colima_state)" in
+        Missing|Stopped)
+          say "Starting Docker (Colima) with ${start_mem} GB of memory"
+          run_for 300 "$LOGF" colima start --memory "$start_mem" || true
+          colima_use_socket ;;
+        *)
+          say "Docker (Colima) is not answering; restarting Colima (your images and data are kept)"
+          colima_fresh_start "$start_mem" ;;
+      esac
+      if ! wait_docker "${OPENWINGS_COLIMA_WAIT:-120}"; then
+        say "Still not answering; restarting Colima by force once"
+        run_for 60 "$LOGF" colima stop --force || true
+        run_for 300 "$LOGF" colima start --memory "$start_mem" || true
+        colima_use_socket
+        wait_docker "${OPENWINGS_COLIMA_WAIT:-120}" || colima_give_up
+      fi
+    fi
+    have="$(docker_mem_gb)"
+    if [ "$have" -gt 0 ] && [ "$have" -lt "$min_gb" ]; then
+      say "Giving Docker (Colima) ${min_gb} GB of memory instead of ${have} GB; Colima restarts once"
+      colima_fresh_start "$min_gb"
+      wait_docker 180 || colima_give_up
+    fi
+    # Point the docker command at Colima for later use too, as a normal
+    # Colima start does (an interrupted stop removes this).
+    if ! docker context inspect colima >/dev/null 2>&1; then
+      docker context create colima --description colima --docker "host=$DOCKER_HOST" >> "$LOGF" 2>&1 || true
+    fi
+    docker context use colima >> "$LOGF" 2>&1 || true
+  }
+  other_mac_engine() {
+    [ -d /Applications/Docker.app ] || [ -d "$HOME/Applications/Docker.app" ] \
+      || [ -d /Applications/OrbStack.app ] || [ -d "$HOME/Applications/OrbStack.app" ]
   }
 
   if [ "$no_start" -eq 0 ]; then
@@ -269,7 +372,11 @@ openwings_install() {
       fi
     fi
     command -v docker >/dev/null 2>&1 || die "Docker was not found after installing. Open a new terminal and run this again."
-    if ! docker_ok && ! docker_needs_group; then
+    if [ "$OS" = "mac" ] && command -v colima >/dev/null 2>&1 \
+       && ! { docker_ok && [ "$(docker context show 2>/dev/null)" != "colima" ]; } \
+       && { [ -d "$(colima_base)/default" ] || ! other_mac_engine; }; then
+      colima_ensure
+    elif ! docker_ok && ! docker_needs_group; then
       start_docker
       wait_docker || die "Docker did not start within ${WAIT} seconds. Start it yourself, then run this command again."
     fi
@@ -279,21 +386,6 @@ openwings_install() {
       $SUDO usermod -aG docker "$me" || die "Could not add $me to the docker group."
       command -v sg >/dev/null 2>&1 || die "Added $me to the docker group. Log out and back in, then run this again."
       USE_SG=1
-    fi
-    # Colima's default machine has 2 GB, too little for OpenWings to start.
-    if [ "$OS" = "mac" ] && command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1 \
-       && [ "$(docker context show 2>/dev/null)" = "colima" ]; then
-      local mem_bytes mem_gb
-      mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
-      case "$mem_bytes" in ''|*[!0-9]*) mem_bytes=0 ;; esac
-      mem_gb=$(( (mem_bytes + 536870912) / 1073741824 ))
-      if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$min_gb" ]; then
-        say "Giving Docker (Colima) ${min_gb} GB of memory instead of ${mem_gb} GB; Colima restarts once"
-        if ! { colima stop >> "$LOGF" 2>&1 && colima start --memory "$min_gb" >> "$LOGF" 2>&1; }; then
-          die "Colima did not restart. Run: colima stop && colima start --memory ${min_gb}"
-        fi
-        wait_docker || die "Docker did not come back within ${WAIT} seconds after restarting Colima."
-      fi
     fi
     if [ "$USE_SG" -eq 1 ]; then
       sg docker -c "docker compose version" >/dev/null 2>&1 || die "Docker Compose v2 is missing. Install Docker's Compose plugin (https://docs.docker.com/compose/install/linux/), then run this again."
