@@ -1,1 +1,1981 @@
-/* OpenWings look: fieldbook (being built). */
+/* =====================================================================
+   OpenWings look: FIELDBOOK (ow-fieldbook, ow-fieldbook-night)
+
+   The workspace as a well made field guide: a flat sage field for finding
+   your way, a warm paper page for reading, a small clay patch for what you
+   said, and one deep spruce ink for everything you can act on (send, links,
+   focus). Colour separates the areas, so there are almost no lines or
+   boxes. Answers are set like a book page in Literata; every control is in
+   Figtree; headings and the name are in Fraunces (SOFT, never WONK); code
+   is in Spline Sans Mono.
+
+   Every rule is scoped to html[data-ow-skin="ow-fieldbook"] or
+   html[data-ow-skin="ow-fieldbook-night"]. Fonts are self hosted, open
+   licence (OFL 1.1) files in ../fonts with their licences beside them.
+   ===================================================================== */
+
+/* ---------- fonts (family names prefixed so no other look clashes) ---------- */
+@font-face {
+  font-family: 'OW fieldbook Fraunces';
+  src: url('../fonts/fraunces-latin-full-normal.woff2') format('woff2-variations'),
+       url('../fonts/fraunces-latin-full-normal.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW fieldbook Figtree';
+  src: url('../fonts/figtree-latin-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/figtree-latin-wght-normal.woff2') format('woff2');
+  font-weight: 300 900; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW fieldbook Literata';
+  src: url('../fonts/literata-latin-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/literata-latin-wght-normal.woff2') format('woff2');
+  font-weight: 200 900; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW fieldbook Literata';
+  src: url('../fonts/literata-latin-wght-italic.woff2') format('woff2-variations'),
+       url('../fonts/literata-latin-wght-italic.woff2') format('woff2');
+  font-weight: 200 900; font-style: italic; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW fieldbook Spline Sans Mono';
+  src: url('../fonts/spline-sans-mono-latin-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/spline-sans-mono-latin-wght-normal.woff2') format('woff2');
+  font-weight: 300 700; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---------- tokens: light (paper, sage, clay, spruce ink) ---------- */
+:root[data-ow-skin="ow-fieldbook"] {
+  --fb-paper: #F6F1E7;        /* the reading page */
+  --fb-paper-deep: #EFE8DA;   /* hover on paper */
+  --fb-card: #FFFDF8;         /* writing card, login card, menus */
+  --fb-ink: #2B2A26;          /* text 12.8:1 on paper */
+  --fb-ink-soft: #46433C;     /* strong secondary text */
+  --fb-muted: #69645A;        /* secondary text 5.2:1 on paper */
+  --fb-rule: #E2D9C8;         /* row rules, hairlines */
+  --fb-edge: #8E8472;         /* field edges, 3.3:1 on paper */
+  --fb-sage: #DDE5D4;         /* navigation field */
+  --fb-sage-hover: #D0DAC5;
+  --fb-sage-soft: #E6ECDF;    /* table heads, inline code, chips */
+  --fb-track: #DDE5D4;        /* toggle track, idle send */
+  --fb-thumb: #FFFDF8;
+  --fb-seal: #DDE5D4;         /* the disc behind the wings */
+  --fb-sage-ink: #263223;     /* text on sage 10.4:1 */
+  --fb-moss: #4C6046;         /* icons on sage 5.3:1 */
+  --fb-sage-label: #4F5E4A;   /* section labels 5.4:1 */
+  --fb-accent: #33604A;       /* spruce ink: send, links, focus. 6.4:1 on paper */
+  --fb-accent-hover: #284D3B;
+  --fb-on-accent: #FFFDF8;    /* 7.1:1 on spruce */
+  --fb-link-line: #A7BFA9;
+  --fb-clay: #F1DCC8;         /* what you said */
+  --fb-clay-ink: #3B2A1E;     /* 10.3:1 on clay */
+  --fb-clay-muted: #6B5646;   /* 5.2:1 on clay */
+  --fb-clay-hover: #E8CDB4;
+  --fb-seed-ai: #6E8B63;
+  --fb-seed-user: #C98A6C;
+  --fb-code-bg: #ECEAE2;
+  --fb-code-ink: #24313A;
+  --fb-zebra: #F8F4EC;
+  --fb-table-bg: #FFFDF8;
+  --fb-error: #9B2C2C;
+  --fb-error-bg: #F6DEDA;
+  --fb-ground: #F1E6D6;
+  --fb-sun: rgba(241, 220, 200, 0.85);
+  --fb-sun-0: rgba(241, 220, 200, 0);
+  --fb-shadow-card: 0 1px 2px rgba(74, 58, 40, 0.06), 0 10px 28px rgba(74, 58, 40, 0.08);
+  --fb-shadow-menu: 0 2px 6px rgba(43, 42, 38, 0.06), 0 14px 34px rgba(43, 42, 38, 0.13);
+  --fb-halo: #DDE5D4;
+  --fb-focus: #33604A;
+  --fb-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .33 0 0 0 0 .27 0 0 0 0 .2 0 0 0 .11 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  --fb-logo-blend: multiply;
+  --fb-logo-filter: none;
+}
+
+/* ---------- tokens: night (a moonlit field, same roles) ---------- */
+:root[data-ow-skin="ow-fieldbook-night"] {
+  --fb-paper: #1C1E1A;
+  --fb-paper-deep: #24271F;
+  --fb-card: #262A23;
+  --fb-ink: #E8E3D7;
+  --fb-ink-soft: #D3CEC1;
+  --fb-muted: #A8A293;
+  --fb-rule: #343A30;
+  --fb-edge: #6E7565;
+  --fb-sage: #262E24;
+  --fb-sage-hover: #313A2D;
+  --fb-sage-soft: #2C3428;
+  --fb-track: #343E30;
+  --fb-thumb: #4C5944;
+  --fb-seal: #34412F;
+  --fb-sage-ink: #DCE5D2;
+  --fb-moss: #A6B99A;
+  --fb-sage-label: #A3B297;
+  --fb-accent: #9CCBA9;
+  --fb-accent-hover: #B5DBBF;
+  --fb-on-accent: #14211A;
+  --fb-link-line: #4F6D58;
+  --fb-clay: #3A2E25;
+  --fb-clay-ink: #F1E2D4;
+  --fb-clay-muted: #CDB8A5;
+  --fb-clay-hover: #46372C;
+  --fb-seed-ai: #8FAE83;
+  --fb-seed-user: #D49A7D;
+  --fb-code-bg: #22272A;
+  --fb-code-ink: #DCE3E6;
+  --fb-zebra: #22251F;
+  --fb-table-bg: #1F221D;
+  --fb-error: #F2A7A0;
+  --fb-error-bg: #3A2221;
+  --fb-ground: #191B17;
+  --fb-sun: rgba(58, 46, 37, 0.55);
+  --fb-sun-0: rgba(58, 46, 37, 0);
+  --fb-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 30px rgba(0, 0, 0, 0.28);
+  --fb-shadow-menu: 0 2px 6px rgba(0, 0, 0, 0.3), 0 16px 36px rgba(0, 0, 0, 0.4);
+  --fb-halo: #263024;
+  --fb-focus: #7DA486;
+  --fb-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .9 0 0 0 0 .88 0 0 0 0 .8 0 0 0 .03 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  --fb-logo-blend: screen;
+  --fb-logo-filter: invert(1);
+}
+
+/* ---------- shared tokens and upstream variables ---------- */
+:root[data-ow-skin="ow-fieldbook"],
+
+:root[data-ow-skin="ow-fieldbook-night"] {
+  --fb-display: 'OW fieldbook Fraunces', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --fb-ui: 'OW fieldbook Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --fb-read: 'OW fieldbook Literata', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --fb-mono: 'OW fieldbook Spline Sans Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --fb-ease: cubic-bezier(.2, .7, .2, 1);
+
+  --font-family: var(--fb-ui) !important;
+  --mono: var(--fb-mono) !important;
+  --accent: var(--fb-accent) !important;
+  --accent-primary: var(--fb-accent) !important;
+  --brand-color: var(--fb-sage-ink) !important;
+  --brand-mix-to: var(--fb-sage-ink) !important;
+  --hamburger-color: var(--fb-moss) !important;
+  --sidebar-bg: var(--fb-sage) !important;
+  --user-bubble-bg: var(--fb-clay) !important;
+  --ai-bubble-bg: transparent !important;
+  --bubble-border: transparent !important;
+  --input-bg: var(--fb-card) !important;
+  --input-border: var(--fb-edge) !important;
+  --send-btn-bg: var(--fb-accent) !important;
+  --send-btn-hover: var(--fb-accent-hover) !important;
+  --code-bg: var(--fb-code-bg) !important;
+  --code-fg: var(--fb-code-ink) !important;
+  --toggle-active: var(--fb-accent) !important;
+  --color-muted-alt: var(--fb-muted) !important;
+  --muted: var(--fb-muted) !important;
+  --fg-muted: var(--fb-muted) !important;
+  --color-error: var(--fb-error) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] {
+  --hl-bg: #ECEAE2 !important; --hl-fg: #24313A !important;
+  --hl-keyword: #2F5E52 !important; --hl-string: #7A4E12 !important;
+  --hl-comment: #6A675E !important; --hl-function: #2E4F79 !important;
+  --hl-number: #9A3B26 !important; --hl-builtin: #6A4A80 !important;
+  --hl-variable: #24313A !important; --hl-params: #4A4238 !important;
+}
+:root[data-ow-skin="ow-fieldbook-night"] {
+  --hl-bg: #22272A !important; --hl-fg: #DCE3E6 !important;
+  --hl-keyword: #9CCBA9 !important; --hl-string: #E2C08D !important;
+  --hl-comment: #9A9C93 !important; --hl-function: #9EC1E8 !important;
+  --hl-number: #EBA48C !important; --hl-builtin: #C9A9DD !important;
+  --hl-variable: #DCE3E6 !important; --hl-params: #D8CFC2 !important;
+}
+
+/* ---------- page ---------- */
+:root[data-ow-skin="ow-fieldbook"] body,
+
+:root[data-ow-skin="ow-fieldbook-night"] body {
+  font-family: var(--fb-ui) !important;
+  color: var(--fb-ink) !important;
+  background-color: var(--fb-paper) !important;
+  background-image: var(--fb-grain) !important;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+:root[data-ow-skin="ow-fieldbook"] body,
+
+:root[data-ow-skin="ow-fieldbook-night"] body,
+
+:root[data-ow-skin="ow-fieldbook"] button,
+
+:root[data-ow-skin="ow-fieldbook-night"] button,
+
+:root[data-ow-skin="ow-fieldbook"] input,
+
+:root[data-ow-skin="ow-fieldbook-night"] input,
+
+:root[data-ow-skin="ow-fieldbook"] select,
+
+:root[data-ow-skin="ow-fieldbook-night"] select,
+
+:root[data-ow-skin="ow-fieldbook"] textarea,
+
+:root[data-ow-skin="ow-fieldbook-night"] textarea,
+
+:root[data-ow-skin="ow-fieldbook"] #message,
+
+:root[data-ow-skin="ow-fieldbook-night"] #message { font-family: var(--fb-ui) !important; }
+:root[data-ow-skin="ow-fieldbook"] body::after,
+
+:root[data-ow-skin="ow-fieldbook-night"] body::after {
+  content: 'Aa';
+  position: fixed;
+  left: -999px; top: 0;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  font-family: var(--fb-read);
+  font-weight: 650;
+}
+:root[data-ow-skin="ow-fieldbook"] body::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] body::before {
+  content: 'Aa';
+  position: fixed;
+  left: -999px; top: 0;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  font-family: var(--fb-mono);
+}
+:root[data-ow-skin="ow-fieldbook"] ::selection,
+
+:root[data-ow-skin="ow-fieldbook-night"] ::selection { background: #CFDFC6; color: #1F2A1C; }
+:root[data-ow-skin="ow-fieldbook-night"] ::selection { background: #3F5640; color: #F1EEE6; }
+
+/* keyboard focus: a spruce ring with a soft sage halo */
+:root[data-ow-skin="ow-fieldbook"] :focus-visible,
+
+:root[data-ow-skin="ow-fieldbook-night"] :focus-visible {
+  outline: 2px solid var(--fb-accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* scrollbars: a quiet pencil line */
+:root[data-ow-skin="ow-fieldbook"] *,
+
+:root[data-ow-skin="ow-fieldbook-night"] * { scrollbar-color: color-mix(in srgb, var(--fb-edge) 55%, transparent) transparent; }
+:root[data-ow-skin="ow-fieldbook"] *::-webkit-scrollbar,
+
+:root[data-ow-skin="ow-fieldbook-night"] *::-webkit-scrollbar { width: 10px; height: 10px; }
+:root[data-ow-skin="ow-fieldbook"] *::-webkit-scrollbar-thumb,
+
+:root[data-ow-skin="ow-fieldbook-night"] *::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fb-edge) 45%, transparent) !important;
+  border-radius: 999px !important;
+  border: 3px solid transparent !important;
+  background-clip: padding-box !important;
+}
+:root[data-ow-skin="ow-fieldbook"] *::-webkit-scrollbar-track,
+
+:root[data-ow-skin="ow-fieldbook-night"] *::-webkit-scrollbar-track { background: transparent !important; }
+
+/* =====================================================================
+   SIDEBAR: one flat sage field, meeting the page edge to edge
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] .sidebar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar {
+  background-color: var(--fb-sage) !important;
+  background-image: var(--fb-grain) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--fb-sage-ink) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar-inner,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-inner,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar-user-bar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-user-bar { background: transparent !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar-header,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-header {
+  background-color: var(--fb-sage) !important;
+  background-image: var(--fb-grain) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar-header,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-header {
+  justify-content: flex-start !important;
+  padding: 14px 14px 6px 48px !important;
+  min-height: 56px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar.right-side .sidebar-header,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar.right-side .sidebar-header { padding: 14px 48px 6px 14px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar-hamburger,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-hamburger,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar-hamburger *,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-hamburger * {
+  color: var(--fb-moss) !important;
+  stroke: var(--fb-moss) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .hamburger-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .hamburger-btn {
+  color: var(--fb-moss) !important;
+  opacity: 1 !important;
+  border-radius: 999px !important;
+  transition: background-color .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .hamburger-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .hamburger-btn:hover { background: var(--fb-sage-hover) !important; }
+:root[data-ow-skin="ow-fieldbook"] .icon-rail,
+
+:root[data-ow-skin="ow-fieldbook-night"] .icon-rail {
+  background-color: var(--fb-sage) !important;
+  background-image: var(--fb-grain) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .icon-rail-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .icon-rail-btn { color: var(--fb-moss) !important; opacity: 1 !important; border-radius: 12px !important; }
+:root[data-ow-skin="ow-fieldbook"] .icon-rail-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .icon-rail-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .icon-rail-btn.active-section,
+
+:root[data-ow-skin="ow-fieldbook-night"] .icon-rail-btn.active-section { background: var(--fb-sage-hover) !important; color: var(--fb-sage-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar-hamburger,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-hamburger { border-radius: 999px !important; transition: background-color .16s ease-out !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar-hamburger:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-hamburger:hover { background: var(--fb-sage-hover) !important; }
+
+/* brand: the wings printed on the field, then the name */
+:root[data-ow-skin="ow-fieldbook"] .sidebar-brand,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-brand { gap: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar-brand-title,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-brand-title {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  left: 0 !important;
+  font-family: var(--fb-display) !important;
+  font-variation-settings: 'SOFT' 100, 'WONK' 0, 'opsz' 36 !important;
+  font-weight: 600 !important;
+  font-size: 21px !important;
+  letter-spacing: -0.005em !important;
+  color: var(--fb-sage-ink) !important;
+  -webkit-text-fill-color: var(--fb-sage-ink) !important;
+  background: none !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar-brand-title::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-brand-title::before {
+  content: '' !important;
+  width: 28px; height: 28px;
+  flex: 0 0 28px;
+  background: url('../openwings-tile.svg') center / 100% 100% no-repeat;
+  mix-blend-mode: var(--fb-logo-blend);
+  filter: var(--fb-logo-filter);
+}
+
+/* nav rows */
+:root[data-ow-skin="ow-fieldbook"] .sidebar-inner,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-inner { padding: 6px 10px 10px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-flex,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-flex {
+  min-height: 38px !important;
+  border-radius: 12px !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--fb-sage-ink) !important;
+  transition: background-color .16s ease-out, color .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #sidebar-new-chat-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] #sidebar-new-chat-btn,
+
+:root[data-ow-skin="ow-fieldbook"] #sidebar-search-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] #sidebar-search-btn,
+
+:root[data-ow-skin="ow-fieldbook"] #tools-section .list-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] #tools-section .list-item,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item { padding: 8px 10px !important; gap: 10px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section { margin: 0 !important; padding: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-flex,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-flex { height: 38px !important; padding: 0 4px 0 10px !important; margin: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item-plus-label,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item-plus-label {
+  font-family: var(--fb-ui) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--fb-moss) !important;
+  letter-spacing: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-flex:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-flex:hover { background: var(--fb-sage-hover) !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item span:not(.list-item-plus-label),
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item span:not(.list-item-plus-label),
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item .grow,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item .grow,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-title,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-title,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-title-label,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-title-label {
+  font-family: var(--fb-ui) !important;
+  font-size: 14.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--fb-sage-ink) !important;
+  opacity: 1 !important;
+  left: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item svg,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-title svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-title svg,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-flex svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-flex svg,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .session-icon,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .session-icon,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .session-icon svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .session-icon svg {
+  color: var(--fb-moss) !important;
+  stroke: var(--fb-moss) !important;
+  opacity: 1 !important;
+  left: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item > svg:first-child,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item > svg:first-child,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-title > svg:first-child,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-title > svg:first-child { width: 17px !important; height: 17px !important; flex: 0 0 17px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-title,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-title { gap: 10px !important; display: inline-flex !important; align-items: center !important; }
+
+/* the "+", chevron and sort controls stay visible: easier for touch and new users */
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-btn,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item-plus-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item-plus-btn,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .session-menu-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .session-menu-btn {
+  color: var(--fb-moss) !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item-plus-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item-plus-btn { opacity: .9 !important; width: 28px !important; height: 28px !important; min-width: 28px !important; padding: 0 !important; left: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item-plus-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item-plus-btn svg { width: 14px !important; height: 14px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-collapse-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-collapse-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item-plus-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item-plus-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .session-menu-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .session-menu-btn:hover { background: var(--fb-sage-soft) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-btn svg,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .section-collapse-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-collapse-btn svg,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item-plus-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item-plus-btn svg,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .session-menu-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .session-menu-btn svg { color: var(--fb-moss) !important; stroke: var(--fb-moss) !important; opacity: 1 !important; }
+
+/* New chat: the one primary action, a paper pill on the field */
+:root[data-ow-skin="ow-fieldbook"] .sidebar #sidebar-new-chat-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #sidebar-new-chat-btn {
+  background: var(--fb-thumb) !important;
+  box-shadow: 0 1px 2px rgba(38, 50, 35, .12), 0 0 0 1px rgba(38, 50, 35, .05) !important;
+  border-radius: 999px !important;
+  margin: 2px 0 8px !important;
+  padding: 9px 14px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar #sidebar-new-chat-btn .grow,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #sidebar-new-chat-btn .grow { font-weight: 650 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar #sidebar-new-chat-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #sidebar-new-chat-btn svg { color: var(--fb-accent) !important; stroke: var(--fb-accent) !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar #sidebar-new-chat-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #sidebar-new-chat-btn:hover { background: var(--fb-card) !important; box-shadow: 0 2px 6px rgba(38, 50, 35, .14), 0 0 0 1px rgba(38, 50, 35, .06) !important; }
+
+/* the Tools group gets a small label instead of a row, so its 13 tools read as one group */
+:root[data-ow-skin="ow-fieldbook"] .sidebar #tools-section,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #tools-section { margin-top: 10px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar #tools-section > .section-header-flex,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #tools-section > .section-header-flex { height: 32px !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar #tools-section > .section-header-flex .section-title svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #tools-section > .section-header-flex .section-title svg { display: none !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar #tools-section > .section-header-flex .section-title,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #tools-section > .section-header-flex .section-title,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar #tools-section > .section-header-flex .section-title-label,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #tools-section > .section-header-flex .section-title-label {
+  font-size: 11.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  color: var(--fb-sage-label) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar #tools-section > .section-header-flex:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar #tools-section > .section-header-flex:hover { background: transparent !important; }
+
+/* small labels: "Today", folder dates */
+:root[data-ow-skin="ow-fieldbook"] .sidebar .date-section-header,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .date-section-header {
+  font-family: var(--fb-ui) !important;
+  font-size: 11.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  color: var(--fb-sage-label) !important;
+  opacity: 1 !important;
+  padding: 14px 10px 4px !important;
+  border: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar .date-section-header::after,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .date-section-header::after { display: none !important; }
+
+/* you are here: the open page, a paper tab on the sage field */
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item.active,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item.active,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item.active-session,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item.active-session {
+  background: var(--fb-paper) !important;
+  box-shadow: 0 1px 2px rgba(38, 50, 35, .10) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item.active .grow,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item.active .grow,
+
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item.active-session .grow,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item.active-session .grow { font-weight: 650 !important; }
+:root[data-ow-skin="ow-fieldbook"] .sidebar .list-item:focus-visible,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item:focus-visible { box-shadow: 0 0 0 2px var(--fb-accent) !important; outline: none !important; }
+
+/* user bar */
+:root[data-ow-skin="ow-fieldbook"] .sidebar-user-bar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .sidebar-user-bar { padding: 10px 12px 14px !important; border: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] .user-bar-left,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-left { border-radius: 12px !important; padding: 6px 8px !important; }
+:root[data-ow-skin="ow-fieldbook"] .user-bar-left:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-left:hover { background: var(--fb-sage-hover) !important; }
+:root[data-ow-skin="ow-fieldbook"] .user-bar-avatar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-avatar {
+  width: 32px !important; height: 32px !important;
+  left: 0 !important;
+  background: var(--fb-clay) !important;
+  color: var(--fb-clay-ink) !important;
+  font-family: var(--fb-ui) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .user-bar-name,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-name {
+  font-family: var(--fb-ui) !important;
+  font-size: 14px !important;
+  font-weight: 550 !important;
+  color: var(--fb-sage-ink) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .user-bar-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-btn {
+  width: 36px !important; height: 36px !important;
+  border-radius: 999px !important;
+  color: var(--fb-moss) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .user-bar-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-btn:hover { background: var(--fb-sage-hover) !important; }
+:root[data-ow-skin="ow-fieldbook"] .user-bar-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .user-bar-btn svg { width: 18px !important; height: 18px !important; }
+
+/* =====================================================================
+   TOP BAR: a quiet running head
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] .chat-top-bar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-top-bar { min-height: 40px !important; padding-top: 8px !important; }
+:root[data-ow-skin="ow-fieldbook"] .chat-meta-overlay,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-meta-overlay { font-family: var(--fb-ui) !important; }
+:root[data-ow-skin="ow-fieldbook"] #current-meta,
+
+:root[data-ow-skin="ow-fieldbook-night"] #current-meta {
+  font-family: var(--fb-display) !important;
+  font-variation-settings: 'SOFT' 100, 'WONK' 0 !important;
+  font-optical-sizing: auto !important;
+  font-size: 16px !important;
+  font-weight: 560 !important;
+  color: var(--fb-ink-soft) !important;
+  letter-spacing: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .chat-meta-count,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-meta-count,
+
+:root[data-ow-skin="ow-fieldbook"] .session-cost-display,
+
+:root[data-ow-skin="ow-fieldbook-night"] .session-cost-display { color: var(--fb-muted) !important; font-family: var(--fb-ui) !important; font-size: 13px !important; }
+:root[data-ow-skin="ow-fieldbook"] .export-dl-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .export-dl-btn,
+
+:root[data-ow-skin="ow-fieldbook"] .chat-context-pill,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-context-pill { color: var(--fb-muted) !important; border-radius: 999px !important; }
+
+/* =====================================================================
+   WELCOME: the title page
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] #welcome-screen,
+
+:root[data-ow-skin="ow-fieldbook-night"] #welcome-screen { isolation: isolate; }
+:root[data-ow-skin="ow-fieldbook"] #welcome-screen::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] #welcome-screen::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: 46%;
+  width: 760px; height: 440px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse closest-side, var(--fb-sun) 0%, var(--fb-sun-0) 100%);
+  z-index: -1;
+  pointer-events: none;
+}
+:root[data-ow-skin="ow-fieldbook"] #welcome-screen .welcome-name,
+
+:root[data-ow-skin="ow-fieldbook-night"] #welcome-screen .welcome-name {
+  display: block !important;
+  font-family: var(--fb-display) !important;
+  font-variation-settings: 'SOFT' 100, 'WONK' 0 !important;
+  font-optical-sizing: auto !important;
+  font-weight: 560 !important;
+  font-size: 52px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.012em !important;
+  color: var(--fb-ink) !important;
+  -webkit-text-fill-color: var(--fb-ink) !important;
+  /* the sage seal behind the wings */
+  background: radial-gradient(circle 42px at 50% 42px, var(--fb-seal) 41px, transparent 42px) no-repeat !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  margin-bottom: 14px !important;
+  padding: 0 8px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #welcome-screen .welcome-name img.welcome-boat,
+
+:root[data-ow-skin="ow-fieldbook-night"] #welcome-screen .welcome-name img.welcome-boat {
+  display: block !important;
+  width: 58px !important; height: 58px !important;
+  margin: 13px auto 26px !important;
+  vertical-align: 0 !important;
+  mix-blend-mode: var(--fb-logo-blend);
+  filter: var(--fb-logo-filter);
+}
+:root[data-ow-skin="ow-fieldbook"] #welcome-screen .welcome-sub,
+
+:root[data-ow-skin="ow-fieldbook-night"] #welcome-screen .welcome-sub {
+  font-family: var(--fb-read) !important;
+  font-style: italic !important;
+  font-size: 19px !important;
+  line-height: 1.5 !important;
+  color: var(--fb-muted) !important;
+  opacity: 1 !important;
+  max-width: 460px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #welcome-screen .welcome-tip,
+
+:root[data-ow-skin="ow-fieldbook-night"] #welcome-screen .welcome-tip {
+  font-family: var(--fb-ui) !important;
+  font-size: 13.5px !important;
+  color: var(--fb-muted) !important;
+  opacity: 1 !important;
+  margin-top: 18px !important;
+  max-width: 420px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .incognito-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .incognito-btn {
+  font-family: var(--fb-ui) !important;
+  font-size: 13px !important;
+  font-weight: 550 !important;
+  color: var(--fb-sage-ink) !important;
+  background: var(--fb-sage-soft) !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  padding: 7px 14px !important;
+  opacity: 1 !important;
+  margin-top: 16px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .incognito-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .incognito-btn svg { color: var(--fb-moss) !important; stroke: var(--fb-moss) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-fieldbook"] .incognito-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .incognito-btn:hover { background: var(--fb-sage-hover) !important; }
+
+/* =====================================================================
+   MESSAGES: answers printed on the page, your words on a clay patch
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg {
+  border: 0 !important;
+  box-shadow: none !important;
+  margin: 14px 0 !important;
+  animation: ow-fieldbook-rise .22s var(--fb-ease) both !important;
+}
+@keyframes ow-fieldbook-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai {
+  background: transparent !important;
+  border-radius: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  padding: 6px 18px 4px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user {
+  background: var(--fb-clay) !important;
+  color: var(--fb-clay-ink) !important;
+  border-radius: 22px 22px 6px 22px !important;
+  max-width: min(72%, 620px) !important;
+  margin-right: 0 !important;
+  padding: 12px 18px 8px !important;
+}
+
+/* sender line: Figtree, with a seed dot */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .role,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .role {
+  font-family: var(--fb-ui) !important;
+  font-size: 13.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  gap: 8px !important;
+  margin-bottom: 8px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .role,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .role { color: var(--fb-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .role,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .role { color: var(--fb-clay-muted) !important; margin-bottom: 4px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .role::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .role::before { width: 9px !important; height: 9px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .role::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .role::before { background: var(--fb-seed-ai) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .role::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .role::before { background: var(--fb-seed-user) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .role-timestamp,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .role-timestamp {
+  font-family: var(--fb-ui) !important;
+  font-size: 13px !important;
+  font-weight: 450 !important;
+  font-variant-numeric: tabular-nums !important;
+  color: var(--fb-muted) !important;
+  margin-left: 2px !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .role-timestamp,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .role-timestamp { color: var(--fb-clay-muted) !important; }
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history,
+
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+}
+
+/* the user's words */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .body,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .body,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .body *,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .body * {
+  color: var(--fb-clay-ink) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .body,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .body {
+  font-family: var(--fb-ui) !important;
+  font-size: 16px !important;
+  line-height: 1.55 !important;
+  font-weight: 450 !important;
+}
+
+/* the answer: a book page */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body {
+  font-family: var(--fb-read) !important;
+  font-size: 17px !important;
+  line-height: 1.7 !important;
+  font-weight: 400 !important;
+  color: var(--fb-ink) !important;
+  max-width: 68ch !important;
+  font-variant-numeric: proportional-nums lining-nums;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body p,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body p,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body li,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body li { text-wrap: pretty; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h1,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h1,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h2,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h2,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h3,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h3 { text-wrap: balance; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body > *,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body > * { margin-top: 0 !important; margin-bottom: .85em !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body > *:last-child,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body > *:last-child { margin-bottom: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body strong,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body strong,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body b,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body b { font-weight: 650 !important; color: inherit !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body em,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body em,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body i,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body i { font-style: italic !important; color: inherit !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h1,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h1,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h2,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h2,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h3,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h3,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h4,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h4 {
+  font-family: var(--fb-display) !important;
+  font-variation-settings: 'SOFT' 100, 'WONK' 0 !important;
+  font-optical-sizing: auto !important;
+  font-weight: 600 !important;
+  color: var(--fb-ink) !important;
+  letter-spacing: -0.005em !important;
+  line-height: 1.25 !important;
+  text-transform: none !important;
+  margin: 1.3em 0 .5em !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body > h1:first-child,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body > h1:first-child,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body > h2:first-child,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body > h2:first-child,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body > h3:first-child,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body > h3:first-child { margin-top: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h1,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h1 { font-size: 26px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h2,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h2 { font-size: 21px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h3,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h3 { font-size: 18px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h4,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h4 { font-size: 16px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body h2::after,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body h2::after {
+  content: '';
+  display: block;
+  width: 28px; height: 4px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--fb-seed-ai);
+}
+
+/* lists */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body ol,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body ol,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body ul,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body ul { padding-left: 1.5em !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body li,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body li { margin: .3em 0 !important; padding-left: .2em !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body li::marker,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body li::marker {
+  color: var(--fb-moss) !important;
+  font-weight: 600 !important;
+  font-family: var(--fb-ui) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body ol > li::marker,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body ol > li::marker { font-variant-numeric: tabular-nums; font-size: .9em; }
+
+/* links */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body a,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body a,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body a:visited,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body a:visited {
+  color: var(--fb-accent) !important;
+  text-decoration: underline !important;
+  text-decoration-color: var(--fb-link-line) !important;
+  text-decoration-thickness: 1.5px !important;
+  text-underline-offset: 3px !important;
+  transition: text-decoration-color .16s ease-out, color .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body a:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body a:hover { text-decoration-color: currentColor !important; color: var(--fb-accent-hover) !important; }
+
+/* inline code */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body code:not(pre code),
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body code:not(pre code) {
+  font-family: var(--fb-mono) !important;
+  font-size: .84em !important;
+  font-weight: 500 !important;
+  color: var(--fb-sage-ink) !important;
+  background: var(--fb-sage-soft) !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  padding: .12em .42em !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .body code:not(pre code),
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .body code:not(pre code) { background: rgba(255, 253, 248, .55) !important; color: var(--fb-clay-ink) !important; }
+
+/* code blocks: a quiet plate, never a box */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre {
+  background: var(--fb-code-bg) !important;
+  color: var(--fb-code-ink) !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  padding: 16px 18px !important;
+  margin: 1em 0 1.1em !important;
+  overflow-x: auto !important;
+  font-family: var(--fb-mono) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre.pre-compact,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre.pre-compact { padding-right: 18px !important; padding-top: 16px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre code,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre code,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre code *,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre code * {
+  font-family: var(--fb-mono) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  font-variant-numeric: tabular-nums !important;
+  font-variant-ligatures: none !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre code[data-lang]:not([data-lang=""])::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre code[data-lang]:not([data-lang=""])::before {
+  content: attr(data-lang);
+  display: block;
+  margin-bottom: 10px;
+  font-family: var(--fb-ui) !important;
+  font-size: 11.5px !important;
+  font-weight: 650;
+  line-height: 1 !important;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fb-muted);
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre code,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre code {
+  color: var(--fb-code-ink) !important;
+  background: transparent !important;
+  white-space: pre !important;
+  display: block !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-string,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-string,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="string"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="string"] { color: var(--hl-string) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-keyword,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-keyword,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-literal,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-literal,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="keyword"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="keyword"],
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="literal"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="literal"] { color: var(--hl-keyword) !important; font-weight: 500 !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-number,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-number,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="number"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="number"] { color: var(--hl-number) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-comment,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-comment,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="comment"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="comment"] { color: var(--hl-comment) !important; font-style: italic !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-title,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-title,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="function"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="function"],
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="title"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="title"] { color: var(--hl-function) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .hljs-built_in,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .hljs-built_in,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre [class*="built_in"],
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre [class*="built_in"] { color: var(--hl-builtin) !important; }
+/* the copy / edit / run controls on a code plate */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .copy-code,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .copy-code,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .edit-code,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .edit-code,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .run-code,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .run-code,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .use-code,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .use-code {
+  background: var(--fb-card) !important;
+  color: var(--fb-ink-soft) !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  box-shadow: 0 1px 2px rgba(43, 42, 38, .12) !important;
+  font-family: var(--fb-ui) !important;
+  font-weight: 600 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .copy-code:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .copy-code:hover,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .edit-code:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .edit-code:hover,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body pre .run-code:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body pre .run-code:hover { color: var(--fb-accent) !important; }
+
+/* tables: a soft framed sheet that scrolls sideways on its own */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body table,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body table {
+  display: block !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border: 1px solid var(--fb-rule) !important;
+  border-radius: 14px !important;
+  background: var(--fb-table-bg) !important;
+  margin: 1em 0 1.1em !important;
+  font-family: var(--fb-ui) !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+  font-variant-numeric: tabular-nums lining-nums !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body th,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body th,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body td,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body td {
+  padding: 10px 16px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--fb-rule) !important;
+  text-align: left !important;
+  vertical-align: top !important;
+  min-width: 0 !important;
+  font-family: var(--fb-ui) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body th,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body th {
+  background: var(--fb-sage-soft) !important;
+  color: var(--fb-sage-ink) !important;
+  font-size: 13.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: .01em !important;
+  white-space: nowrap !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body td,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body td { color: var(--fb-ink) !important; font-weight: 450 !important; background: transparent !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body tbody + tbody tr:nth-child(even) td,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body tbody + tbody tr:nth-child(even) td,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body thead + tbody tr:nth-child(even) td,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body thead + tbody tr:nth-child(even) td { background: var(--fb-zebra) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body tr:last-child td,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body tr:last-child td { border-bottom: 0 !important; }
+
+/* quotes and rules */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body blockquote,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body blockquote {
+  border: 0 !important;
+  border-left: 3px solid var(--fb-seed-ai) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 2px 0 2px 18px !important;
+  margin: 1em 0 !important;
+  font-style: italic !important;
+  color: var(--fb-ink-soft) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg .body hr,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg .body hr {
+  border: 0 !important;
+  height: 1px !important;
+  background: var(--fb-rule) !important;
+  margin: 1.6em 0 !important;
+}
+
+/* message actions: visible, quiet, round */
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer { margin-top: 8px !important; gap: 2px !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer button,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer button,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer .msg-action-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer .msg-action-btn,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer .footer-copy-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer .footer-copy-btn {
+  width: 32px !important; height: 32px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  color: var(--fb-muted) !important;
+  background: transparent !important;
+  opacity: .8 !important;
+  font-family: var(--fb-ui) !important;
+  font-size: 15px !important;
+  top: 0 !important;
+  transition: background-color .16s ease-out, opacity .16s ease-out, color .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer button svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer button svg { width: 15px !important; height: 15px !important; color: currentColor !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer button:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer button:hover,
+
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer button:focus-visible,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer button:focus-visible {
+  opacity: 1 !important;
+  background: var(--fb-paper-deep) !important;
+  color: var(--fb-ink) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .msg-footer button,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .msg-footer button { color: var(--fb-clay-muted) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user .msg-footer button:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user .msg-footer button:hover { background: var(--fb-clay-hover) !important; color: var(--fb-clay-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer .msg-delete-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer .msg-delete-btn:hover { color: var(--fb-error) !important; }
+
+/* =====================================================================
+   COMPOSER: a raised writing card on a warm ground
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] .chat-container,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-container { background: transparent !important; }
+:root[data-ow-skin="ow-fieldbook"] .chat-container::after,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-container::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 96px;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--fb-ground) 0%, transparent), var(--fb-ground));
+  pointer-events: none;
+  z-index: 0;
+}
+:root[data-ow-skin="ow-fieldbook"] .chat-input-bar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-input-bar {
+  position: relative;
+  z-index: 1;
+  background: var(--fb-card) !important;
+  border: 1.5px solid var(--fb-edge) !important;
+  border-radius: 26px !important;
+  box-shadow: var(--fb-shadow-card) !important;
+  padding: 14px 14px 12px 20px !important;
+  transition: border-color .16s ease-out, box-shadow .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .chat-container:not(.welcome-active) .chat-input-bar,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-container:not(.welcome-active) .chat-input-bar { margin-bottom: 14px !important; }
+:root[data-ow-skin="ow-fieldbook"] #message:focus,
+
+:root[data-ow-skin="ow-fieldbook-night"] #message:focus,
+
+:root[data-ow-skin="ow-fieldbook"] #message:focus-visible,
+
+:root[data-ow-skin="ow-fieldbook-night"] #message:focus-visible { outline: none !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-fieldbook"] .chat-input-bar:focus-within,
+
+:root[data-ow-skin="ow-fieldbook-night"] .chat-input-bar:focus-within {
+  border-color: var(--fb-focus) !important;
+  box-shadow: 0 0 0 4px var(--fb-halo), var(--fb-shadow-card) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #message,
+
+:root[data-ow-skin="ow-fieldbook-night"] #message {
+  font-family: var(--fb-ui) !important;
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+  font-weight: 450 !important;
+  color: var(--fb-ink) !important;
+  background: transparent !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #message::placeholder,
+
+:root[data-ow-skin="ow-fieldbook-night"] #message::placeholder { color: var(--fb-muted) !important; opacity: 1 !important; font-family: var(--fb-ui) !important; }
+:root[data-ow-skin="ow-fieldbook"] .ghost-text-overlay,
+
+:root[data-ow-skin="ow-fieldbook-night"] .ghost-text-overlay { font-family: var(--fb-ui) !important; font-size: 16px !important; line-height: 1.5 !important; }
+
+/* model picker: quiet text with a chevron */
+:root[data-ow-skin="ow-fieldbook"] .model-picker-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .model-picker-btn,
+
+:root[data-ow-skin="ow-fieldbook"] #model-picker-label,
+
+:root[data-ow-skin="ow-fieldbook-night"] #model-picker-label {
+  font-family: var(--fb-ui) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--fb-muted) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .model-picker-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .model-picker-btn { border-radius: 999px !important; padding: 4px 10px !important; background: transparent !important; border: 0 !important; }
+:root[data-ow-skin="ow-fieldbook"] .model-picker-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .model-picker-btn:hover { background: var(--fb-sage-soft) !important; color: var(--fb-sage-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] .model-picker-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .model-picker-btn svg { color: var(--fb-muted) !important; opacity: 1 !important; }
+
+/* tool buttons: round, moss */
+:root[data-ow-skin="ow-fieldbook"] .input-icon-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .input-icon-btn {
+  width: 36px !important; height: 36px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  color: var(--fb-moss) !important;
+  opacity: 1 !important;
+  background: transparent !important;
+  transition: background-color .16s ease-out, color .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .input-icon-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .input-icon-btn svg { width: 18px !important; height: 18px !important; }
+:root[data-ow-skin="ow-fieldbook"] .input-icon-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .input-icon-btn:hover { background: var(--fb-sage-soft) !important; color: var(--fb-sage-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] .input-icon-btn.active,
+
+:root[data-ow-skin="ow-fieldbook-night"] .input-icon-btn.active,
+
+:root[data-ow-skin="ow-fieldbook"] .input-icon-btn.expanded,
+
+:root[data-ow-skin="ow-fieldbook-night"] .input-icon-btn.expanded { background: var(--fb-sage) !important; color: var(--fb-sage-ink) !important; }
+
+/* Agent / Chat: a sage pill track with a paper thumb */
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle {
+  height: 36px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--fb-track) !important;
+  padding: 3px !important;
+  box-sizing: border-box !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle::before {
+  top: 3px !important;
+  left: 3px !important;
+  height: calc(100% - 6px) !important;
+  width: calc(50% - 3px) !important;
+  border-radius: 999px !important;
+  background: var(--fb-thumb) !important;
+  box-shadow: 0 1px 2px rgba(38, 50, 35, .16), 0 1px 1px rgba(38, 50, 35, .06) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle.mode-toggle-three::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle.mode-toggle-three::before { width: calc(33.333% - 2px) !important; }
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle-btn,
+
+:root[data-ow-skin="ow-fieldbook"] #mode-agent-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] #mode-agent-btn,
+
+:root[data-ow-skin="ow-fieldbook"] #mode-chat-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] #mode-chat-btn {
+  font-family: var(--fb-ui) !important;
+  font-size: 13.5px !important;
+  font-weight: 550 !important;
+  color: var(--fb-sage-label) !important;
+  border-radius: 999px !important;
+  padding: 0 14px !important;
+  letter-spacing: 0 !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle-btn.active,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle-btn.active,
+
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle-btn.active:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle-btn.active:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle-btn.active:focus,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle-btn.active:focus { color: var(--fb-sage-ink) !important; font-weight: 650 !important; }
+:root[data-ow-skin="ow-fieldbook"] .mode-toggle-btn:not(.active):hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .mode-toggle-btn:not(.active):hover { color: var(--fb-sage-ink) !important; }
+
+/* send: a spruce seal */
+:root[data-ow-skin="ow-fieldbook"] .send-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn {
+  width: 40px !important; min-width: 40px !important; height: 40px !important;
+  border-radius: 999px !important;
+  background: var(--fb-accent) !important;
+  color: var(--fb-on-accent) !important;
+  border: 0 !important;
+  box-shadow: 0 1px 2px rgba(31, 52, 40, .18) !important;
+  transition: background-color .16s ease-out, transform .09s ease-out, width .3s var(--fb-ease) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .send-btn svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn svg { color: var(--fb-on-accent) !important; stroke: currentColor !important; width: 18px !important; height: 18px !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn:hover { background: var(--fb-accent-hover) !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn:active,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn:active { transform: scale(.96) !important; }
+/* idle (new chat / mic): a soft sage seal, clearly "not sending yet" */
+:root[data-ow-skin="ow-fieldbook"] .send-btn.mic-mode,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.mic-mode,
+
+:root[data-ow-skin="ow-fieldbook"] .send-btn.newchat-mode,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.newchat-mode {
+  background: var(--fb-track) !important;
+  color: var(--fb-accent) !important;
+  box-shadow: none !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .send-btn.mic-mode svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.mic-mode svg,
+
+:root[data-ow-skin="ow-fieldbook"] .send-btn.newchat-mode svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.newchat-mode svg { color: var(--fb-accent) !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn.mic-mode:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.mic-mode:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .send-btn.newchat-mode:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.newchat-mode:hover { background: var(--fb-sage-hover) !important; color: var(--fb-sage-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn.newchat-expanded,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn.newchat-expanded { width: auto !important; padding: 0 14px 0 11px !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn-label,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn-label { font-family: var(--fb-ui) !important; font-size: 13px !important; font-weight: 600 !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn[data-mode="streaming"],
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn[data-mode="streaming"] { background: var(--fb-ink) !important; color: var(--fb-paper) !important; }
+:root[data-ow-skin="ow-fieldbook"] .send-btn[data-mode="streaming"] svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .send-btn[data-mode="streaming"] svg { color: var(--fb-paper) !important; }
+
+/* jump to the latest message: a round paper button */
+:root[data-ow-skin="ow-fieldbook"] .scroll-nav-btn,
+
+:root[data-ow-skin="ow-fieldbook-night"] .scroll-nav-btn {
+  width: 40px !important; height: 40px !important;
+  border-radius: 999px !important;
+  border: 0 !important;
+  background: var(--fb-card) !important;
+  color: var(--fb-ink-soft) !important;
+  box-shadow: var(--fb-shadow-menu) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .scroll-nav-btn::before,
+
+:root[data-ow-skin="ow-fieldbook-night"] .scroll-nav-btn::before,
+
+:root[data-ow-skin="ow-fieldbook"] .scroll-nav-btn::after,
+
+:root[data-ow-skin="ow-fieldbook-night"] .scroll-nav-btn::after { border-radius: 999px !important; }
+
+/* =====================================================================
+   MENUS AND POPOVERS: paper cards with a warm, low shadow
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] .dropdown,
+
+:root[data-ow-skin="ow-fieldbook-night"] .dropdown,
+
+:root[data-ow-skin="ow-fieldbook"] .export-dropdown-menu,
+
+:root[data-ow-skin="ow-fieldbook-night"] .export-dropdown-menu,
+
+:root[data-ow-skin="ow-fieldbook"] .overflow-menu,
+
+:root[data-ow-skin="ow-fieldbook-night"] .overflow-menu,
+
+:root[data-ow-skin="ow-fieldbook"] .model-picker-menu,
+
+:root[data-ow-skin="ow-fieldbook-night"] .model-picker-menu,
+
+:root[data-ow-skin="ow-fieldbook"] .context-menu,
+
+:root[data-ow-skin="ow-fieldbook-night"] .context-menu {
+  background: var(--fb-card) !important;
+  color: var(--fb-ink) !important;
+  border: 1px solid var(--fb-rule) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--fb-shadow-menu) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  font-family: var(--fb-ui) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .dropdown-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] .dropdown-item,
+
+:root[data-ow-skin="ow-fieldbook"] .export-dropdown-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] .export-dropdown-item,
+
+:root[data-ow-skin="ow-fieldbook"] .overflow-menu-item,
+
+:root[data-ow-skin="ow-fieldbook-night"] .overflow-menu-item {
+  font-family: var(--fb-ui) !important;
+  font-size: 14px !important;
+  color: var(--fb-ink) !important;
+  border-radius: 9px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] .dropdown-item:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .dropdown-item:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .export-dropdown-item:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .export-dropdown-item:hover,
+
+:root[data-ow-skin="ow-fieldbook"] .overflow-menu-item:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] .overflow-menu-item:hover { background: var(--fb-sage-soft) !important; color: var(--fb-sage-ink) !important; }
+:root[data-ow-skin="ow-fieldbook"] .overflow-menu-item svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .overflow-menu-item svg,
+
+:root[data-ow-skin="ow-fieldbook"] .export-dropdown-item svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] .export-dropdown-item svg { color: var(--fb-moss) !important; }
+
+/* windows (settings, theme, memory, tasks...): the same paper card */
+:root[data-ow-skin="ow-fieldbook"] .modal-content,
+
+:root[data-ow-skin="ow-fieldbook-night"] .modal-content,
+
+:root[data-ow-skin="ow-fieldbook"] .memory-modal-content,
+
+:root[data-ow-skin="ow-fieldbook-night"] .memory-modal-content,
+
+:root[data-ow-skin="ow-fieldbook"] .settings-modal-content,
+
+:root[data-ow-skin="ow-fieldbook-night"] .settings-modal-content,
+
+:root[data-ow-skin="ow-fieldbook"] .doclib-modal-content,
+
+:root[data-ow-skin="ow-fieldbook-night"] .doclib-modal-content,
+
+:root[data-ow-skin="ow-fieldbook"] .tasks-modal-content,
+
+:root[data-ow-skin="ow-fieldbook-night"] .tasks-modal-content {
+  background: var(--fb-card) !important;
+  color: var(--fb-ink) !important;
+  border: 1px solid var(--fb-rule) !important;
+  border-radius: 20px !important;
+  box-shadow: var(--fb-shadow-menu) !important;
+  font-family: var(--fb-ui) !important;
+  letter-spacing: 0 !important;
+}
+
+/* =====================================================================
+   LOGIN: the same title page, on a card
+   ===================================================================== */
+:root[data-ow-skin="ow-fieldbook"] body:has(main.card),
+
+:root[data-ow-skin="ow-fieldbook-night"] body:has(main.card) {
+  background-color: var(--fb-paper) !important;
+  background-image:
+    radial-gradient(ellipse 620px 380px at 50% 34%, var(--fb-sun) 0%, var(--fb-sun-0) 100%),
+    var(--fb-grain) !important;
+  background-repeat: no-repeat, repeat !important;
+}
+:root[data-ow-skin="ow-fieldbook"] #sparkles-canvas,
+
+:root[data-ow-skin="ow-fieldbook-night"] #sparkles-canvas,
+
+:root[data-ow-skin="ow-fieldbook"] body:has(main.card) > canvas,
+
+:root[data-ow-skin="ow-fieldbook-night"] body:has(main.card) > canvas { display: none !important; }
+:root[data-ow-skin="ow-fieldbook"] main.card,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card {
+  background: var(--fb-card) !important;
+  color: var(--fb-ink) !important;
+  border: 1px solid var(--fb-rule) !important;
+  border-radius: 22px !important;
+  box-shadow: var(--fb-shadow-card) !important;
+  backdrop-filter: none !important;
+  padding: 36px 40px 34px !important;
+  font-family: var(--fb-ui) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card h1.logo,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card h1.logo {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 18px !important;
+  margin: 0 0 6px !important;
+  background: radial-gradient(circle 36px at 50% 36px, var(--fb-seal) 35px, transparent 36px) no-repeat !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card h1.logo img.logo-boat,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card h1.logo img.logo-boat {
+  width: 50px !important; height: 50px !important;
+  margin: 11px 0 0 !important;
+  mix-blend-mode: var(--fb-logo-blend);
+  filter: var(--fb-logo-filter);
+}
+:root[data-ow-skin="ow-fieldbook"] main.card h1.logo span,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card h1.logo span {
+  font-family: var(--fb-display) !important;
+  font-variation-settings: 'SOFT' 100, 'WONK' 0 !important;
+  font-optical-sizing: auto !important;
+  font-weight: 560 !important;
+  font-size: 34px !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.1 !important;
+  color: var(--fb-ink) !important;
+  -webkit-text-fill-color: var(--fb-ink) !important;
+  background: none !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card .built-on,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card .built-on {
+  font-family: var(--fb-ui) !important;
+  font-size: 13px !important;
+  color: var(--fb-muted) !important;
+  opacity: 1 !important;
+  margin: 8px 0 24px !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card a,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card a { color: var(--fb-accent) !important; text-decoration-color: var(--fb-link-line) !important; text-underline-offset: 3px !important; }
+:root[data-ow-skin="ow-fieldbook"] main.card label:not(.remember-toggle),
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card label:not(.remember-toggle) {
+  font-family: var(--fb-ui) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--fb-ink-soft) !important;
+  opacity: 1 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  margin-bottom: 6px !important;
+  display: inline-block;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card input[type="text"],
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card input[type="text"],
+
+:root[data-ow-skin="ow-fieldbook"] main.card input[type="password"],
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card input[type="password"] {
+  height: 48px !important;
+  background: var(--fb-card) !important;
+  color: var(--fb-ink) !important;
+  border: 1.5px solid var(--fb-edge) !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  font-family: var(--fb-ui) !important;
+  font-size: 16px !important;
+  padding: 0 44px 0 16px !important;
+  transition: border-color .16s ease-out, box-shadow .16s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card input[type="text"]:focus,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card input[type="text"]:focus,
+
+:root[data-ow-skin="ow-fieldbook"] main.card input[type="password"]:focus,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card input[type="password"]:focus {
+  outline: none !important;
+  border-color: var(--fb-focus) !important;
+  box-shadow: 0 0 0 4px var(--fb-halo) !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card .pw-toggle,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card .pw-toggle,
+
+:root[data-ow-skin="ow-fieldbook"] main.card .pw-toggle svg,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card .pw-toggle svg { color: var(--fb-muted) !important; }
+:root[data-ow-skin="ow-fieldbook"] main.card .remember-dot,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card .remember-dot { background: var(--fb-sage) !important; border-color: var(--fb-moss) !important; }
+:root[data-ow-skin="ow-fieldbook"] main.card #submitBtn,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card #submitBtn {
+  height: 48px !important;
+  width: 100% !important;
+  margin-top: 14px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--fb-accent) !important;
+  color: var(--fb-on-accent) !important;
+  font-family: var(--fb-ui) !important;
+  font-size: 16px !important;
+  font-weight: 650 !important;
+  letter-spacing: .01em !important;
+  text-transform: none !important;
+  box-shadow: 0 1px 2px rgba(31, 52, 40, .18) !important;
+  transition: background-color .16s ease-out, transform .09s ease-out !important;
+}
+:root[data-ow-skin="ow-fieldbook"] main.card #submitBtn:hover,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card #submitBtn:hover { background: var(--fb-accent-hover) !important; }
+:root[data-ow-skin="ow-fieldbook"] main.card #submitBtn:active,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card #submitBtn:active { transform: scale(.98) !important; }
+:root[data-ow-skin="ow-fieldbook"] main.card .error,
+
+:root[data-ow-skin="ow-fieldbook-night"] main.card .error { color: var(--fb-error) !important; background: var(--fb-error-bg) !important; border: 0 !important; border-radius: 12px !important; }
+:root[data-ow-skin="ow-fieldbook"] .version-label,
+
+:root[data-ow-skin="ow-fieldbook-night"] .version-label { color: var(--fb-muted) !important; font-family: var(--fb-ui) !important; opacity: 1 !important; }
+
+/* =====================================================================
+   PHONES
+   ===================================================================== */
+@media (max-width: 768px) {
+  :root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai { padding: 4px 6px !important; }
+  :root[data-ow-skin="ow-fieldbook"] #chat-history .msg-ai .body,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-ai .body { font-size: 16.5px !important; line-height: 1.65 !important; }
+  :root[data-ow-skin="ow-fieldbook"] #chat-history .msg-user,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-user { max-width: 88% !important; }
+  :root[data-ow-skin="ow-fieldbook"] .chat-input-bar,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .chat-input-bar { border-radius: 22px !important; margin-bottom: max(8px, env(safe-area-inset-bottom)) !important; padding: 12px 12px 10px 16px !important; }
+  :root[data-ow-skin="ow-fieldbook"] #welcome-screen .welcome-name,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #welcome-screen .welcome-name { font-size: 40px !important; }
+  :root[data-ow-skin="ow-fieldbook"] .sidebar,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar {
+    border-radius: 0 24px 24px 0 !important;
+    box-shadow: 10px 0 36px rgba(43, 42, 38, .18) !important;
+  }
+  :root[data-ow-skin="ow-fieldbook"] .sidebar-header,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar-header { border-top-right-radius: 24px !important; }
+  :root[data-ow-skin="ow-fieldbook"] body.hamburger-right .sidebar,
+
+  :root[data-ow-skin="ow-fieldbook-night"] body.hamburger-right .sidebar,
+
+  :root[data-ow-skin="ow-fieldbook"] .sidebar.right-side,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar.right-side {
+    border-radius: 24px 0 0 24px !important;
+    box-shadow: -10px 0 36px rgba(43, 42, 38, .18) !important;
+  }
+  :root[data-ow-skin="ow-fieldbook"] body.hamburger-right .sidebar-header,
+
+  :root[data-ow-skin="ow-fieldbook-night"] body.hamburger-right .sidebar-header,
+
+  :root[data-ow-skin="ow-fieldbook"] .sidebar.right-side .sidebar-header,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar.right-side .sidebar-header { border-top-right-radius: 0 !important; border-top-left-radius: 24px !important; }
+  :root[data-ow-skin="ow-fieldbook"] #sidebar-backdrop,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #sidebar-backdrop { background: rgba(43, 42, 38, .35) !important; backdrop-filter: none !important; }
+  :root[data-ow-skin="ow-fieldbook"] .sidebar .list-item,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item,
+
+  :root[data-ow-skin="ow-fieldbook"] .sidebar .section-header-flex,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar .section-header-flex { min-height: 44px !important; }
+}
+
+/* =====================================================================
+   REDUCED MOTION: no movement, only very short fades
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ow-skin="ow-fieldbook"] #chat-history .msg,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg { animation: none !important; }
+  :root[data-ow-skin="ow-fieldbook"] .send-btn:active,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .send-btn:active,
+
+  :root[data-ow-skin="ow-fieldbook"] main.card #submitBtn:active,
+
+  :root[data-ow-skin="ow-fieldbook-night"] main.card #submitBtn:active { transform: none !important; }
+  :root[data-ow-skin="ow-fieldbook"] .sidebar .list-item,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .sidebar .list-item,
+
+  :root[data-ow-skin="ow-fieldbook"] .chat-input-bar,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .chat-input-bar,
+
+  :root[data-ow-skin="ow-fieldbook"] .input-icon-btn,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .input-icon-btn,
+
+  :root[data-ow-skin="ow-fieldbook"] .send-btn,
+
+  :root[data-ow-skin="ow-fieldbook-night"] .send-btn,
+
+  :root[data-ow-skin="ow-fieldbook"] #chat-history .msg-footer button,
+
+  :root[data-ow-skin="ow-fieldbook-night"] #chat-history .msg-footer button { transition-duration: 80ms !important; }
+}

@@ -1,1 +1,1684 @@
-/* OpenWings look: duet (being built). */
+/* OpenWings look: Duet (ow-duet light, ow-duet-night dark).
+   Every exchange is printed in two inks on calm paper: a deep petrol ink
+   for action and links, a coral for "you". Each question and its answer
+   share one paper card on a soft mist desk. Type is the Atkinson
+   Hyperlegible family (UI, reading, code) with Bricolage Grotesque for the
+   few display moments. Fonts are self hosted OFL files in ../fonts. */
+
+@font-face { font-family: 'OW duet Display'; src: url('../fonts/bricolage-grotesque-latin-wght-normal.woff2') format('woff2-variations'), url('../fonts/bricolage-grotesque-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'OW duet Sans'; src: url('../fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2') format('woff2-variations'), url('../fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'OW duet Sans'; src: url('../fonts/atkinson-hyperlegible-next-latin-wght-italic.woff2') format('woff2-variations'), url('../fonts/atkinson-hyperlegible-next-latin-wght-italic.woff2') format('woff2'); font-weight: 200 800; font-style: italic; font-display: swap; }
+@font-face { font-family: 'OW duet Mono'; src: url('../fonts/atkinson-hyperlegible-mono-latin-wght-normal.woff2') format('woff2-variations'), url('../fonts/atkinson-hyperlegible-mono-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+
+/* ---------- palette: day ---------- */
+:root[data-ow-skin="ow-duet"] {
+  --dw-desk: #E5EAE8;
+  --dw-side: #DBE1DF;
+  --dw-paper: #FDFBF7;
+  --dw-text: #1D2A2E;
+  --dw-muted: #4D5C60;
+  --dw-faint: #66767A;
+  --dw-ink: #1E5A68;
+  --dw-ink-deep: #164854;
+  --dw-ink-tint: #D6E6E8;
+  --dw-on-ink: #FFFFFF;
+  --dw-halo: rgba(30, 90, 104, 0.14);
+  --dw-coral: #B4513D;
+  --dw-blush: #F6E1D8;
+  --dw-blush-text: #3B2520;
+  --dw-blush-muted: #6A4A41;
+  --dw-edge: #78868A;
+  --dw-rule: #C9D4D3;
+  --dw-line: #E6E8E3;
+  --dw-fill: #EEF1EE;
+  --dw-fill-hover: #E3E9E7;
+  --dw-side-hover: #D0D9D6;
+  --dw-code: #EEF2F1;
+  --dw-code-text: #1D2A30;
+  --dw-shadow: 0 1px 2px rgba(29, 42, 46, 0.06), 0 10px 28px -12px rgba(29, 42, 46, 0.20);
+  --dw-shadow-low: 0 1px 2px rgba(29, 42, 46, 0.10), 0 2px 6px -2px rgba(29, 42, 46, 0.08);
+  --hl-bg: #EEF2F1 !important;
+  --hl-fg: #1D2A30 !important;
+  --hl-keyword: #1E5A68 !important;
+  --hl-string: #8A4A1C !important;
+  --hl-comment: #5E6B6E !important;
+  --hl-function: #2C4F86 !important;
+  --hl-number: #A2412E !important;
+  --hl-builtin: #1E5A68 !important;
+  --hl-variable: #1D2A30 !important;
+  --hl-params: #3A4A50 !important;
+}
+
+/* ---------- palette: night (an evening desk, graphite, never navy) ---------- */
+:root[data-ow-skin="ow-duet-night"] {
+  --dw-desk: #1B1F21;
+  --dw-side: #16191B;
+  --dw-paper: #252A2C;
+  --dw-text: #E6E9E7;
+  --dw-muted: #A6B2B4;
+  --dw-faint: #8E9B9E;
+  --dw-ink: #8FC6CF;
+  --dw-ink-deep: #A9D6DD;
+  --dw-ink-tint: #24393E;
+  --dw-on-ink: #0F2328;
+  --dw-halo: rgba(143, 198, 207, 0.12);
+  --dw-coral: #E8998A;
+  --dw-blush: #382B2C;
+  --dw-blush-text: #F4DED6;
+  --dw-blush-muted: #CDB1A8;
+  --dw-edge: #6E7C80;
+  --dw-rule: #3A4346;
+  --dw-line: #343B3E;
+  --dw-fill: #2E3437;
+  --dw-fill-hover: #373F42;
+  --dw-side-hover: #22272A;
+  --dw-code: #1E2325;
+  --dw-code-text: #DDE6E8;
+  --dw-shadow: 0 1px 2px rgba(0, 0, 0, 0.30), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  --dw-shadow-low: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 6px -2px rgba(0, 0, 0, 0.30);
+  --hl-bg: #1E2325 !important;
+  --hl-fg: #DDE6E8 !important;
+  --hl-keyword: #8FC6CF !important;
+  --hl-string: #E3B58C !important;
+  --hl-comment: #93A0A4 !important;
+  --hl-function: #AFC0F2 !important;
+  --hl-number: #F0A08F !important;
+  --hl-builtin: #8FC6CF !important;
+  --hl-variable: #DDE6E8 !important;
+  --hl-params: #C3CED1 !important;
+}
+
+/* ---------- shared tokens and upstream variables ---------- */
+:root[data-ow-skin="ow-duet"],
+
+:root[data-ow-skin="ow-duet-night"] {
+  --dw-sans: 'OW duet Sans', 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --dw-display: 'OW duet Display', 'OW duet Sans', system-ui, sans-serif;
+  --dw-mono: 'OW duet Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --dw-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --accent: var(--dw-ink) !important;
+  --accent-primary: var(--dw-ink) !important;
+  --brand-color: var(--dw-text) !important;
+  --sidebar-bg: var(--dw-side) !important;
+  --input-bg: var(--dw-paper) !important;
+  --input-border: var(--dw-edge) !important;
+  --user-bubble-bg: var(--dw-blush) !important;
+  --ai-bubble-bg: var(--dw-paper) !important;
+  --bubble-border: transparent !important;
+  --code-bg: var(--dw-code) !important;
+  --code-fg: var(--dw-code-text) !important;
+  --send-btn-bg: var(--dw-ink) !important;
+  --send-btn-hover: var(--dw-ink-deep) !important;
+  --toggle-active: var(--dw-ink) !important;
+  --hamburger-color: var(--dw-muted) !important;
+  --fg-muted: var(--dw-muted) !important;
+  --color-muted: var(--dw-muted) !important;
+  --color-muted-alt: var(--dw-muted) !important;
+  --select-option-active-bg: var(--dw-ink-tint) !important;
+  color-scheme: light !important;
+}
+:root[data-ow-skin="ow-duet-night"] { color-scheme: dark !important; }
+
+:root[data-ow-skin="ow-duet"] body,
+
+
+:root[data-ow-skin="ow-duet-night"] body {
+  font-family: var(--dw-sans) !important;
+  color: var(--dw-text) !important;
+  background: var(--dw-desk) !important;
+  background-image: none !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+}
+:root[data-ow-skin="ow-duet"] body,
+
+:root[data-ow-skin="ow-duet-night"] body,
+
+:root[data-ow-skin="ow-duet"] button,
+
+:root[data-ow-skin="ow-duet-night"] button,
+
+:root[data-ow-skin="ow-duet"] input,
+
+:root[data-ow-skin="ow-duet-night"] input,
+
+:root[data-ow-skin="ow-duet"] select,
+
+:root[data-ow-skin="ow-duet-night"] select,
+
+:root[data-ow-skin="ow-duet"] textarea,
+
+:root[data-ow-skin="ow-duet-night"] textarea,
+
+:root[data-ow-skin="ow-duet"] #message,
+
+:root[data-ow-skin="ow-duet-night"] #message {
+  font-family: var(--dw-sans) !important;
+}
+:root[data-ow-skin="ow-duet"] ::selection,
+
+:root[data-ow-skin="ow-duet-night"] ::selection { background: var(--dw-ink-tint) !important; color: var(--dw-text) !important; }
+:root[data-ow-skin="ow-duet"] :focus-visible,
+
+:root[data-ow-skin="ow-duet-night"] :focus-visible { outline: 2px solid var(--dw-ink) !important; outline-offset: 2px !important; }
+:root[data-ow-skin="ow-duet"] *::-webkit-scrollbar-thumb,
+
+:root[data-ow-skin="ow-duet-night"] *::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--dw-text) 22%, transparent) !important; border-radius: 999px !important; }
+:root[data-ow-skin="ow-duet"] *::-webkit-scrollbar-track,
+
+:root[data-ow-skin="ow-duet-night"] *::-webkit-scrollbar-track { background: transparent !important; }
+
+/* ================= sidebar: the desk's quiet edge ================= */
+:root[data-ow-skin="ow-duet"] .sidebar,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar {
+  background: var(--dw-side) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  color: var(--dw-text) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-header,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-header,
+
+:root[data-ow-skin="ow-duet"] .sidebar-inner,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-inner,
+
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar { background: transparent !important; }
+:root[data-ow-skin="ow-duet"] .sidebar-header,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-header {
+  justify-content: flex-start !important;
+  padding: 14px 14px 6px 50px !important;
+  min-height: 56px !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-brand,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-brand { gap: 0 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar-brand::before,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-brand::before {
+  content: '' !important;
+  display: block !important;
+  width: 30px !important;
+  height: 30px !important;
+  flex: 0 0 30px !important;
+  border-radius: 9px !important;
+  background: #FFFFFF url('../openwings-tile.svg') center / 100% 100% no-repeat !important;
+  margin-right: 10px !important;
+  box-shadow: var(--dw-shadow-low) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-brand-title,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-brand-title {
+  font-family: var(--dw-display) !important;
+  font-weight: 640 !important;
+  font-size: 20px !important;
+  letter-spacing: -0.01em !important;
+  color: var(--dw-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  left: 0 !important;
+}
+:root[data-ow-skin="ow-duet"] .hamburger-btn,
+
+:root[data-ow-skin="ow-duet-night"] .hamburger-btn {
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  width: 36px !important;
+  height: 36px !important;
+  top: calc(12px + var(--safe-top, 0px)) !important;
+  left: calc(8px + var(--safe-left, 0px)) !important;
+  border-radius: 10px !important;
+  transition: background-color 150ms ease, color 150ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] .hamburger-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .hamburger-btn:hover { background: var(--dw-side-hover) !important; color: var(--dw-text) !important; }
+:root[data-ow-skin="ow-duet"] .sidebar-inner,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-inner { padding: 8px 10px 10px !important; gap: 1px !important; }
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item,
+
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item,
+
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-header-flex,
+
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-header-flex {
+  min-height: 38px !important;
+  padding: 0 10px 0 12px !important;
+  gap: 11px !important;
+  border-radius: 12px !important;
+  border: 0 !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  line-height: 1.25 !important;
+  color: var(--dw-text) !important;
+  opacity: 1 !important;
+  position: relative !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .list-item .grow,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item .grow { left: 0 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .list-item .grow,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item .grow,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-title,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-title,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-title > span,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-title > span,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-title-label,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-title-label {
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: var(--dw-text) !important;
+  opacity: 1 !important;
+  letter-spacing: 0 !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .list-item svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item svg,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-title svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-title svg {
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 18px !important;
+  color: var(--dw-ink) !important;
+  stroke: currentColor !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .list-item:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item:hover,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-header-flex:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-header-flex:hover { background: var(--dw-side-hover) !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .list-item.active,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item.active,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item.active-session,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item.active-session {
+  background: var(--dw-paper) !important;
+  box-shadow: var(--dw-shadow-low) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .list-item.active::before,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item.active::before,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item.active-session::before,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item.active-session::before {
+  content: '' !important;
+  position: absolute !important;
+  left: 4px !important;
+  top: 50% !important;
+  width: 3px !important;
+  height: 16px !important;
+  margin-top: -8px !important;
+  border-radius: 3px !important;
+  background: var(--dw-ink) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .list-item.active .grow,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item.active .grow,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item.active-session .grow,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item.active-session .grow { font-weight: 700 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .section,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section { border: 0 !important; margin-top: 0 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .section-header-flex,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-header-flex { height: auto !important; margin: 0 !important; padding-right: 6px !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .section-title,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-title {
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .section-header-btn,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-header-btn,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item-plus-btn,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item-plus-btn {
+  min-width: 30px !important;
+  height: 30px !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: var(--dw-muted) !important;
+  justify-content: center !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .section-header-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-header-btn svg,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-collapse-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-collapse-btn svg,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item-plus-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item-plus-btn svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+  width: 15px !important;
+  height: 15px !important;
+  flex: 0 0 15px !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-collapse-btn,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item-plus-btn:not(.chats-manage-btn),
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item-plus-btn:not(.chats-manage-btn) { opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .section-header-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-header-btn:hover,
+
+:root[data-ow-skin="ow-duet"] .sidebar .section-collapse-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .section-collapse-btn:hover,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item-plus-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item-plus-btn:hover { background: var(--dw-paper) !important; color: var(--dw-ink) !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .list-item-plus-label,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item-plus-label { color: var(--dw-muted) !important; font-size: 12.5px !important; font-weight: 500 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .date-section-header,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .date-section-header {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  padding: 12px 12px 4px !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .session-item .grow,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .session-item .grow { font-size: 14.5px !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .list-item button svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item button svg,
+
+:root[data-ow-skin="ow-duet"] .sidebar .list-item .session-menu-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item .session-menu-btn svg {
+  width: 15px !important;
+  height: 15px !important;
+  flex: 0 0 15px !important;
+  color: var(--dw-muted) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .list-item .session-menu-btn,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .list-item .session-menu-btn {
+  background: transparent !important;
+  color: var(--dw-muted) !important;
+  border-radius: 8px !important;
+  height: 28px !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar .session-item,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .session-item { gap: 8px !important; padding-left: 10px !important; }
+:root[data-ow-skin="ow-duet"] .sidebar .session-item .session-icon svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .session-item .session-icon svg { width: 16px !important; height: 16px !important; flex-basis: 16px !important; }
+/* Tools is a group, so its header reads as a quiet label above the group */
+:root[data-ow-skin="ow-duet"] .sidebar #tools-section > .section-header-flex,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar #tools-section > .section-header-flex {
+  min-height: 30px !important;
+  margin-top: 12px !important;
+  padding-left: 12px !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar #tools-section > .section-header-flex:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar #tools-section > .section-header-flex:hover { background: transparent !important; }
+:root[data-ow-skin="ow-duet"] .sidebar #tools-section .section-title,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar #tools-section .section-title {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--dw-muted) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar #tools-section .section-title > svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar #tools-section .section-title > svg { display: none !important; }
+
+/* the person, at the foot of the desk */
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar { padding: 10px 10px 12px !important; border: 0 !important; }
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar .user-bar-left,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar .user-bar-left {
+  background: var(--dw-paper) !important;
+  border-radius: 999px !important;
+  padding: 5px 14px 5px 5px !important;
+  box-shadow: var(--dw-shadow-low) !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar .user-bar-avatar,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar .user-bar-avatar {
+  width: 30px !important;
+  height: 30px !important;
+  left: 0 !important;
+  background: var(--dw-ink) !important;
+  color: var(--dw-on-ink) !important;
+  opacity: 1 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar .user-bar-name,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar .user-bar-name {
+  font-size: 14.5px !important;
+  font-weight: 600 !important;
+  color: var(--dw-text) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar .user-bar-btn,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar .user-bar-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar .user-bar-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar .user-bar-btn svg { color: currentColor !important; width: 18px !important; height: 18px !important; }
+:root[data-ow-skin="ow-duet"] .sidebar-user-bar .user-bar-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar-user-bar .user-bar-btn:hover { background: var(--dw-side-hover) !important; color: var(--dw-ink) !important; }
+
+/* ================= main column ================= */
+:root[data-ow-skin="ow-duet"] .chat-container,
+
+:root[data-ow-skin="ow-duet-night"] .chat-container { background: transparent !important; }
+:root[data-ow-skin="ow-duet"] .chat-history,
+
+:root[data-ow-skin="ow-duet-night"] .chat-history {
+  --chat-max: 780px !important;
+  padding-right: max(12px, calc((100% - var(--chat-max)) / 2)) !important;
+  padding-top: 10px !important;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px) !important;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px) !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-top-bar,
+
+:root[data-ow-skin="ow-duet-night"] .chat-top-bar { min-height: 44px !important; padding-top: 8px !important; }
+:root[data-ow-skin="ow-duet"] .chat-meta-overlay,
+
+:root[data-ow-skin="ow-duet-night"] .chat-meta-overlay { color: var(--dw-muted) !important; font-size: 13.5px !important; gap: 8px !important; }
+:root[data-ow-skin="ow-duet"] #current-meta,
+
+:root[data-ow-skin="ow-duet-night"] #current-meta {
+  font-family: var(--dw-sans) !important;
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  color: var(--dw-text) !important;
+  letter-spacing: 0 !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-meta-count,
+
+:root[data-ow-skin="ow-duet-night"] .chat-meta-count,
+
+:root[data-ow-skin="ow-duet"] .chat-context-pill,
+
+:root[data-ow-skin="ow-duet-night"] .chat-context-pill,
+
+:root[data-ow-skin="ow-duet"] .chat-context-pill span,
+
+:root[data-ow-skin="ow-duet-night"] .chat-context-pill span { color: var(--dw-muted) !important; font-size: 13px !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] .export-dl-btn,
+
+:root[data-ow-skin="ow-duet-night"] .export-dl-btn { color: var(--dw-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] .export-dl-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .export-dl-btn:hover { color: var(--dw-ink) !important; }
+
+/* ================= welcome: a blank card waiting for its first question ================= */
+:root[data-ow-skin="ow-duet"] #welcome-screen,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen {
+  display: grid !important;
+  grid-template-columns: 1fr auto !important;
+  align-items: center !important;
+  column-gap: 16px !important;
+  background: var(--dw-paper) !important;
+  border-radius: 28px !important;
+  box-shadow: var(--dw-shadow) !important;
+  padding: 34px 32px 18px !important;
+  width: min(780px, calc(100% - 32px)) !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen::after,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen::after {
+  content: '' !important;
+  grid-column: 1 / -1 !important;
+  grid-row: 3 !important;
+  height: 1px !important;
+  margin: 24px -32px 14px !important;
+  background: var(--dw-line) !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen .welcome-name,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .welcome-name {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 16px !important;
+  font-family: var(--dw-display) !important;
+  font-weight: 660 !important;
+  font-size: 44px !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.02em !important;
+  color: var(--dw-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--dw-text) !important;
+  margin: 0 0 8px !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen .welcome-name img.welcome-boat,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .welcome-name img.welcome-boat {
+  width: 68px !important;
+  height: 68px !important;
+  margin: 0 !important;
+  border-radius: 19px !important;
+  background: #FFFFFF !important;
+  box-shadow: var(--dw-shadow-low), 0 0 0 1px rgba(29, 42, 46, 0.06) !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen .welcome-sub,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .welcome-sub {
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  font-family: var(--dw-sans) !important;
+  font-size: 18px !important;
+  font-weight: 400 !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  letter-spacing: 0 !important;
+  max-width: none !important;
+  justify-self: center !important;
+  margin: 0 !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen .welcome-tip,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .welcome-tip {
+  grid-column: 1 !important;
+  grid-row: 4 !important;
+  justify-self: start !important;
+  text-align: left !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  letter-spacing: 0 !important;
+  margin: 0 !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen .incognito-btn,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .incognito-btn {
+  grid-column: 2 !important;
+  grid-row: 4 !important;
+  margin: 0 !important;
+  height: 32px !important;
+  padding: 0 14px 0 12px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--dw-rule) !important;
+  background: var(--dw-paper) !important;
+  color: var(--dw-muted) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  opacity: 1 !important;
+  gap: 6px !important;
+}
+:root[data-ow-skin="ow-duet"] #welcome-screen .incognito-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .incognito-btn:hover { border-color: var(--dw-ink) !important; color: var(--dw-ink) !important; }
+:root[data-ow-skin="ow-duet"] #welcome-screen .incognito-btn span,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen .incognito-btn span { color: inherit !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] #welcome-screen #welcome-setup,
+
+:root[data-ow-skin="ow-duet-night"] #welcome-screen #welcome-setup { grid-column: 1 / -1 !important; }
+@media (min-width: 769px) {
+  :root[data-ow-skin="ow-duet"] #welcome-screen,
+
+  :root[data-ow-skin="ow-duet-night"] #welcome-screen { top: auto !important; bottom: calc(26vh + 150px) !important; translate: 0 50% !important; }
+  :root[data-ow-skin="ow-duet"] .chat-container.welcome-active .chat-input-bar,
+
+  :root[data-ow-skin="ow-duet-night"] .chat-container.welcome-active .chat-input-bar { margin-bottom: 26vh !important; }
+}
+
+/* ================= turn cards ================= */
+:root[data-ow-skin="ow-duet"] #chat-history .msg,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 0 26px !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  box-shadow: var(--dw-shadow) !important;
+  align-self: stretch !important;
+  align-items: stretch !important;
+  font-family: var(--dw-sans) !important;
+  animation: owduet-rise 240ms var(--dw-ease) both !important;
+}
+/* history loaded in bulk arrives still, as upstream intends */
+:root[data-ow-skin="ow-duet"] .chat-history.no-animate .msg,
+
+:root[data-ow-skin="ow-duet-night"] .chat-history.no-animate .msg { animation: none !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg-ai,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-ai {
+  background: var(--dw-paper) !important;
+  color: var(--dw-text) !important;
+  padding: 20px 28px 10px !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user {
+  background: var(--dw-blush) !important;
+  color: var(--dw-blush-text) !important;
+  padding: 16px 28px 18px !important;
+}
+/* a question and its answer become one card */
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user:has(+ .msg-ai),
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user:has(+ .msg-ai) {
+  border-radius: 24px 24px 0 0 !important;
+  margin-bottom: 0 !important;
+  box-shadow: 0 1px 2px rgba(29, 42, 46, 0.05) !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user + .msg-ai,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user + .msg-ai {
+  border-radius: 0 0 24px 24px !important;
+  padding-top: 18px !important;
+  box-shadow: 0 14px 26px -16px rgba(29, 42, 46, 0.24), 0 1px 2px rgba(29, 42, 46, 0.06) !important;
+  animation-delay: 60ms !important;
+}
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user + .msg-ai { box-shadow: 0 14px 26px -16px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.3) !important; }
+/* consecutive steps of one answer join with a hairline */
+:root[data-ow-skin="ow-duet"] #chat-history .msg-ai + .msg-ai,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-ai + .msg-ai {
+  margin-top: -26px !important;
+  border-top: 1px solid var(--dw-line) !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+/* who is speaking: a small ink dot */
+:root[data-ow-skin="ow-duet"] #chat-history .msg .role,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .role {
+  font-family: var(--dw-sans) !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--dw-text) !important;
+  margin-bottom: 8px !important;
+  gap: 8px !important;
+  align-self: stretch !important;
+  justify-content: flex-start !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .role,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .role { color: var(--dw-blush-text) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .role::before,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .role::before {
+  width: 9px !important;
+  height: 9px !important;
+  background: var(--dw-ink) !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .role::before,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .role::before { background: var(--dw-coral) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .role .role-timestamp,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .role .role-timestamp {
+  font-weight: 400 !important;
+  font-size: 13px !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  margin-left: 2px !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .role .role-timestamp,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .role .role-timestamp { color: var(--dw-blush-muted) !important; }
+
+/* reading text */
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body {
+  font-family: var(--dw-sans) !important;
+  font-size: 16.5px !important;
+  line-height: 1.65 !important;
+  color: var(--dw-text) !important;
+  letter-spacing: 0.002em !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .body,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .body {
+  color: var(--dw-blush-text) !important;
+  font-weight: 500 !important;
+  line-height: 1.55 !important;
+  text-align: left !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > p,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > p,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > ul,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > ul,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > ol,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > ol,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > blockquote,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > blockquote,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > h1,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > h1,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > h2,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > h2,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > h3,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > h3 { max-width: 70ch !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > *,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > * { margin-top: 12px !important; margin-bottom: 12px !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > *:first-child,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > *:first-child { margin-top: 0 !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body > *:last-child,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body > *:last-child { margin-bottom: 0 !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body strong,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body strong,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body b,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body b { font-weight: 700 !important; color: inherit !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body em,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body em { font-style: italic !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body h1,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body h1,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body h2,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body h2 {
+  font-family: var(--dw-display) !important;
+  font-weight: 620 !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.25 !important;
+  color: var(--dw-text) !important;
+  margin-top: 22px !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body h1,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body h1 { font-size: 24px !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body h2,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body h2 { font-size: 20px !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body h3,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body h3,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body h4,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body h4 {
+  font-family: var(--dw-sans) !important;
+  font-weight: 700 !important;
+  font-size: 17px !important;
+  color: var(--dw-text) !important;
+  margin-top: 18px !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body a,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body a {
+  color: var(--dw-ink) !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 1.5px !important;
+  text-decoration-color: color-mix(in srgb, var(--dw-ink) 40%, transparent) !important;
+  text-underline-offset: 3px !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body a:hover,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body a:hover { text-decoration-color: var(--dw-ink) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body ul,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body ul,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body ol,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body ol { padding-left: 1.5em !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body li,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body li { margin: 4px 0 !important; padding-left: 4px !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body li::marker,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body li::marker { color: var(--dw-ink) !important; font-weight: 700 !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body blockquote,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body blockquote {
+  border-left: 3px solid var(--dw-rule) !important;
+  padding: 2px 0 2px 16px !important;
+  color: var(--dw-muted) !important;
+  background: none !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body hr,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body hr { border: 0 !important; border-top: 1px solid var(--dw-line) !important; }
+
+/* tables: a clean ledger in a soft frame */
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body table,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body table {
+  display: block !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border: 1px solid var(--dw-rule) !important;
+  border-radius: 12px !important;
+  margin: 16px 0 !important;
+  background: var(--dw-paper) !important;
+  font-variant-numeric: tabular-nums !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body th,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body th {
+  background: var(--dw-fill) !important;
+  color: var(--dw-text) !important;
+  font-family: var(--dw-sans) !important;
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+  letter-spacing: 0.01em !important;
+  text-transform: none !important;
+  padding: 10px 16px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--dw-rule) !important;
+  white-space: nowrap !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body td,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body td {
+  color: var(--dw-text) !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+  padding: 10px 16px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--dw-line) !important;
+  background: transparent !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body tbody:last-child tr:last-child td,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body tbody:last-child tr:last-child td { border-bottom: 0 !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body tr:hover td,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body tr:hover td { background: color-mix(in srgb, var(--dw-fill) 60%, transparent) !important; }
+
+/* code */
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre {
+  background: var(--dw-code) !important;
+  color: var(--dw-code-text) !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  padding: 14px 18px !important;
+  margin: 16px 0 !important;
+  font-family: var(--dw-mono) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dw-text) 6%, transparent) !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre.pre-compact,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre.pre-compact { padding-right: 18px !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre code,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre code,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre code *,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre code * {
+  font-family: var(--dw-mono) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  background: transparent !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre code,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre code {
+  display: block !important;
+  padding: 0 !important;
+  color: var(--dw-code-text) !important;
+  font-weight: 400 !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="keyword"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="keyword"] { color: var(--hl-keyword) !important; font-weight: 600 !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="string"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="string"] { color: var(--hl-string) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="number"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="number"],
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="literal"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="literal"] { color: var(--hl-number) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="comment"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="comment"] { color: var(--hl-comment) !important; font-style: italic !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="title"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="title"],
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="function"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="function"] { color: var(--hl-function) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre [class*="built_in"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre [class*="built_in"] { color: var(--hl-builtin) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre .copy-code,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre .copy-code,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre .edit-code,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre .edit-code,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre .run-code,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre .run-code {
+  font-family: var(--dw-sans) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  background: var(--dw-paper) !important;
+  color: var(--dw-text) !important;
+  border: 1px solid var(--dw-rule) !important;
+  border-radius: 8px !important;
+  height: 26px !important;
+  top: 7px !important;
+  box-shadow: var(--dw-shadow-low) !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre .copy-code:hover,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre .copy-code:hover,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre .edit-code:hover,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre .edit-code:hover,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body pre .run-code:hover,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre .run-code:hover { color: var(--dw-ink) !important; border-color: var(--dw-ink) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg .body :not(pre) > code,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg .body :not(pre) > code {
+  font-family: var(--dw-mono) !important;
+  font-size: 0.88em !important;
+  font-weight: 500 !important;
+  background: var(--dw-fill) !important;
+  color: var(--dw-text) !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  padding: 0.12em 0.4em !important;
+}
+
+/* actions under an answer, on a hairline inside the card */
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer {
+  border-top: 1px solid var(--dw-line) !important;
+  margin-top: 16px !important;
+  padding-top: 6px !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer button,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer button,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer .msg-action-btn,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer .msg-action-btn,
+
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer .footer-copy-btn,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer .footer-copy-btn {
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  border-radius: 9px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  transition: background-color 150ms ease, color 150ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer svg,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer svg { width: 15px !important; height: 15px !important; color: currentColor !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer button:hover,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer button:hover { background: var(--dw-fill) !important; color: var(--dw-ink) !important; }
+/* in the question band the actions sit on the name line, top right */
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .msg-footer,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .msg-footer {
+  position: absolute !important;
+  top: 10px !important;
+  right: 16px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .msg-footer button,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .msg-footer button { color: var(--dw-blush-muted) !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg-user .msg-footer button:hover,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-user .msg-footer button:hover { background: color-mix(in srgb, var(--dw-blush-text) 8%, transparent) !important; color: var(--dw-blush-text) !important; }
+
+/* ================= composer: a paper tray ================= */
+:root[data-ow-skin="ow-duet"] .chat-input-bar,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bar {
+  background: var(--dw-paper) !important;
+  border: 1.5px solid var(--dw-edge) !important;
+  border-radius: 22px !important;
+  box-shadow: var(--dw-shadow) !important;
+  padding: 14px 14px 12px 20px !important;
+  max-width: 780px !important;
+  gap: 10px !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-container:not(.welcome-active) .chat-input-bar,
+
+:root[data-ow-skin="ow-duet-night"] .chat-container:not(.welcome-active) .chat-input-bar { margin-bottom: calc(14px + var(--safe-bottom, 0px)) !important; }
+:root[data-ow-skin="ow-duet"] .chat-input-bar:focus-within,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bar:focus-within {
+  border-color: var(--dw-ink) !important;
+  box-shadow: 0 0 0 3px var(--dw-halo), var(--dw-shadow) !important;
+}
+:root[data-ow-skin="ow-duet"] #message:focus,
+
+:root[data-ow-skin="ow-duet-night"] #message:focus,
+
+:root[data-ow-skin="ow-duet"] #message:focus-visible,
+
+:root[data-ow-skin="ow-duet-night"] #message:focus-visible { outline: none !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-duet"] #message,
+
+:root[data-ow-skin="ow-duet-night"] #message {
+  font-size: 16.5px !important;
+  line-height: 1.5 !important;
+  color: var(--dw-text) !important;
+  background: transparent !important;
+}
+:root[data-ow-skin="ow-duet"] #message::placeholder,
+
+:root[data-ow-skin="ow-duet-night"] #message::placeholder { color: var(--dw-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] .model-picker-btn,
+
+:root[data-ow-skin="ow-duet-night"] .model-picker-btn,
+
+:root[data-ow-skin="ow-duet"] .model-picker-btn span,
+
+:root[data-ow-skin="ow-duet-night"] .model-picker-btn span {
+  font-family: var(--dw-sans) !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+}
+:root[data-ow-skin="ow-duet"] .model-picker-btn,
+
+:root[data-ow-skin="ow-duet-night"] .model-picker-btn { border-radius: 999px !important; padding: 4px 10px !important; }
+:root[data-ow-skin="ow-duet"] .model-picker-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .model-picker-btn:hover { background: var(--dw-fill) !important; color: var(--dw-text) !important; }
+
+/* tools wear their names */
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn:not(.tool-indicator),
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator) {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  width: auto !important;
+  height: 34px !important;
+  padding: 0 14px 0 11px !important;
+  border-radius: 999px !important;
+  border: 0 !important;
+  background: var(--dw-fill) !important;
+  color: var(--dw-text) !important;
+  opacity: 1 !important;
+  transition: background-color 150ms ease, color 150ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after {
+  content: attr(aria-label) !important;
+  font-family: var(--dw-sans) !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn svg { width: 16px !important; height: 16px !important; color: var(--dw-ink) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn:not(.tool-indicator):hover,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator):hover { background: var(--dw-fill-hover) !important; }
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn[aria-pressed="true"],
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn[aria-pressed="true"],
+
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn.active:not(.tool-indicator),
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn.active:not(.tool-indicator) {
+  background: var(--dw-ink-tint) !important;
+  color: var(--dw-text) !important;
+  box-shadow: inset 0 0 0 1.5px var(--dw-ink) !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn.tool-indicator,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn.tool-indicator {
+  border-radius: 999px !important;
+  background: var(--dw-ink-tint) !important;
+  color: var(--dw-text) !important;
+  height: 34px !important;
+  padding: 0 10px !important;
+}
+:root[data-ow-skin="ow-duet"] .chat-input-left,
+
+:root[data-ow-skin="ow-duet-night"] .chat-input-left { gap: 6px !important; }
+
+/* Agent / Chat: an ink pill slides to the chosen mode */
+:root[data-ow-skin="ow-duet"] .mode-toggle,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  background: var(--dw-fill) !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  padding: 3px !important;
+  height: auto !important;
+}
+:root[data-ow-skin="ow-duet"] .mode-toggle.mode-toggle-three,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle.mode-toggle-three { grid-template-columns: 1fr 1fr 1fr !important; }
+:root[data-ow-skin="ow-duet"] .mode-toggle::before,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle::before {
+  top: 3px !important;
+  left: 3px !important;
+  width: calc((100% - 6px) / 2) !important;
+  height: calc(100% - 6px) !important;
+  border-radius: 999px !important;
+  background: var(--dw-ink) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14) !important;
+  transition: transform 220ms var(--dw-ease) !important;
+}
+:root[data-ow-skin="ow-duet"] .mode-toggle.mode-toggle-three::before,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle.mode-toggle-three::before { width: calc((100% - 6px) / 3) !important; }
+:root[data-ow-skin="ow-duet"] .mode-toggle-btn,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle-btn {
+  font-family: var(--dw-sans) !important;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  height: 30px !important;
+  min-width: 62px !important;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  transition: color 180ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] .mode-toggle-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle-btn:hover { color: var(--dw-text) !important; }
+:root[data-ow-skin="ow-duet"] .mode-toggle-btn.active,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle-btn.active,
+
+:root[data-ow-skin="ow-duet"] .mode-toggle-btn.active:hover,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle-btn.active:hover,
+
+:root[data-ow-skin="ow-duet"] .mode-toggle-btn.active:focus,
+
+:root[data-ow-skin="ow-duet-night"] .mode-toggle-btn.active:focus {
+  background: transparent !important;
+  color: var(--dw-on-ink) !important;
+  font-weight: 700 !important;
+}
+
+/* as upstream: on a very narrow composer the mode toggle steps aside */
+@container chatbar (max-width: 340px) {
+  :root[data-ow-skin="ow-duet"] .chat-input-right .mode-toggle,
+
+  :root[data-ow-skin="ow-duet-night"] .chat-input-right .mode-toggle { display: none !important; }
+}
+
+/* send: the one soft square */
+:root[data-ow-skin="ow-duet"] .send-btn,
+
+:root[data-ow-skin="ow-duet-night"] .send-btn {
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 42px !important;
+  border-radius: 14px !important;
+  background: var(--dw-ink) !important;
+  color: var(--dw-on-ink) !important;
+  border: 0 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 4px 10px -4px color-mix(in srgb, var(--dw-ink) 60%, transparent) !important;
+  transition: background-color 150ms ease, transform 90ms ease, box-shadow 150ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] .send-btn svg,
+
+:root[data-ow-skin="ow-duet-night"] .send-btn svg { color: var(--dw-on-ink) !important; stroke: currentColor !important; width: 18px !important; height: 18px !important; }
+:root[data-ow-skin="ow-duet"] .send-btn:hover,
+
+:root[data-ow-skin="ow-duet-night"] .send-btn:hover { background: var(--dw-ink-deep) !important; }
+:root[data-ow-skin="ow-duet"] .send-btn:active,
+
+:root[data-ow-skin="ow-duet-night"] .send-btn:active { transform: translateY(1px) scale(0.97) !important; }
+:root[data-ow-skin="ow-duet"] .send-btn:disabled,
+
+:root[data-ow-skin="ow-duet-night"] .send-btn:disabled { background: var(--dw-fill-hover) !important; color: var(--dw-faint) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-duet"] .send-btn:disabled svg,
+
+:root[data-ow-skin="ow-duet-night"] .send-btn:disabled svg { color: var(--dw-faint) !important; }
+
+/* popovers and small floating controls: paper, softly lifted */
+:root[data-ow-skin="ow-duet"] .export-dropdown-menu,
+
+:root[data-ow-skin="ow-duet-night"] .export-dropdown-menu,
+
+:root[data-ow-skin="ow-duet"] .model-picker-menu,
+
+:root[data-ow-skin="ow-duet-night"] .model-picker-menu,
+
+:root[data-ow-skin="ow-duet"] .overflow-menu,
+
+:root[data-ow-skin="ow-duet-night"] .overflow-menu,
+
+:root[data-ow-skin="ow-duet"] .sidebar .dropdown,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .dropdown {
+  background: var(--dw-paper) !important;
+  border: 1px solid var(--dw-rule) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 4px rgba(29, 42, 46, 0.06), 0 16px 36px -12px rgba(29, 42, 46, 0.28) !important;
+  padding: 6px !important;
+  color: var(--dw-text) !important;
+}
+:root[data-ow-skin="ow-duet-night"] .export-dropdown-menu,
+
+:root[data-ow-skin="ow-duet-night"] .model-picker-menu,
+
+:root[data-ow-skin="ow-duet-night"] .overflow-menu,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .dropdown { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 16px 36px -12px rgba(0, 0, 0, 0.7) !important; }
+:root[data-ow-skin="ow-duet"] .export-dropdown-item,
+
+:root[data-ow-skin="ow-duet-night"] .export-dropdown-item,
+
+:root[data-ow-skin="ow-duet"] .overflow-menu-item,
+
+:root[data-ow-skin="ow-duet-night"] .overflow-menu-item,
+
+:root[data-ow-skin="ow-duet"] .sidebar .dropdown-item,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .dropdown-item {
+  border-radius: 10px !important;
+  font-family: var(--dw-sans) !important;
+  font-size: 14px !important;
+  color: var(--dw-text) !important;
+}
+:root[data-ow-skin="ow-duet"] .export-dropdown-item:hover,
+
+:root[data-ow-skin="ow-duet-night"] .export-dropdown-item:hover,
+
+:root[data-ow-skin="ow-duet"] .overflow-menu-item:hover,
+
+:root[data-ow-skin="ow-duet-night"] .overflow-menu-item:hover,
+
+:root[data-ow-skin="ow-duet"] .sidebar .dropdown-item:hover,
+
+:root[data-ow-skin="ow-duet-night"] .sidebar .dropdown-item:hover { background: var(--dw-fill) !important; }
+:root[data-ow-skin="ow-duet"] .overflow-menu-item svg,
+
+:root[data-ow-skin="ow-duet-night"] .overflow-menu-item svg,
+
+:root[data-ow-skin="ow-duet"] .export-dropdown-item svg,
+
+:root[data-ow-skin="ow-duet-night"] .export-dropdown-item svg { color: var(--dw-ink) !important; }
+:root[data-ow-skin="ow-duet"] .scroll-nav-btn,
+
+:root[data-ow-skin="ow-duet-night"] .scroll-nav-btn {
+  background: var(--dw-paper) !important;
+  color: var(--dw-ink) !important;
+  border: 1px solid var(--dw-rule) !important;
+  border-radius: 999px !important;
+  box-shadow: var(--dw-shadow-low) !important;
+}
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer .msg-more-btn,
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer .msg-more-btn { font-size: 17px !important; font-weight: 700 !important; letter-spacing: 0.02em !important; }
+:root[data-ow-skin="ow-duet"] #chat-history .msg-footer .msg-action-btn[data-action="edit"],
+
+:root[data-ow-skin="ow-duet-night"] #chat-history .msg-footer .msg-action-btn[data-action="edit"] { font-size: 16px !important; }
+
+/* ================= login: the same paper card on the desk ================= */
+:root[data-ow-skin="ow-duet"] body:has(main.card),
+
+:root[data-ow-skin="ow-duet-night"] body:has(main.card) { background: var(--dw-desk) !important; background-image: none !important; }
+:root[data-ow-skin="ow-duet"] body:has(main.card) canvas,
+
+:root[data-ow-skin="ow-duet-night"] body:has(main.card) canvas { display: none !important; }
+:root[data-ow-skin="ow-duet"] main.card,
+
+:root[data-ow-skin="ow-duet-night"] main.card {
+  background: var(--dw-paper) !important;
+  color: var(--dw-text) !important;
+  border: 0 !important;
+  border-radius: 28px !important;
+  box-shadow: var(--dw-shadow) !important;
+  width: 420px !important;
+  padding: 40px 40px 34px !important;
+}
+:root[data-ow-skin="ow-duet"] main.card h1.logo,
+
+:root[data-ow-skin="ow-duet-night"] main.card h1.logo {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 14px !important;
+  margin-bottom: 10px !important;
+}
+:root[data-ow-skin="ow-duet"] main.card h1.logo img.logo-boat,
+
+:root[data-ow-skin="ow-duet-night"] main.card h1.logo img.logo-boat {
+  width: 64px !important;
+  height: 64px !important;
+  margin: 0 !important;
+  border-radius: 18px !important;
+  background: #FFFFFF !important;
+  box-shadow: var(--dw-shadow-low), 0 0 0 1px rgba(29, 42, 46, 0.06) !important;
+}
+:root[data-ow-skin="ow-duet"] main.card h1.logo span,
+
+:root[data-ow-skin="ow-duet-night"] main.card h1.logo span {
+  font-family: var(--dw-display) !important;
+  font-weight: 660 !important;
+  font-size: 34px !important;
+  letter-spacing: -0.02em !important;
+  color: var(--dw-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--dw-text) !important;
+}
+:root[data-ow-skin="ow-duet"] main.card .built-on,
+
+:root[data-ow-skin="ow-duet-night"] main.card .built-on {
+  font-size: 13px !important;
+  color: var(--dw-muted) !important;
+  opacity: 1 !important;
+  margin: 0 0 26px !important;
+}
+:root[data-ow-skin="ow-duet"] main.card .built-on a,
+
+:root[data-ow-skin="ow-duet-night"] main.card .built-on a { color: var(--dw-ink) !important; text-underline-offset: 3px !important; }
+:root[data-ow-skin="ow-duet"] main.card label:not(.remember-toggle),
+
+:root[data-ow-skin="ow-duet-night"] main.card label:not(.remember-toggle) {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--dw-text) !important;
+  margin-bottom: 6px !important;
+}
+:root[data-ow-skin="ow-duet"] main.card input[type="text"],
+
+:root[data-ow-skin="ow-duet-night"] main.card input[type="text"],
+
+:root[data-ow-skin="ow-duet"] main.card input[type="password"],
+
+:root[data-ow-skin="ow-duet-night"] main.card input[type="password"] {
+  height: 48px !important;
+  border-radius: 12px !important;
+  border: 1.5px solid var(--dw-edge) !important;
+  background: var(--dw-paper) !important;
+  color: var(--dw-text) !important;
+  font-family: var(--dw-sans) !important;
+  font-size: 16px !important;
+  padding: 0 44px 0 14px !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] main.card input[type="text"]:focus,
+
+:root[data-ow-skin="ow-duet-night"] main.card input[type="text"]:focus,
+
+:root[data-ow-skin="ow-duet"] main.card input[type="password"]:focus,
+
+:root[data-ow-skin="ow-duet-night"] main.card input[type="password"]:focus {
+  border-color: var(--dw-ink) !important;
+  box-shadow: 0 0 0 4px var(--dw-halo) !important;
+  outline: none !important;
+}
+:root[data-ow-skin="ow-duet"] main.card .pw-wrapper,
+
+:root[data-ow-skin="ow-duet-night"] main.card .pw-wrapper { margin-bottom: 18px !important; }
+:root[data-ow-skin="ow-duet"] main.card .pw-toggle,
+
+:root[data-ow-skin="ow-duet-night"] main.card .pw-toggle { color: var(--dw-muted) !important; }
+:root[data-ow-skin="ow-duet"] main.card #submitBtn,
+
+:root[data-ow-skin="ow-duet-night"] main.card #submitBtn {
+  height: 48px !important;
+  margin-top: 6px !important;
+  border-radius: 12px !important;
+  background: var(--dw-ink) !important;
+  color: var(--dw-on-ink) !important;
+  font-family: var(--dw-sans) !important;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+  letter-spacing: 0.01em !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 6px 14px -6px color-mix(in srgb, var(--dw-ink) 70%, transparent) !important;
+  transition: background-color 150ms ease, transform 90ms ease !important;
+}
+:root[data-ow-skin="ow-duet"] main.card #submitBtn:hover,
+
+:root[data-ow-skin="ow-duet-night"] main.card #submitBtn:hover { background: var(--dw-ink-deep) !important; }
+:root[data-ow-skin="ow-duet"] main.card #submitBtn:active,
+
+:root[data-ow-skin="ow-duet-night"] main.card #submitBtn:active { transform: translateY(1px) !important; }
+:root[data-ow-skin="ow-duet"] main.card .toggle,
+
+:root[data-ow-skin="ow-duet-night"] main.card .toggle,
+
+:root[data-ow-skin="ow-duet"] main.card .setup-note,
+
+:root[data-ow-skin="ow-duet-night"] main.card .setup-note { color: var(--dw-muted) !important; }
+:root[data-ow-skin="ow-duet"] main.card .toggle a,
+
+:root[data-ow-skin="ow-duet-night"] main.card .toggle a { color: var(--dw-ink) !important; }
+:root[data-ow-skin="ow-duet"] .version-label,
+
+:root[data-ow-skin="ow-duet-night"] .version-label { color: var(--dw-muted) !important; opacity: 0.8 !important; font-family: var(--dw-sans) !important; }
+
+/* ================= motion ================= */
+@keyframes owduet-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ow-skin="ow-duet"] #chat-history .msg,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg { animation: owduet-fade 80ms linear both !important; }
+  :root[data-ow-skin="ow-duet"] .send-btn:active,
+
+  :root[data-ow-skin="ow-duet-night"] .send-btn:active,
+
+  :root[data-ow-skin="ow-duet"] main.card #submitBtn:active,
+
+  :root[data-ow-skin="ow-duet-night"] main.card #submitBtn:active { transform: none !important; }
+  :root[data-ow-skin="ow-duet"] .sidebar .list-item,
+
+  :root[data-ow-skin="ow-duet-night"] .sidebar .list-item,
+
+  :root[data-ow-skin="ow-duet"] .chat-input-bar,
+
+  :root[data-ow-skin="ow-duet-night"] .chat-input-bar,
+
+  :root[data-ow-skin="ow-duet"] .send-btn,
+
+  :root[data-ow-skin="ow-duet-night"] .send-btn,
+
+  :root[data-ow-skin="ow-duet"] .mode-toggle-btn,
+
+  :root[data-ow-skin="ow-duet-night"] .mode-toggle-btn,
+
+  :root[data-ow-skin="ow-duet"] .mode-toggle::before,
+
+  :root[data-ow-skin="ow-duet-night"] .mode-toggle::before { transition-duration: 80ms !important; }
+}
+@keyframes owduet-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ================= phones ================= */
+@media (max-width: 768px) {
+  :root[data-ow-skin="ow-duet"] .chat-history,
+
+  :root[data-ow-skin="ow-duet-night"] .chat-history { padding-left: 0 !important; padding-right: 0 !important; }
+}
+@media (hover: none) {
+  :root[data-ow-skin="ow-duet"] #chat-history .msg .body pre,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg .body pre { padding-top: 42px !important; }
+}
+@media (max-width: 640px) {
+  :root[data-ow-skin="ow-duet"] #chat-history .msg,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg { border-radius: 20px !important; margin-bottom: 18px !important; }
+  :root[data-ow-skin="ow-duet"] #chat-history .msg-ai,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg-ai { padding: 16px 18px 8px !important; }
+  :root[data-ow-skin="ow-duet"] #chat-history .msg-user,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg-user { padding: 14px 18px 16px !important; }
+  :root[data-ow-skin="ow-duet"] #chat-history .msg-user:has(+ .msg-ai),
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg-user:has(+ .msg-ai) { border-radius: 20px 20px 0 0 !important; margin-bottom: 0 !important; }
+  :root[data-ow-skin="ow-duet"] #chat-history .msg-user + .msg-ai,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg-user + .msg-ai { border-radius: 0 0 20px 20px !important; }
+  :root[data-ow-skin="ow-duet"] #chat-history .msg .body,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg .body { font-size: 16px !important; }
+  :root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn:not(.tool-indicator),
+
+  :root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator) { width: 40px !important; height: 40px !important; padding: 0 !important; justify-content: center !important; }
+  :root[data-ow-skin="ow-duet"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after,
+
+  :root[data-ow-skin="ow-duet-night"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after { content: none !important; }
+  :root[data-ow-skin="ow-duet"] .chat-input-bar,
+
+  :root[data-ow-skin="ow-duet-night"] .chat-input-bar { border-radius: 20px !important; padding: 12px 12px 10px 16px !important; margin-bottom: calc(8px + var(--safe-bottom, 0px)) !important; }
+  :root[data-ow-skin="ow-duet"] #welcome-screen,
+
+  :root[data-ow-skin="ow-duet-night"] #welcome-screen { padding: 28px 22px 18px !important; border-radius: 24px !important; }
+  :root[data-ow-skin="ow-duet"] #welcome-screen::after,
+
+  :root[data-ow-skin="ow-duet-night"] #welcome-screen::after { margin: 20px -22px 12px !important; }
+  :root[data-ow-skin="ow-duet"] #chat-history .msg .body th,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg .body th,
+
+  :root[data-ow-skin="ow-duet"] #chat-history .msg .body td,
+
+  :root[data-ow-skin="ow-duet-night"] #chat-history .msg .body td { white-space: nowrap !important; padding: 9px 14px !important; }
+  :root[data-ow-skin="ow-duet"] #welcome-screen .welcome-name,
+
+  :root[data-ow-skin="ow-duet-night"] #welcome-screen .welcome-name { font-size: 34px !important; }
+  :root[data-ow-skin="ow-duet"] #welcome-screen .welcome-name img.welcome-boat,
+
+  :root[data-ow-skin="ow-duet-night"] #welcome-screen .welcome-name img.welcome-boat { width: 60px !important; height: 60px !important; border-radius: 17px !important; }
+  :root[data-ow-skin="ow-duet"] .sidebar,
+
+  :root[data-ow-skin="ow-duet-night"] .sidebar { border-radius: 0 24px 24px 0 !important; }
+  :root[data-ow-skin="ow-duet"] main.card,
+
+  :root[data-ow-skin="ow-duet-night"] main.card { padding: 32px 24px 26px !important; border-radius: 24px !important; }
+}
