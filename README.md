@@ -181,7 +181,7 @@ Sidebar **Agents** opens the persona editor. An agent has a name, instructions (
 
 Press **Start Persona** to activate it; saved agents appear in the editor's drop down. Limits also apply to each agent taking part in a group chat. The agent can always ask you questions, update its plan and open panels in your UI. Use the message box's **Agent** switch for tool use; **Chat** mode answers without tools.
 
-Four starter agents are added on first install (`./scripts/seed-agents.sh` re-adds any you delete; it never overwrites edits):
+Five starter agents are added on first install (`./scripts/seed-agents.sh` re-adds any you delete; it never overwrites edits):
 
 | Agent | Tool families | Behaviour |
 | --- | --- | --- |
@@ -189,6 +189,7 @@ Four starter agents are added on first install (`./scripts/seed-agents.sh` re-ad
 | Researcher | web, research, documents, memory | Reads several sources, cites only pages it opened with numbered inline links, flags uncertainty |
 | Writer | documents, memory, files | Drafts and edits in your voice, never invents facts, lists its changes |
 | Planner | calendar, notes, tasks | Answers schedule questions, confirms before creating events, turns plans into tasks |
+| Data Analyst | shell, files, documents | Analyses CSV, Excel and JSON with Python in the code runner (needs the runner), computes every number from the full file, charts with stated trends and outliers, writes cleaned data to new files with download links |
 
 **Scheduled agents**: sidebar **Tasks** runs an agent prompt on a schedule, a cron expression or an event (for example a morning briefing). Results go to a chat, or by email to yourself only.
 

@@ -1,0 +1,146 @@
+Wings patch 0012: an approved plan survives Continue and keeps going
+
+Upstream's agent_loop.build_active_plan_note says the approved plan is
+"sent back by the frontend each turn", but static/js/chat.js sent it once
+and cleared it. So when a long plan hit the step limit and the person
+pressed Continue, the plan was no longer pinned and update_plan was turned
+off (a Continue message is not a plan request), and the agent lost track of
+which steps were done. OpenManus drives a plan from outside the model, step
+after step; this gives Wings the same follow through without giving up its
+plan review and approval.
+
+  * static/js/chat.js: the approved plan is remembered per chat (with the
+    agent's ticks from plan_update) until every step is ticked or the person
+    clears it. A Continue, Resume or typed "continue" in that chat sends it
+    again, so the plan note is pinned and update_plan is available. When the
+    step limit is reached with plan steps left, the chat continues on its
+    own up to 3 times per approval, with a Stop here button; approvals,
+    questions and the Stop button still pause it as before.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/static/js/chat.js b/static/js/chat.js
+index 7b0d704..299b16d 100644
+--- a/static/js/chat.js
++++ b/static/js/chat.js
+@@ -1502,6 +1502,41 @@ import { invalidateSettings } from './appConfig.js';
+   let _queuedRequestSeq = 0;
+   let _queuedBubbleHost = null;
+   let _pendingApprovedPlan = '';
++  // Wings: the approved plan stays pinned for this chat after the first
++  // send, so Continue (after the step limit, a stop, or a typed "continue")
++  // carries the plan with its ticked steps and update_plan stays available.
++  // Upstream sent it once and dropped it. Kept per chat, so a plan drafted in
++  // another chat never leaks in.
++  const WINGS_APPROVED_PLAN_KEY = 'wings-approved-plan';
++  const WINGS_PLAN_AUTO_CONTINUE_MAX = 3;
++  let _planAutoContinues = 0;
++  function _wingsSessionNow() {
++    try {
++      const sm = _liveSessionModule();
++      return (sm && sm.getCurrentSessionId && sm.getCurrentSessionId()) || '';
++    } catch (_) { return ''; }
++  }
++  function _wingsRememberPlan(plan, session) {
++    const text = _extractPlanText(plan);
++    const sid = session || _wingsSessionNow();
++    if (!text || !sid) return;
++    try { localStorage.setItem(WINGS_APPROVED_PLAN_KEY, JSON.stringify({ session: sid, plan: text })); } catch (_) {}
++  }
++  function _wingsForgetPlan() {
++    _planAutoContinues = 0;
++    try { localStorage.removeItem(WINGS_APPROVED_PLAN_KEY); } catch (_) {}
++  }
++  function _wingsActivePlan() {
++    let saved = null;
++    try { saved = JSON.parse(localStorage.getItem(WINGS_APPROVED_PLAN_KEY) || 'null'); } catch (_) { saved = null; }
++    if (!saved || typeof saved.plan !== 'string' || !saved.session || saved.session !== _wingsSessionNow()) return '';
++    // Only while steps are left: a finished plan is not pinned again.
++    return /^\s*(?:[-*]|\d+\.)\s+\[ \]\s+/m.test(saved.plan) ? saved.plan : '';
++  }
++  function _wingsIsContinuation(text) {
++    const t = String(text || '').trim();
++    return t.length <= 400 && /^(?:continue|keep going|go on|resume|proceed|carry on|next step|you hit the step limit)\b/i.test(t);
++  }
+ 
+   function _queuedSessionId() {
+     try { return sessionModule?.getCurrentSessionId?.() || ''; } catch (_) { return ''; }
+@@ -1593,12 +1628,15 @@ import { invalidateSettings } from './appConfig.js';
+ 	      const approved = _getStoredPlan() || _extractPlanText(plan);
+ 	      if (!approved.trim()) return;
+ 	      _pendingApprovedPlan = approved;
++	      _planAutoContinues = 0;
++	      _wingsRememberPlan(approved);
+ 	      if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
+ 	      if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
+ 	      _setComposerAndSend('Execute the approved plan.');
+ 	    });
+ 	    actions.querySelector('.plan-inline-clear')?.addEventListener('click', () => {
+ 	      _clearStoredPlan();
++	      _wingsForgetPlan();
+ 	      actions.remove();
+ 	    });
+ 	    (target.querySelector('.body') || target).appendChild(actions);
+@@ -1634,12 +1672,15 @@ import { invalidateSettings } from './appConfig.js';
+       panel.querySelector('.plan-review-close')?.addEventListener('click', () => panel.remove());
+       panel.querySelector('.plan-review-clear')?.addEventListener('click', () => {
+         _clearStoredPlan();
++        _wingsForgetPlan();
+         panel.remove();
+       });
+       panel.querySelector('.plan-review-execute')?.addEventListener('click', () => {
+         const approved = _getStoredPlan();
+         if (!approved.trim()) return;
+         _pendingApprovedPlan = approved;
++        _planAutoContinues = 0;
++        _wingsRememberPlan(approved);
+         panel.remove();
+         if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
+         if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
+@@ -2628,6 +2669,9 @@ import { invalidateSettings } from './appConfig.js';
+ 	      // but shell authority still comes from the visible Bash toggle.
+ 	      const _explicitWorkspaceTarget = _directCodeFileTarget || /\b(?:bash|shell|terminal|tmux|pytest|git|docker|container|codebase|repo(?:sitory)?|stacktrace|traceback)\b/i.test(_messageText);
+ 	      const workspaceAgentIntent = !isIncognito && !_explanatoryQuestion && (_directCodingIntent || _explicitWorkspaceTarget);
++	      if (!isPlanMode && !_pendingApprovedPlan && _wingsIsContinuation(_messageText)) {
++	        _pendingApprovedPlan = _wingsActivePlan();
++	      }
+ 	      if (isPlanMode || _pendingApprovedPlan) {
+ 	        isAgentMode = true;
+ 	      }
+@@ -4553,6 +4597,22 @@ import { invalidateSettings } from './appConfig.js';
+                     }
+                   });
+                   note.appendChild(contBtn);
++                  if (_wingsActivePlan() && _planAutoContinues < WINGS_PLAN_AUTO_CONTINUE_MAX) {
++                    _planAutoContinues += 1;
++                    label.textContent = `Reached the ${json.rounds || ''} step limit with plan steps left. Continuing the approved plan (${_planAutoContinues} of ${WINGS_PLAN_AUTO_CONTINUE_MAX})...`;
++                    const stopAuto = document.createElement('button');
++                    stopAuto.className = 'continue-btn';
++                    stopAuto.title = 'Do not continue automatically';
++                    stopAuto.textContent = 'Stop here';
++                    const _timer = setTimeout(() => { if (note.isConnected) contBtn.click(); }, 2500);
++                    stopAuto.addEventListener('click', () => {
++                      clearTimeout(_timer);
++                      _planAutoContinues = WINGS_PLAN_AUTO_CONTINUE_MAX;
++                      stopAuto.remove();
++                      label.textContent = `Reached the ${json.rounds || ''} step limit. Not finished; press Continue when ready.`;
++                    });
++                    note.appendChild(stopAuto);
++                  }
+                   _chatBox.appendChild(note);
+                   try { note.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (_) { uiModule.scrollHistory && uiModule.scrollHistory(); }
+                 }
+@@ -5104,6 +5164,12 @@ import { invalidateSettings } from './appConfig.js';
+                 // the stored plan + live-refresh the docked plan window.
+                 const _pu = (json.data && json.data.plan) ? json.data.plan : '';
+                 if (_pu) _setStoredPlan(_pu);
++                if (_pu) {
++                  try {
++                    const _saved = JSON.parse(localStorage.getItem(WINGS_APPROVED_PLAN_KEY) || 'null');
++                    if (_saved && _saved.session && _saved.session === streamSessionId) _wingsRememberPlan(_pu, streamSessionId);
++                  } catch (_) {}
++                }
+ 
+               } else if (json.type === 'agent_step') {
+                 if (!_turnRendering.accepts(json)) continue;
