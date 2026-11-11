@@ -398,6 +398,16 @@ class McpManager:
         self._connect_tasks[server_id] = task
         done, _ = await asyncio.wait({task}, timeout=wait)
         if task in done:
+            if task.cancelled():
+                # Wings: when discovery or registration fails inside the SDK's
+                # transport, its task group cancels the connect task. Report
+                # that here; task.result() would re-raise the cancellation in
+                # the caller and turn the request into a bare HTTP 500.
+                self._connections[server_id] = {
+                    "status": "error", "name": name,
+                    "error": "Could not reach the server's sign-in service. Try again later.",
+                }
+                return False
             try:
                 return task.result()
             except Exception as e:
@@ -467,6 +477,17 @@ class McpManager:
             logger.warning("MCP package not installed. Install with: pip install mcp")
             self._connections[server_id] = {"status": "error", "error": "mcp package not installed", "name": name}
             return False
+        except asyncio.CancelledError:
+            # Wings: a sign-in that failed or timed out inside the SDK
+            # transport cancels this task. Unless disconnect_server did it (it
+            # forgets the task first), show that instead of a stale "waiting".
+            if self._connect_tasks.get(server_id) is asyncio.current_task():
+                logger.warning(f"HTTP MCP server {name} ({server_id}): sign-in or connection did not finish")
+                self._connections[server_id] = {
+                    "status": "error", "name": name,
+                    "error": "The sign-in did not finish. Press Reconnect to try again.",
+                }
+            raise
         except Exception as e:
             logger.error(f"Failed to connect HTTP MCP server {name} ({server_id}): {e}")
             self._connections[server_id] = {"status": "error", "error": str(e), "name": name}

@@ -114,6 +114,48 @@ def _mcp_oauth_redirect_uri() -> str:
     return REDIRECT_URI
 
 
+def _wings_caller(request) -> tuple:
+    """(username, is_admin) of the signed-in person behind this request, for
+    OAuth sign-ins.
+
+    Only a person's own browser session counts: API tokens and the agent's
+    in-process calls (which pass require_admin) get (None, False), so they
+    can neither finish a sign-in nor be recorded as the one who started it;
+    a flow they start has no owner and only an admin's own browser can finish
+    it. With sign-in switched off for the whole install (AUTH_ENABLED=false)
+    everyone is the admin, as upstream."""
+    if request is None:
+        return None, False
+    from src.owner_identity import auth_disabled
+    if auth_disabled():
+        return None, True
+    from wings.email_gate import is_human_request
+    if not is_human_request(request):
+        return None, False
+    user = getattr(request.state, "current_user", None)
+    try:
+        require_admin(request)
+        is_admin = True
+    except Exception:
+        is_admin = False
+    return user, is_admin
+
+
+def _wings_set_flow(server_id: str, request) -> None:
+    """Wings: return to the origin this person is using, and only for them."""
+    from src.mcp_oauth import redirect_uri_for_request, set_flow_context
+    user, _ = _wings_caller(request)
+    set_flow_context(server_id, redirect_uri=redirect_uri_for_request(request), owner=user)
+
+
+def _wings_has_tokens(srv) -> bool:
+    try:
+        data = json.loads(srv.oauth_tokens) if srv.oauth_tokens else {}
+        return bool(isinstance(data, dict) and data.get("tokens"))
+    except Exception:
+        return False
+
+
 def _is_legacy_google_flow(identifier: str) -> bool:
     """Determine whether an identifier is the server_id of a configured Google OAuth MCP server."""
     if not identifier:
@@ -162,6 +204,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
                     "auth_url": status.get("auth_url"),
                     "has_oauth": oauth_cfg is not None,
                     "needs_oauth": needs_oauth,
+                    # Wings: has this server ever completed a sign-in? (no token data)
+                    "signed_in": _wings_has_tokens(srv),
                 })
             return result
         finally:
@@ -280,6 +324,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
         connected = False
         if not needs_oauth:
+            if transport == "http":
+                _wings_set_flow(server_id, request)
             connected = await mcp_manager.connect_server(
                 server_id=server_id,
                 name=name,
@@ -318,6 +364,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
             args = json.loads(srv.args) if srv.args else []
             env = json.loads(srv.env) if srv.env else {}
+            if srv.transport == "http":
+                _wings_set_flow(server_id, request)
             connected = await mcp_manager.connect_server(
                 server_id=server_id,
                 name=srv.name,
@@ -357,6 +405,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
             if enabled:
                 args = json.loads(srv.args) if srv.args else []
                 env = json.loads(srv.env) if srv.env else {}
+                if srv.transport == "http":
+                    _wings_set_flow(server_id, request)
                 await mcp_manager.connect_server(
                     server_id=server_id,
                     name=srv.name,
@@ -475,6 +525,11 @@ def setup_mcp_routes(mcp_manager: McpManager):
             # paste the resulting URL back if they're on a different device.
             redirect_uri = _mcp_oauth_redirect_uri()
 
+            # Wings: a random state bound to this person, with an expiry and
+            # S256 PKCE (wings/mcp_google.py), instead of the server id.
+            from wings import mcp_google
+            _user, _ = _wings_caller(request)
+            state, challenge = mcp_google.start(server_id, _user, redirect_uri)
             params = {
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
@@ -482,7 +537,9 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 "scope": " ".join(scopes),
                 "access_type": "offline",
                 "prompt": "consent",
-                "state": server_id,
+                "state": state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
             }
             auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
 
@@ -500,31 +557,91 @@ def setup_mcp_routes(mcp_manager: McpManager):
             db.close()
 
     @router.get("/oauth/callback")
-    async def oauth_callback(code: str = "", state: str = "", request: Request = None):
+    async def oauth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
         """Handle OAuth callback. Generic MCP OAuth flows resolve via the
         pending-state registry; Google flows fall through to the legacy path."""
+        if error:
+            # Wings: the person pressed Cancel (or the app refused) on the
+            # app's own sign-in page.
+            return await _wings_sign_in_cancelled(state, request)
         if not state:
             return HTMLResponse(_oauth_result_page("Error", "No OAuth state parameter found in the callback URL."), status_code=400)
         if not code:
             return HTMLResponse(_oauth_result_page("Error", "No authorization code found in the URL. Make sure you copied the full URL from your browser."), status_code=400)
 
-        from src.mcp_oauth import resolve_pending
-        if resolve_pending(state, code):
+        from src.mcp_oauth import pending_owner, resolve_pending
+        _user, _is_admin = _wings_caller(request)
+        if resolve_pending(state, code, user=_user, is_admin=_is_admin):
             return HTMLResponse(_oauth_result_page(
-                "Authorization Successful",
-                "The MCP server is connecting. You can close this window and return to Odysseus.",
+                "Signed in",
+                "OpenWings is finishing the connection; you can close this tab and go back to OpenWings.",
                 success=True,
             ))
+        if pending_owner(state)[0]:
+            return HTMLResponse(_oauth_result_page(
+                "Not your sign-in",
+                "This sign-in was started by another OpenWings account. Sign in to OpenWings as that person, or press Connect again yourself.",
+            ), status_code=403)
 
-        # Check if this callback belongs to a legacy Google flow vs expired generic flow
-        if _is_legacy_google_flow(state):
-            require_admin(request)
-            return await _exchange_and_connect(state, code, request)
+        # Google sign-ins: only an attempt started here, by this person
+        # (wings/mcp_google.py); the server id comes from that record.
+        google = _wings_take_google(state, _user, _is_admin)
+        if isinstance(google, HTMLResponse):
+            return google
+        if google is not None:
+            return await _exchange_and_connect(google.server_id, code, request,
+                                               code_verifier=google.verifier, redirect_uri=google.redirect_uri)
 
         return HTMLResponse(_oauth_result_page(
-            "Authorization Expired",
-            "This authorization round has expired. Press Reconnect in Odysseus and try again.",
+            "Sign-in expired",
+            "This sign-in took too long or was already used. Go back to OpenWings and press Connect (or Reconnect) again.",
         ), status_code=400)
+
+    def _wings_take_google(state: str, user, is_admin):
+        from wings import mcp_google
+        try:
+            return mcp_google.take(state, user, is_admin)
+        except mcp_google.NotYours:
+            return HTMLResponse(_oauth_result_page(
+                "Not your sign-in",
+                "This sign-in was started by another OpenWings account. Sign in to OpenWings as that person, or start the sign-in again yourself.",
+            ), status_code=403)
+
+    async def _wings_sign_in_cancelled(state: str, request: Request):
+        """End the waiting sign-in at once (for the person who started it)
+        instead of leaving it to time out, and say what happened."""
+        from src.mcp_oauth import may_finish, server_for_state
+        user, is_admin = _wings_caller(request)
+        server_id = server_for_state(state)
+        name = None
+        if server_id and may_finish(state, user, is_admin):
+            await mcp_manager.disconnect_server(server_id)
+            db = SessionLocal()
+            try:
+                srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+                if srv is not None:
+                    name = srv.name
+                    # Never signed in: do not retry it by itself at the next
+                    # start (Connect turns it back on).
+                    if not _wings_has_tokens(srv):
+                        srv.is_enabled = False
+                        db.commit()
+            finally:
+                db.close()
+        else:
+            from wings import mcp_google
+            flow = mcp_google.peek(state)
+            if flow is not None:
+                try:
+                    mcp_google.take(state, user, is_admin)
+                except mcp_google.NotYours:
+                    pass
+        what = f"OpenWings did not connect to {name}." if name else "Nothing was changed."
+        return HTMLResponse(_oauth_result_page(
+            "Sign-in cancelled",
+            f"{what} You can close this tab and go back to OpenWings.",
+            neutral=True,
+        ))
 
     @router.post("/oauth/exchange/{server_id}")
     async def oauth_exchange(server_id: str, request: Request, callback_url: str = Form(...)):
@@ -546,23 +663,33 @@ def setup_mcp_routes(mcp_manager: McpManager):
         # Generic MCP OAuth: if the pasted URL carries a state we are waiting on,
         # resolve it directly (the background connect finishes the handshake).
         from src.mcp_oauth import resolve_pending
-        if resolve_pending(state, code):
+        _user, _is_admin = _wings_caller(request)
+        if resolve_pending(state, code, user=_user, is_admin=_is_admin):
             return HTMLResponse(_oauth_result_page(
-                "Authorization Successful",
-                "The MCP server is connecting. You can close this window and return to Odysseus.",
+                "Signed in",
+                "OpenWings is finishing the connection; you can close this tab and go back to OpenWings.",
                 success=True,
             ))
 
-        # Check if this exchange belongs to a legacy Google flow vs expired generic flow
-        if _is_legacy_google_flow(server_id):
-            return await _exchange_and_connect(server_id, code, request)
+        # Google sign-ins: only an attempt started here, by this person, for
+        # this server (wings/mcp_google.py).
+        from wings import mcp_google
+        _flow = mcp_google.peek(state)
+        if _flow is not None and _flow.server_id == server_id:
+            google = _wings_take_google(state, _user, _is_admin)
+            if isinstance(google, HTMLResponse):
+                return google
+            if google is not None:
+                return await _exchange_and_connect(google.server_id, code, request,
+                                                   code_verifier=google.verifier, redirect_uri=google.redirect_uri)
 
         return HTMLResponse(_oauth_result_page(
-            "Authorization Expired",
-            "This authorization round has expired. Press Reconnect in Odysseus and try again.",
+            "Sign-in expired",
+            "This sign-in took too long, was already used, or was started by another OpenWings account. Press Connect (or Reconnect) in OpenWings and try again.",
         ), status_code=400)
 
-    async def _exchange_and_connect(server_id: str, code: str, request: Request):
+    async def _exchange_and_connect(server_id: str, code: str, request: Request,
+                                    code_verifier: str = None, redirect_uri: str = None):
         """Exchange auth code for tokens and connect the MCP server."""
         db = SessionLocal()
         try:
@@ -584,18 +711,21 @@ def setup_mcp_routes(mcp_manager: McpManager):
             client_id = keys["client_id"]
             client_secret = keys["client_secret"]
 
-            redirect_uri = _mcp_oauth_redirect_uri()
+            redirect_uri = redirect_uri or _mcp_oauth_redirect_uri()
+            token_request = {
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            }
+            if code_verifier:
+                token_request["code_verifier"] = code_verifier  # Wings: PKCE
 
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     "https://oauth2.googleapis.com/token",
-                    data={
-                        "code": code,
-                        "client_id": client_id,
-                        "client_secret": client_secret,
-                        "redirect_uri": redirect_uri,
-                        "grant_type": "authorization_code",
-                    },
+                    data=token_request,
                 )
 
             if resp.status_code != 200:
@@ -664,7 +794,7 @@ def _oauth_authorize_page(
     redirect_uri = html.escape(redirect_uri, quote=True)
     return f"""<!DOCTYPE html>
 <html><head>
-<meta charset="UTF-8"><title>Authorize — Odysseus</title>
+<meta charset="UTF-8"><title>Authorize — OpenWings</title>
 <style>
   body {{ font-family: 'Fira Code', monospace; background: #0f0f0f; color: #e0e0e0;
     display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
@@ -720,26 +850,37 @@ def _oauth_authorize_page(
 </div></body></html>"""
 
 
-def _oauth_result_page(title: str, message: str, success: bool = False) -> str:
-    """Generate a simple HTML page for the OAuth result."""
+def _oauth_result_page(title: str, message: str, success: bool = False, neutral: bool = False) -> str:
+    """Generate a simple HTML page for the OAuth result (Wings: in OpenWings'
+    own plain style, light or dark with the system)."""
     safe_title = html.escape(title)
     safe_message = html.escape(message)
-    color = "#00661a" if success else "#e06c75"
-    icon = "&#10003;" if success else "&#10007;"
+    if success:
+        color, icon = "#2f7d4f", "&#10003;"
+    elif neutral:
+        color, icon = "#6b7280", "&#8617;"
+    else:
+        color, icon = "#b4413c", "&#10007;"
     return f"""<!DOCTYPE html>
 <html><head>
-<meta charset="UTF-8"><title>{safe_title}</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{safe_title} · OpenWings</title>
 <style>
-  body {{ font-family: 'Fira Code', monospace; background: #0f0f0f; color: #e0e0e0;
-    display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
-  .card {{ background: #1a1a1a; border: 1px solid #333; border-radius: 12px;
-    padding: 2rem; max-width: 420px; text-align: center; }}
-  .icon {{ font-size: 3rem; color: {color}; margin-bottom: 1rem; }}
-  h2 {{ color: {color}; margin-bottom: 0.5rem; font-size: 1.1rem; }}
-  p {{ color: #aaa; font-size: 0.85rem; line-height: 1.5; }}
+  :root {{ color-scheme: light dark; --bg: #f5f5f2; --card: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d8dad3; }}
+  @media (prefers-color-scheme: dark) {{ :root {{ --bg: #17181a; --card: #222326; --fg: #e8e8e6; --muted: #a4a7ab; --line: #34363a; }} }}
+  body {{ margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg);
+    display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; box-sizing: border-box; }}
+  .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 28px 28px 24px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.06); }}
+  .icon {{ display: inline-flex; width: 44px; height: 44px; border-radius: 50%; align-items: center; justify-content: center;
+    font-size: 22px; color: #fff; background: {color}; margin-bottom: 12px; }}
+  h2 {{ margin: 0 0 8px; font-size: 18px; font-weight: 600; }}
+  p {{ margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }}
+  .brand {{ margin-top: 18px; font-size: 12px; color: var(--muted); }}
 </style></head>
 <body><div class="card">
-  <div class="icon">{icon}</div>
+  <div class="icon" aria-hidden="true">{icon}</div>
   <h2>{safe_title}</h2>
   <p>{safe_message}</p>
+  <div class="brand">OpenWings</div>
 </div></body></html>"""

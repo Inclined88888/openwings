@@ -312,11 +312,15 @@ def _friendly_email_auth_error(protocol: str, host: str, error: object) -> str:
         or ("authentication unsuccessful" in lower and microsoft_host)
     )
     if microsoft_basic_auth_failure:
+        # Wings: say what to do instead (patch 0021).
         return (
-            "Microsoft no longer accepts normal mailbox passwords for "
-            "Outlook/Office 365 IMAP/SMTP in most accounts. Odysseus "
-            "does not support Microsoft OAuth/Graph mail yet, so Outlook "
-            "accounts cannot be added with this password form."
+            "Outlook sign-in (Microsoft OAuth/Graph) is coming to OpenWings. "
+            "Microsoft no longer accepts normal mailbox passwords from other apps, "
+            "so Outlook/Office 365, Hotmail and Live mail can't be added with this "
+            "password form yet. For "
+            "now, use another mailbox (Gmail, iCloud, Yahoo, Fastmail), or have "
+            "Outlook forward your mail to one (Outlook on the web: Settings > "
+            "Mail > Forwarding)."
         )
     return raw[:200]
 

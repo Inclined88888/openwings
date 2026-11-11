@@ -920,6 +920,22 @@ def _is_kimi_code_url(url: str) -> bool:
         return False
 
 
+def _kimi_code_disguise(url: str) -> bool:
+    """Wings: send a borrowed coding-tool User-Agent to Kimi Code only when
+    the deployment opted in (WINGS_ALLOW_UNOFFICIAL_SIGNIN=1, wings/unofficial.py).
+    Otherwise Kimi requests go out as themselves."""
+    if not _is_kimi_code_url(url):
+        return False
+    from wings.unofficial import kimi_user_agent_allowed
+    return kimi_user_agent_allowed()
+
+
+def _wings_unofficial_block(provider: str) -> Optional[str]:
+    """Wings: message for a switched-off sign-in provider, else None."""
+    from wings.unofficial import provider_blocked
+    return provider_blocked(provider)
+
+
 def _kimi_code_base_key(url: str) -> str:
     """Normalize a Kimi Code chat/models URL to its OpenAI base (.../coding/v1)."""
     parsed = urlparse(url)
@@ -944,7 +960,7 @@ def _is_kimi_code_access_denied(status: int, body: bytes | str) -> bool:
 
 
 def _kimi_code_ua_candidates(url: str) -> list[str]:
-    if not _is_kimi_code_url(url):
+    if not _kimi_code_disguise(url):
         return []
     base_key = _kimi_code_base_key(url)
     cached = _kimi_code_ua_cache.get(base_key)
@@ -960,7 +976,7 @@ def _remember_kimi_code_user_agent(url: str, user_agent: str) -> None:
 def apply_kimi_code_headers(headers: Optional[Dict], url: str) -> Dict[str, str]:
     """Pick a Kimi Code User-Agent (cached probe when possible)."""
     h = dict(headers or {})
-    if not _is_kimi_code_url(url):
+    if not _kimi_code_disguise(url):
         return h
     base_key = _kimi_code_base_key(url)
     cached = _kimi_code_ua_cache.get(base_key)
@@ -991,7 +1007,7 @@ def apply_kimi_code_headers(headers: Optional[Dict], url: str) -> Dict[str, str]
 async def apply_kimi_code_headers_async(client, headers: Optional[Dict], url: str) -> Dict[str, str]:
     """Pick a Kimi Code User-Agent without blocking the event loop."""
     h = dict(headers or {})
-    if not _is_kimi_code_url(url):
+    if not _kimi_code_disguise(url):
         return h
     base_key = _kimi_code_base_key(url)
     cached = _kimi_code_ua_cache.get(base_key)
@@ -1020,7 +1036,7 @@ async def apply_kimi_code_headers_async(client, headers: Optional[Dict], url: st
 
 def httpx_get_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
     h = apply_kimi_code_headers(headers, url)
-    if not _is_kimi_code_url(url):
+    if not _kimi_code_disguise(url):
         return httpx.get(url, headers=h, **kwargs)
     last = None
     for ua in _kimi_code_ua_candidates(url):
@@ -1036,7 +1052,7 @@ def httpx_get_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
 
 def httpx_post_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
     h = apply_kimi_code_headers(headers, url)
-    if not _is_kimi_code_url(url):
+    if not _kimi_code_disguise(url):
         return httpx.post(url, headers=h, **kwargs)
     last = None
     for ua in _kimi_code_ua_candidates(url):
@@ -1052,7 +1068,7 @@ def httpx_post_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
 
 async def httpx_post_kimi_aware_async(client, url: str, headers: Optional[Dict], **kwargs):
     h = await apply_kimi_code_headers_async(client, headers, url)
-    if not _is_kimi_code_url(url):
+    if not _kimi_code_disguise(url):
         return await client.post(url, headers=h, **kwargs)
     last = None
     for ua in _kimi_code_ua_candidates(url):
@@ -1096,6 +1112,10 @@ def _detect_provider(url: str) -> str:
     from src.chatgpt_subscription import is_chatgpt_subscription_base
     if is_chatgpt_subscription_base(url):
         return "chatgpt-subscription"
+    # Wings (patch 0022): ChatGPT plan use through Sign in with ChatGPT.
+    from wings.chatgpt_plan import is_plan_url
+    if is_plan_url(url):
+        return "chatgpt-plan"
     from src.copilot import is_copilot_base
     if is_copilot_base(url):
         return "copilot"
@@ -1323,6 +1343,8 @@ def _provider_label(url: str) -> str:
     if _host_match(url, "anthropic.com"): return "Anthropic"
     if _host_match(url, "ollama.com"): return "Ollama Cloud"
     if _host_match(url, "x.ai"): return "xAI"
+    from wings.chatgpt_plan import is_plan_url
+    if is_plan_url(url): return "ChatGPT plan"
     if _host_match(url, "openai.com"): return "OpenAI"
     if _host_match(url, "openrouter.ai"): return "OpenRouter"
     if _host_match(url, "opencode.ai/zen/go"): return "OpenCode Go"
@@ -2213,6 +2235,8 @@ def list_model_ids(
     provider = _detect_provider(base_chat_url)
     if provider == "anthropic":
         return list(ANTHROPIC_MODELS)
+    if _wings_unofficial_block(provider):
+        return []
     try:
         h = {}
         if headers:
@@ -2288,6 +2312,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
              thinking_mode: Optional[str] = None,
              reasoning_effort: Optional[str] = None) -> str:
     """Synchronous LLM call with optional prompt type enhancement."""
+    _wings_msg = _wings_unofficial_block(_detect_provider(url))
+    if _wings_msg:
+        raise HTTPException(403, _wings_msg)
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -2324,6 +2351,13 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if cached_response:
         logger.debug(f"Returning cached response for key: {cache_key}")
         return cached_response
+
+    if provider == "chatgpt-plan":
+        # Wings (patch 0022): this route only streams; collect the text.
+        from wings.chatgpt_plan import complete_sync
+        response = complete_sync(model, messages_copy, h, timeout=timeout, reasoning_effort=reasoning_effort)
+        _set_cached_response(cache_key, response)
+        return response
 
     if provider == "anthropic":
         target_url = _normalize_anthropic_url(url)
@@ -2623,6 +2657,9 @@ async def llm_call_async(
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
     provider = _detect_provider(url)
+    _wings_msg = _wings_unofficial_block(provider)
+    if _wings_msg:
+        raise HTTPException(403, _wings_msg)
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.
@@ -2667,7 +2704,7 @@ async def llm_call_async(
             return cached_response, (_get_cached_response_model(cache_key) or model)
         return cached_response
 
-    if provider == "chatgpt-subscription":
+    if provider in ("chatgpt-subscription", "chatgpt-plan"):
         # ChatGPT/Codex requires streamed Responses requests even for callers
         # that want a plain string (auto-title, memory extraction, etc.).
         # Reuse stream_llm's validated Codex SSE path and collect deltas.
@@ -2936,6 +2973,9 @@ def _stream_target_url(url: str) -> str:
         return _normalize_ollama_url(url)
     if provider == "chatgpt-subscription":
         return _normalize_chatgpt_subscription_url(url)
+    if provider == "chatgpt-plan":
+        from wings.chatgpt_plan import RESPONSES_URL
+        return RESPONSES_URL
     return _normalize_openai_chat_url(url)
 
 
@@ -2989,6 +3029,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
       - data: [DONE]                       — end of stream
     """
     provider = _detect_provider(url)
+    _wings_msg = _wings_unofficial_block(provider)
+    if _wings_msg:
+        yield f'event: error\ndata: {json.dumps({"status": 403, "text": _wings_msg})}\n\n'
+        return
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.
@@ -3025,6 +3069,18 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             model, messages_copy, temperature, max_tokens, stream=True,
             reasoning_effort=reasoning_effort,
         )
+    elif provider == "chatgpt-plan":
+        # Wings (patch 0022): store:false, stream:true, no temperature or
+        # other unsupported fields, tools stay in OpenWings' own protocol.
+        from wings import chatgpt_plan as _plan
+        target_url = _plan.RESPONSES_URL
+        h = _provider_headers(provider, headers)
+        for _k, _v in _plan.headers(None).items():
+            h.setdefault(_k, _v)
+        if not any(str(k).lower() == "authorization" for k in h):
+            yield f'event: error\ndata: {json.dumps({"status": 401, "text": _plan.PlanReauthRequired().message, "fallback_eligible": False})}\n\n'
+            return
+        payload = _plan.build_payload(model, messages_copy, reasoning_effort)
     else:
         target_url = _normalize_openai_chat_url(url)
         payload = {
@@ -3080,14 +3136,19 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     _debug_llm_request_shape(payload, provider=provider, target_url=target_url)
     stream_timeout = _stream_timeout(timeout)
 
+    # Wings: ChatGPT plan use (patch 0022) shares the Responses parser below;
+    # its errors never fall back to another way of paying, and only
+    # response.completed counts as a finished answer.
+    _plan_route = provider == "chatgpt-plan"
+    _no_fallback = {"fallback_eligible": False} if _plan_route else {}
     if _is_host_dead(target_url):
-        yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
+        yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503, **_no_fallback})}\n\n'
         return
     note_model_activity(target_url, model)
     degenerate_guard = _DegenerateStreamGuard(model)
 
     # ── ChatGPT Subscription / Codex Responses streaming ──
-    if provider == "chatgpt-subscription":
+    if provider in ("chatgpt-subscription", "chatgpt-plan"):
         event_name = ""
         input_tokens = 0
         output_tokens = 0
@@ -3099,6 +3160,11 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 _clear_host_dead(target_url)
                 if r.status_code != 200:
                     raw = (await r.aread()).decode(errors="replace")
+                    if _plan_route:
+                        from wings.chatgpt_plan import http_error as _plan_http_error
+                        friendly = _plan_http_error(r.status_code, raw, dict(r.headers), h)
+                        yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "fallback_eligible": False})}\n\n'
+                        return
                     friendly = _format_chatgpt_subscription_error(r.status_code, _chatgpt_safe_error(raw, h))
                     yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly})}\n\n'
                     return
@@ -3173,6 +3239,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 yield f'data: {json.dumps({"type": "usage", "data": normalized_usage})}\n\n'
                         yield "data: [DONE]\n\n"
                         return
+                    elif _plan_route and evt == "response.incomplete":
+                        _reason = ((data.get("response") or {}).get("incomplete_details") or {}).get("reason") or "incomplete"
+                        yield f'event: error\ndata: {json.dumps({"status": 502, "text": f"ChatGPT stopped this answer early ({_reason}).", "fallback_eligible": False})}\n\n'
+                        return
                     elif evt in ("response.failed", "error"):
                         err = data.get("error") or (data.get("response") or {}).get("error") or {}
                         if evt == "error" and not err:
@@ -3183,20 +3253,29 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 for key in ("type", "code", "message", "status", "status_code", "http_status")
                                 if key in data
                             }
+                        if _plan_route:
+                            from wings.chatgpt_plan import stream_error as _plan_stream_error
+                            status, text = _plan_stream_error(err, h, status_default=_provider_stream_error_status(err, default=400))
+                            yield f'event: error\ndata: {json.dumps({"status": status, "text": text, "fallback_eligible": False})}\n\n'
+                            return
                         text = err.get("message") if isinstance(err, dict) else str(err or "ChatGPT Subscription request failed")
                         status = _provider_stream_error_status(err, default=400)
                         yield f'event: error\ndata: {json.dumps({"status": status, "text": _chatgpt_safe_error(text, h)})}\n\n'
                         return
+                if _plan_route:
+                    # No response.completed: the answer was cut off.
+                    yield f'event: error\ndata: {json.dumps({"status": 502, "text": "The ChatGPT answer was cut off before it finished.", "fallback_eligible": False})}\n\n'
+                    return
                 yield "data: [DONE]\n\n"
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             _cooled = _mark_host_dead(target_url)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning("ChatGPT Subscription stream connect failed: %s%s", type(e).__name__, _tail)
-            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503})}\n\n'
+            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503, **_no_fallback})}\n\n'
         except httpx.ReadTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504})}\n\n'
+            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504, **_no_fallback})}\n\n'
         except httpx.PoolTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504})}\n\n'
+            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504, **_no_fallback})}\n\n'
         except httpx.WriteTimeout:
             yield f'event: error\ndata: {json.dumps({"error": "Upstream timeout", "status": 504, "fallback_eligible": False})}\n\n'
         except httpx.ProtocolError:

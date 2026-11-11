@@ -1,0 +1,1383 @@
+OpenWings patch 0022: Continue with ChatGPT (OpenAI's official sign-in)
+
+ChatGPT Plus and Pro plans can power OpenWings through OpenAI's own Sign in
+with ChatGPT for open-source apps (developers.openai.com/siwc), written from
+OpenAI's documentation. It replaces, for anyone who uses it, the ChatGPT
+Subscription provider that poses as OpenAI's Codex app (off since 0021).
+The flow, storage and rules live in wings/chatgpt_plan.py and
+wings/chatgpt_routes.py; this patch wires them into upstream:
+
+  * src/llm_core.py: provider "chatgpt-plan" for exactly
+    https://api.openai.com/v1/responses. Requests carry store:false and
+    stream:true, the whole history in input, system text as instructions
+    and none of the unsupported fields (no temperature, no
+    max_output_tokens). Only response.completed counts as a finished
+    answer; plan errors keep their status, code and request id, point to
+    ChatGPT usage settings when a limit is reached, and never fall back to
+    another way of paying. The synchronous call collects the stream.
+  * src/endpoint_resolver.py: that URL stays whole (it is base and route at
+    once), costs no per-token spend, gets OpenWings' own headers, and its
+    token comes from wings.chatgpt_plan, which answers only the person who
+    signed in (admins included are refused) and refreshes near expiry.
+  * routes/model_routes.py: the endpoint is visible only to its owner, its
+    models are OpenAI's listed catalog with OpenAI's display names (never
+    probed with a chat request), and deleting it signs out (revocation at
+    OpenAI). The picker cache is cleared after a sign-in or sign-out.
+  * src/chatgpt_subscription.py, core/session_manager.py,
+    routes/chat_helpers.py, routes/session_routes.py: like the subscription
+    route, the short-lived token is resolved per request and never stored
+    with a chat (uses_session_token).
+  * static/js/wings-connect.js, static/index.html: "Use your ChatGPT plan"
+    with a "Continue with ChatGPT" button (OpenAI's approved logo) in the
+    first-run panel and Settings > Add Models; the one-time "You're using
+    your ChatGPT plan" note; "Using ChatGPT plan · Manage usage" beside the
+    model picker; sign out, use a different account, and when OpenWings is
+    not on 127.0.0.1, the way to get there: the same computer, an SSH
+    tunnel, or OpenAI's self-hosted steps (move the sign-in over SSH).
+    The same file also carries the review fixes to 0021's Connect panels
+    (they touch the same lines): the first-run panel stays until some
+    endpoint has models, uses the height between the top bar and the
+    message box (only what does not fit scrolls, with a fade and a "More
+    below" cue), stacks on phones, and never covers a chat once one
+    starts; a pasted key is kept only when the provider answers with
+    models, and failures say what to do; links take each look's accent;
+    OpenRouter, keys and app cards say that everyone on this OpenWings
+    can use them; app cards show Waiting for sign-in at once, Could not
+    connect with the reason, and a cancelled sign-in; a member sees whom
+    to ask while there is no AI.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/core/session_manager.py b/core/session_manager.py
+index 0b6b2d8..0add088 100644
+--- a/core/session_manager.py
++++ b/core/session_manager.py
+@@ -569,8 +569,8 @@ class SessionManager:
+         endpoint_id: Optional[str] = None,
+     ) -> Session:
+         """Create a new session and save to database."""
+-        from src.chatgpt_subscription import is_chatgpt_subscription_base
+-        session_headers = {} if is_chatgpt_subscription_base(endpoint_url) else dict(headers or {})
++        from src.chatgpt_subscription import uses_session_token
++        session_headers = {} if uses_session_token(endpoint_url) else dict(headers or {})
+         endpoint_id = (endpoint_id or "").strip() or None
+         db = SessionLocal()
+         try:
+diff --git a/routes/chat_helpers.py b/routes/chat_helpers.py
+index aee4681..8080ff7 100644
+--- a/routes/chat_helpers.py
++++ b/routes/chat_helpers.py
+@@ -864,8 +864,8 @@ def resolve_session_auth(sess, session_id: str, owner: Optional[str] = None):
+     """Ensure session has auth headers — resolve from endpoint DB if missing."""
+     owner = owner or getattr(sess, "owner", None)
+     try:
+-        from src.chatgpt_subscription import is_chatgpt_subscription_base
+-        is_chatgpt_subscription = is_chatgpt_subscription_base(getattr(sess, "endpoint_url", "") or "")
++        from src.chatgpt_subscription import uses_session_token
++        is_chatgpt_subscription = uses_session_token(getattr(sess, "endpoint_url", "") or "")
+     except Exception:
+         is_chatgpt_subscription = False
+     has_auth = _has_auth_keys(sess.headers)
+diff --git a/routes/model_routes.py b/routes/model_routes.py
+index 04092ec..2b6c54d 100644
+--- a/routes/model_routes.py
++++ b/routes/model_routes.py
+@@ -699,6 +699,10 @@ def _delete_orphaned_provider_auth(db, auth_id: Optional[str], exclude_ep_id: Op
+     auth_row = db.query(ProviderAuthSession).filter(ProviderAuthSession.id == auth_id).first()
+     if auth_row is None:
+         return False
++    # Wings (patch 0022): removing a ChatGPT plan endpoint signs it out
++    # (revoke at OpenAI, keep only the client id link).
++    from wings.chatgpt_plan import on_auth_deleted as _wings_plan_auth_deleted
++    _wings_plan_auth_deleted(db, auth_row)
+     db.delete(auth_row)
+     try:
+         from src.chatgpt_subscription import USAGE_CACHE
+@@ -738,7 +742,9 @@ def _safe_build_headers(api_key: Optional[str], base_url: str) -> dict:
+ 
+ 
+ def _is_discovery_only_provider(provider: str) -> bool:
+-    return provider == "chatgpt-subscription"
++    # Wings (patch 0022): probing ChatGPT plan models would spend the
++    # person's plan; its list comes from OpenAI's model catalog instead.
++    return provider in ("chatgpt-subscription", "chatgpt-plan")
+ 
+ 
+ def _wings_switched_off(base_url: str) -> Optional[str]:
+@@ -1038,6 +1044,12 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
+         if api_key:
+             return fetch_available_models(api_key, timeout=timeout)
+         return []
++    if provider == "chatgpt-plan":
++        from wings.chatgpt_plan import PlanError, fetch_models
++        try:
++            return [slug for slug, _name in fetch_models(api_key or "")]
++        except PlanError:
++            return []
+     if provider == "featherless" or _host_match(base, "featherless.ai"):
+         return []
+     if _is_google_api_base(base):
+@@ -1470,7 +1482,9 @@ def _picker_models_for_endpoint(ep, base_url: str, kind: str):
+ 
+ def _chatgpt_endpoint_visible(ep: Any, request: Request) -> bool:
+     from src.chatgpt_subscription import is_chatgpt_subscription_base
+-    if not is_chatgpt_subscription_base(getattr(ep, "base_url", "") or ""):
++    from wings.chatgpt_plan import is_plan_url
++    _base = getattr(ep, "base_url", "") or ""
++    if not (is_chatgpt_subscription_base(_base) or is_plan_url(_base)):
+         return True
+     try:
+         user = effective_user(request)
+@@ -1492,6 +1506,9 @@ def _provider_account_metadata(ep: Any) -> Dict[str, Any]:
+         if is_chatgpt_subscription_base(base):
+             provider = "chatgpt-subscription"
+             account_label = account_label_from_name(getattr(ep, "name", None)) or None
++        from wings.chatgpt_plan import is_plan_url
++        if is_plan_url(base):
++            provider = "chatgpt-plan"
+     except Exception:
+         provider = None
+     return {"provider_auth_id": auth_id, "provider": provider, "account_label": account_label}
+@@ -1523,6 +1540,11 @@ def setup_model_routes(model_discovery):
+         flip)."""
+         _models_cache.clear()
+ 
++    # Wings (patch 0022): Continue with ChatGPT changes endpoints outside
++    # these routes and clears the picker cache through this hook.
++    import wings.chatgpt_plan as _wings_plan
++    _wings_plan.invalidate_models_cache = _invalidate_models_cache
++
+     # Track model-list refreshes by URL+key. This prevents repeated picker/API
+     # opens from starting duplicate /models probes, and gives slow/offline
+     # providers a cooldown after failures.
+@@ -1705,8 +1727,9 @@ def setup_model_routes(model_discovery):
+             db.close()
+ 
+         for ep in endpoints:
+-            from src.chatgpt_subscription import is_chatgpt_subscription_base
+-            if is_chatgpt_subscription_base(ep.base_url or "") and (ep.owner or None) != (owner or None):
++            from src.chatgpt_subscription import uses_session_token
++            # One person's sign-in: only its owner sees it, admins included.
++            if uses_session_token(ep.base_url or "") and (ep.owner or None) != (owner or None):
+                 continue
+             base = _normalize_base(ep.base_url)
+             provider = _safe_detect_provider(base)
+@@ -1718,7 +1741,7 @@ def setup_model_routes(model_discovery):
+             model_ids, pinned = _picker_models_for_endpoint(ep, base, kind)
+ 
+             if model_ids:
+-                curated_key = _match_provider_curated(base, None)
++                curated_key = None if provider == "chatgpt-plan" else _match_provider_curated(base, None)
+                 curated, extra = _curate_models(model_ids, curated_key)
+                 # Pinned models are admin-selected — they always belong in the
+                 # primary curated list, not buried in extras.
+@@ -1726,6 +1749,11 @@ def setup_model_routes(model_discovery):
+                     if m not in curated:
+                         curated.append(m)
+                 models_metadata = {}
++                # Wings (patch 0022): ChatGPT plan models show OpenAI's names.
++                _wings_names = {}
++                if provider == "chatgpt-plan":
++                    from wings.chatgpt_plan import display_names as _wings_display_names
++                    _wings_names = _wings_display_names(getattr(ep, "provider_auth_id", None))
+                 from src.chatgpt_subscription import get_chatgpt_model_metadata
+                 for mid in list(curated) + list(extra):
+                     meta = get_chatgpt_model_metadata(mid)
+@@ -1736,9 +1764,9 @@ def setup_model_routes(model_discovery):
+                     "port": 0,
+                     "url": chat_url,
+                     "models": curated,
+-                    "models_display": [_model_display_name(mid) for mid in curated],
++                    "models_display": [_wings_names.get(mid) or _model_display_name(mid) for mid in curated],
+                     "models_extra": extra,
+-                    "models_extra_display": [_model_display_name(mid) for mid in extra],
++                    "models_extra_display": [_wings_names.get(mid) or _model_display_name(mid) for mid in extra],
+                     "endpoint_id": ep.id,
+                     "endpoint_name": ep.name,
+                     "category": category,
+@@ -2349,8 +2377,8 @@ def setup_model_routes(model_discovery):
+         try:
+             _st_raw = (supports_tools or "").strip().lower()
+             _st = True if _st_raw in ("true", "1", "yes") else (False if _st_raw in ("false", "0", "no") else None)
+-            from src.chatgpt_subscription import is_chatgpt_subscription_base
+-            if is_chatgpt_subscription_base(base_url):
++            from src.chatgpt_subscription import uses_session_token
++            if uses_session_token(base_url):
+                 _st = False
+             _pinned = _normalize_model_ids(pinned_models)
+             # Stamp owner so the picker only shows this endpoint to the admin
+@@ -2963,8 +2991,8 @@ def setup_model_routes(model_discovery):
+                         ep.base_url = _new_base
+             else:
+                 ep.is_enabled = not ep.is_enabled
+-            from src.chatgpt_subscription import is_chatgpt_subscription_base
+-            if is_chatgpt_subscription_base(ep.base_url or ""):
++            from src.chatgpt_subscription import uses_session_token
++            if uses_session_token(ep.base_url or ""):
+                 ep.supports_tools = False
+             db.commit()
+             _invalidate_models_cache()
+diff --git a/routes/session_routes.py b/routes/session_routes.py
+index 9f6cc36..9c0f1fc 100644
+--- a/routes/session_routes.py
++++ b/routes/session_routes.py
+@@ -637,8 +637,8 @@ def setup_session_routes(
+         if not resolved_key and endpoint_api_key:
+             resolved_key = endpoint_api_key
+             resolved_base = endpoint_base_url
+-        from src.chatgpt_subscription import is_chatgpt_subscription_base
+-        if resolved_key and not is_chatgpt_subscription_base(endpoint_url):
++        from src.chatgpt_subscription import uses_session_token
++        if resolved_key and not uses_session_token(endpoint_url):
+             from src.endpoint_resolver import build_headers
+             session.headers = build_headers(resolved_key, resolved_base)
+             _persist_session_headers(sid, session.headers)
+diff --git a/src/chatgpt_subscription.py b/src/chatgpt_subscription.py
+index c635259..6be8863 100644
+--- a/src/chatgpt_subscription.py
++++ b/src/chatgpt_subscription.py
+@@ -88,6 +88,16 @@ def is_chatgpt_subscription_base(url: str) -> bool:
+     )
+ 
+ 
++def uses_session_token(url: str) -> bool:
++    """True for routes whose bearer is a short-lived sign-in token resolved at
++    request time and never stored with a chat: this provider, and (Wings
++    patch 0022) ChatGPT plan use through Sign in with ChatGPT."""
++    if is_chatgpt_subscription_base(url):
++        return True
++    from wings.chatgpt_plan import is_plan_url
++    return is_plan_url(url)
++
++
+ def chatgpt_headers(access_token: Optional[str]) -> Dict[str, str]:
+     # Wings: no Codex token or Codex page headers while switched off
+     # (wings/unofficial.py).
+diff --git a/src/endpoint_resolver.py b/src/endpoint_resolver.py
+index 6d0bda3..a6ce985 100644
+--- a/src/endpoint_resolver.py
++++ b/src/endpoint_resolver.py
+@@ -49,6 +49,11 @@ def endpoint_cost_tracked(url: str, endpoint_kind: Optional[str] = None) -> bool
+         path == "/backend-api/codex" or path.startswith("/backend-api/codex/")
+     ):
+         return False
++    # Wings: ChatGPT plan use (patch 0022) is part of the person's plan, not
++    # billed per token.
++    from wings.chatgpt_plan import is_plan_url
++    if is_plan_url(url):
++        return False
+     kind = str(endpoint_kind or "auto").strip().lower()
+     if kind == "local":
+         return False
+@@ -187,6 +192,12 @@ def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Opti
+     from wings.unofficial import provider_blocked as _wings_blocked
+     if _wings_blocked(_detect_provider(base)):
+         return base, None
++    # Wings: ChatGPT plan use (patch 0022) answers only the person who signed
++    # in; wings.chatgpt_plan refuses every other user, admins included.
++    from wings.chatgpt_plan import is_plan_url, resolve_runtime_credentials as _plan_credentials
++    if auth_id and is_plan_url(base):
++        creds = _plan_credentials(auth_id, owner=owner)
++        return creds["base_url"], creds.get("api_key")
+     if auth_id:
+         from src.chatgpt_subscription import resolve_runtime_credentials
+ 
+@@ -261,6 +272,11 @@ def resolve_url(url: str) -> str:
+ def normalize_base(url: str) -> str:
+     """Strip known API path suffixes from a base URL."""
+     url = (url or "").strip().rstrip("/")
++    # Wings: ChatGPT plan use (patch 0022) has one URL, which is both its
++    # base and its route; keeping it whole keeps it apart from API keys.
++    from wings.chatgpt_plan import RESPONSES_URL, is_plan_url
++    if is_plan_url(url):
++        return RESPONSES_URL
+     for suffix in ["/models", "/chat/completions", "/completions", "/v1/messages", "/responses"]:
+         if url.endswith(suffix):
+             url = url[: -len(suffix)].rstrip("/")
+@@ -382,6 +398,8 @@ def build_chat_url(base: str) -> str:
+         return _append_endpoint_path(_ollama_api_root(base), "/chat")
+     if provider == "chatgpt-subscription":
+         return _append_endpoint_path(base, "/responses")
++    if provider == "chatgpt-plan":
++        return base
+     if _pathless_host(base, "api.openai.com"):
+         base = _append_endpoint_path(base, "/v1")
+     return _append_endpoint_path(base, "/chat/completions")
+@@ -404,7 +422,7 @@ def build_models_url(base: str) -> Optional[str]:
+         return _append_endpoint_path(_anthropic_api_root(base), "/v1/models")
+     if provider == "ollama":
+         return _append_endpoint_path(_ollama_api_root(base), "/tags")
+-    if provider == "chatgpt-subscription":
++    if provider in ("chatgpt-subscription", "chatgpt-plan"):
+         return None
+     # Generic OpenAI-compatible fallback: local model servers with no explicit
+     # path conventionally expose `/v1/models` (LM Studio, llama.cpp, vLLM).
+@@ -438,6 +456,9 @@ def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
+     if provider == "chatgpt-subscription":
+         from src.chatgpt_subscription import chatgpt_headers
+         return chatgpt_headers(api_key)
++    if provider == "chatgpt-plan":
++        from wings.chatgpt_plan import headers as plan_headers
++        return plan_headers(api_key)
+     if api_key:
+         headers["Authorization"] = f"Bearer {api_key}"
+     if provider == "openrouter":
+diff --git a/src/llm_core.py b/src/llm_core.py
+index 503ef2c..0c9967d 100644
+--- a/src/llm_core.py
++++ b/src/llm_core.py
+@@ -1112,6 +1112,10 @@ def _detect_provider(url: str) -> str:
+     from src.chatgpt_subscription import is_chatgpt_subscription_base
+     if is_chatgpt_subscription_base(url):
+         return "chatgpt-subscription"
++    # Wings (patch 0022): ChatGPT plan use through Sign in with ChatGPT.
++    from wings.chatgpt_plan import is_plan_url
++    if is_plan_url(url):
++        return "chatgpt-plan"
+     from src.copilot import is_copilot_base
+     if is_copilot_base(url):
+         return "copilot"
+@@ -1339,6 +1343,8 @@ def _provider_label(url: str) -> str:
+     if _host_match(url, "anthropic.com"): return "Anthropic"
+     if _host_match(url, "ollama.com"): return "Ollama Cloud"
+     if _host_match(url, "x.ai"): return "xAI"
++    from wings.chatgpt_plan import is_plan_url
++    if is_plan_url(url): return "ChatGPT plan"
+     if _host_match(url, "openai.com"): return "OpenAI"
+     if _host_match(url, "openrouter.ai"): return "OpenRouter"
+     if _host_match(url, "opencode.ai/zen/go"): return "OpenCode Go"
+@@ -2346,6 +2352,13 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
+         logger.debug(f"Returning cached response for key: {cache_key}")
+         return cached_response
+ 
++    if provider == "chatgpt-plan":
++        # Wings (patch 0022): this route only streams; collect the text.
++        from wings.chatgpt_plan import complete_sync
++        response = complete_sync(model, messages_copy, h, timeout=timeout, reasoning_effort=reasoning_effort)
++        _set_cached_response(cache_key, response)
++        return response
++
+     if provider == "anthropic":
+         target_url = _normalize_anthropic_url(url)
+         h = _build_anthropic_headers(headers)
+@@ -2691,7 +2704,7 @@ async def llm_call_async(
+             return cached_response, (_get_cached_response_model(cache_key) or model)
+         return cached_response
+ 
+-    if provider == "chatgpt-subscription":
++    if provider in ("chatgpt-subscription", "chatgpt-plan"):
+         # ChatGPT/Codex requires streamed Responses requests even for callers
+         # that want a plain string (auto-title, memory extraction, etc.).
+         # Reuse stream_llm's validated Codex SSE path and collect deltas.
+@@ -2960,6 +2973,9 @@ def _stream_target_url(url: str) -> str:
+         return _normalize_ollama_url(url)
+     if provider == "chatgpt-subscription":
+         return _normalize_chatgpt_subscription_url(url)
++    if provider == "chatgpt-plan":
++        from wings.chatgpt_plan import RESPONSES_URL
++        return RESPONSES_URL
+     return _normalize_openai_chat_url(url)
+ 
+ 
+@@ -3053,6 +3069,18 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
+             model, messages_copy, temperature, max_tokens, stream=True,
+             reasoning_effort=reasoning_effort,
+         )
++    elif provider == "chatgpt-plan":
++        # Wings (patch 0022): store:false, stream:true, no temperature or
++        # other unsupported fields, tools stay in OpenWings' own protocol.
++        from wings import chatgpt_plan as _plan
++        target_url = _plan.RESPONSES_URL
++        h = _provider_headers(provider, headers)
++        for _k, _v in _plan.headers(None).items():
++            h.setdefault(_k, _v)
++        if not any(str(k).lower() == "authorization" for k in h):
++            yield f'event: error\ndata: {json.dumps({"status": 401, "text": _plan.PlanReauthRequired().message, "fallback_eligible": False})}\n\n'
++            return
++        payload = _plan.build_payload(model, messages_copy, reasoning_effort)
+     else:
+         target_url = _normalize_openai_chat_url(url)
+         payload = {
+@@ -3108,14 +3136,19 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
+     _debug_llm_request_shape(payload, provider=provider, target_url=target_url)
+     stream_timeout = _stream_timeout(timeout)
+ 
++    # Wings: ChatGPT plan use (patch 0022) shares the Responses parser below;
++    # its errors never fall back to another way of paying, and only
++    # response.completed counts as a finished answer.
++    _plan_route = provider == "chatgpt-plan"
++    _no_fallback = {"fallback_eligible": False} if _plan_route else {}
+     if _is_host_dead(target_url):
+-        yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
++        yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503, **_no_fallback})}\n\n'
+         return
+     note_model_activity(target_url, model)
+     degenerate_guard = _DegenerateStreamGuard(model)
+ 
+     # ── ChatGPT Subscription / Codex Responses streaming ──
+-    if provider == "chatgpt-subscription":
++    if provider in ("chatgpt-subscription", "chatgpt-plan"):
+         event_name = ""
+         input_tokens = 0
+         output_tokens = 0
+@@ -3127,6 +3160,11 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
+                 _clear_host_dead(target_url)
+                 if r.status_code != 200:
+                     raw = (await r.aread()).decode(errors="replace")
++                    if _plan_route:
++                        from wings.chatgpt_plan import http_error as _plan_http_error
++                        friendly = _plan_http_error(r.status_code, raw, dict(r.headers), h)
++                        yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "fallback_eligible": False})}\n\n'
++                        return
+                     friendly = _format_chatgpt_subscription_error(r.status_code, _chatgpt_safe_error(raw, h))
+                     yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly})}\n\n'
+                     return
+@@ -3201,6 +3239,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
+                                 yield f'data: {json.dumps({"type": "usage", "data": normalized_usage})}\n\n'
+                         yield "data: [DONE]\n\n"
+                         return
++                    elif _plan_route and evt == "response.incomplete":
++                        _reason = ((data.get("response") or {}).get("incomplete_details") or {}).get("reason") or "incomplete"
++                        yield f'event: error\ndata: {json.dumps({"status": 502, "text": f"ChatGPT stopped this answer early ({_reason}).", "fallback_eligible": False})}\n\n'
++                        return
+                     elif evt in ("response.failed", "error"):
+                         err = data.get("error") or (data.get("response") or {}).get("error") or {}
+                         if evt == "error" and not err:
+@@ -3211,20 +3253,29 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
+                                 for key in ("type", "code", "message", "status", "status_code", "http_status")
+                                 if key in data
+                             }
++                        if _plan_route:
++                            from wings.chatgpt_plan import stream_error as _plan_stream_error
++                            status, text = _plan_stream_error(err, h, status_default=_provider_stream_error_status(err, default=400))
++                            yield f'event: error\ndata: {json.dumps({"status": status, "text": text, "fallback_eligible": False})}\n\n'
++                            return
+                         text = err.get("message") if isinstance(err, dict) else str(err or "ChatGPT Subscription request failed")
+                         status = _provider_stream_error_status(err, default=400)
+                         yield f'event: error\ndata: {json.dumps({"status": status, "text": _chatgpt_safe_error(text, h)})}\n\n'
+                         return
++                if _plan_route:
++                    # No response.completed: the answer was cut off.
++                    yield f'event: error\ndata: {json.dumps({"status": 502, "text": "The ChatGPT answer was cut off before it finished.", "fallback_eligible": False})}\n\n'
++                    return
+                 yield "data: [DONE]\n\n"
+         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+             _cooled = _mark_host_dead(target_url)
+             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
+             logger.warning("ChatGPT Subscription stream connect failed: %s%s", type(e).__name__, _tail)
+-            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503})}\n\n'
++            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503, **_no_fallback})}\n\n'
+         except httpx.ReadTimeout:
+-            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504})}\n\n'
++            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504, **_no_fallback})}\n\n'
+         except httpx.PoolTimeout:
+-            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504})}\n\n'
++            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504, **_no_fallback})}\n\n'
+         except httpx.WriteTimeout:
+             yield f'event: error\ndata: {json.dumps({"error": "Upstream timeout", "status": 504, "fallback_eligible": False})}\n\n'
+         except httpx.ProtocolError:
+diff --git a/static/index.html b/static/index.html
+index 0ae4d22..9ed45cd 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -2715,7 +2715,7 @@
+ <script type="module" src="/static/js/censor.js"></script>
+ <script type="module" src="/static/js/settings.js?v=20260912writingstyle3"></script>
+ <!-- Wings (patch 0021): Connect your AI / Connect your apps -->
+-<script type="module" src="/static/js/wings-connect.js?v=1"></script>
++<script type="module" src="/static/js/wings-connect.js?v=3"></script>
+ <script type="module" src="/static/js/assistant.js?v=20260912firefoxjscleanup1"></script>
+ <script type="module" src="/static/app.js?v=20260929csssplit"></script>  <!-- app.js must be LAST -->
+   <script type="module" src="/static/js/init.js?v=20260829chatstyle12"></script>
+diff --git a/static/js/wings-connect.js b/static/js/wings-connect.js
+index ce7c83e..60c8389 100644
+--- a/static/js/wings-connect.js
++++ b/static/js/wings-connect.js
+@@ -1,10 +1,14 @@
+ // Wings (patch 0021): Connect. Use what people already have, in one click.
+ //
+-// * First run: while no model endpoint exists, the welcome screen shows a
+-//   short "Connect your AI" panel in #welcome-setup (left empty upstream).
++// * First run: while no model endpoint has any models, the welcome screen
++//   shows a short "Connect your AI" panel in #welcome-setup (left empty
++//   upstream) to an admin, and one line saying whom to ask to a member.
+ // * Settings > Add Models: the same choices as a "Connect your AI" card.
+ // * Settings > Integrations: a "Connect your apps" card grid at the top.
+ // * Coming back from OpenRouter (?ow_connect=...): a short note.
++// * Use your ChatGPT plan (patch 0022): OpenAI's official Sign in with
++//   ChatGPT (wings/chatgpt_plan.py), a "Continue with ChatGPT" button, the
++//   first-use note, and "Using ChatGPT plan" beside the model picker.
+ // * window.__owUnofficialSignin tells admin.js and slashCommands.js whether
+ //   to offer the sign-ins that pose as another company's app.
+ //
+@@ -50,6 +54,28 @@ const OPENROUTER_ERRORS = {
+   no_code: 'Paste the code OpenRouter showed you.',
+ };
+ 
++const CHATGPT_ERRORS = {
++  plan_off: 'You signed in, but ChatGPT plan use was not turned on, so OpenWings cannot use your plan. Turn it on in Settings > Add Models, or use an API key or OpenRouter.',
++  denied: 'ChatGPT sign-in was cancelled. Nothing was changed. An API key or OpenRouter works too.',
++  expired: 'That sign-in ran out of time or was already used. Press Continue with ChatGPT again.',
++  other_user: 'That sign-in was started by another OpenWings account. Press Continue with ChatGPT again.',
++  not_admin: 'Only an OpenWings admin can connect ChatGPT.',
++  registration_incomplete: 'OpenAI did not finish registering OpenWings. Please try again.',
++  client_mismatch: 'That sign-in came back for a different OpenWings registration, so nothing was saved. Please try again.',
++  other_account: 'That was a different ChatGPT account from the one connected before, so nothing was saved. To switch, use "Use a different ChatGPT account" in Settings > Add Models.',
++  already_connected: 'A ChatGPT account is already connected. Sign it out first.',
++  bad_id_token: 'OpenAI\'s sign-in could not be verified, so nothing was saved. Please try again.',
++  no_refresh_token: 'OpenAI did not allow OpenWings to stay signed in, so nothing was saved. Please try again.',
++  invalid_client: 'OpenAI did not accept OpenWings\' registration. Use "Use a different ChatGPT account" in Settings > Add Models and sign in again.',
++  temporary: 'OpenAI\'s sign-in service did not answer. Try again in a minute.',
++};
++const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
++// The ChatGPT logo from OpenAI's approved Sign in with ChatGPT button assets
++// (developers.openai.com/assets/siwc/sign-in-buttons/chatgpt-logo-white.svg),
++// used as OpenAI's UI guidelines ask, unchanged.
++const GPT_LOGO_PATH = 'M11.8102 19.1625C11.2327 19.1625 10.6841 19.0528 10.1643 18.8334C9.64459 18.6139 9.18259 18.3078 8.77834 17.9151C8.33944 18.0653 7.88322 18.1404 7.40967 18.1404C6.63582 18.1404 5.91972 17.9498 5.26137 17.5686C4.60302 17.1875 4.07172 16.6677 3.66747 16.0094C3.27477 15.351 3.07842 14.6176 3.07842 13.8091C3.07842 13.4742 3.12462 13.1103 3.21702 12.7176C2.75502 12.2903 2.39697 11.7994 2.14287 11.245C1.88877 10.679 1.76172 10.09 1.76172 9.47785C1.76172 8.85415 1.89454 8.25355 2.16019 7.67605C2.42584 7.09855 2.79544 6.6019 3.26899 6.1861C3.75409 5.75875 4.31427 5.46422 4.94952 5.30252C5.07657 4.64417 5.34222 4.05512 5.74647 3.53537C6.16227 3.00407 6.67047 2.58827 7.27107 2.28797C7.87167 1.98767 8.51269 1.83752 9.19414 1.83752C9.77164 1.83752 10.3203 1.94725 10.84 2.1667C11.3598 2.38615 11.8218 2.69222 12.226 3.08492C12.6649 2.93477 13.1211 2.8597 13.5947 2.8597C14.3685 2.8597 15.0846 3.05027 15.743 3.43142C16.4013 3.81257 16.9269 4.33232 17.3196 4.99067C17.7238 5.64902 17.9259 6.38245 17.9259 7.19095C17.9259 7.5259 17.8797 7.88973 17.7873 8.28242C18.2493 8.70977 18.6074 9.20643 18.8615 9.77238C19.1156 10.3268 19.2426 10.91 19.2426 11.5222C19.2426 12.1459 19.1098 12.7465 18.8442 13.324C18.5785 13.9015 18.2031 14.4039 17.718 14.8313C17.2445 15.2471 16.6901 15.5358 16.0548 15.6975C15.9278 16.3559 15.6564 16.9449 15.2406 17.4647C14.8363 17.996 14.3339 18.4118 13.7333 18.7121C13.1327 19.0124 12.4917 19.1625 11.8102 19.1625ZM7.53094 16.9969C8.10844 16.9969 8.61087 16.8756 9.03822 16.6331L12.2953 14.762C12.4108 14.6811 12.4686 14.5714 12.4686 14.4328V12.9429L8.27592 15.351C8.02182 15.5012 7.76772 15.5012 7.51362 15.351L4.23919 13.4626C4.23919 13.4973 4.23342 13.5377 4.22187 13.5839C4.22187 13.6301 4.22187 13.6994 4.22187 13.7918C4.22187 14.3808 4.36047 14.9237 4.63767 15.4203C4.92642 15.9054 5.32489 16.2866 5.83309 16.5638C6.34129 16.8525 6.90724 16.9969 7.53094 16.9969ZM7.70419 14.1729C7.77349 14.2076 7.83702 14.2249 7.89477 14.2249C7.95252 14.2249 8.01027 14.2076 8.06802 14.1729L9.36739 13.4279L5.19207 11.0024C4.93797 10.8523 4.81092 10.6271 4.81092 10.3268V6.56725C4.23342 6.82135 3.77142 7.21405 3.42492 7.74535C3.07842 8.2651 2.90517 8.8426 2.90517 9.47785C2.90517 10.0438 3.04954 10.5866 3.33829 11.1064C3.62704 11.6261 4.00242 12.0189 4.46442 12.2845L7.70419 14.1729ZM11.8102 18.0191C12.4224 18.0191 12.9768 17.8805 13.4734 17.6033C13.9701 17.3261 14.3628 16.9449 14.6515 16.4598C14.9403 15.9747 15.0846 15.4319 15.0846 14.8313V11.0891C15.0846 10.9505 15.0269 10.8465 14.9114 10.7772L13.5947 10.0149V14.8486C13.5947 15.1489 13.4676 15.3741 13.2135 15.5243L9.93912 17.4127C10.5051 17.817 11.1288 18.0191 11.8102 18.0191ZM12.4686 11.6781V9.32192L10.5108 8.21312L8.53579 9.32192V11.6781L10.5108 12.7869L12.4686 11.6781ZM7.40967 6.15145C7.40967 5.85115 7.53672 5.62592 7.79082 5.47577L11.0652 3.58735C10.4993 3.1831 9.87559 2.98097 9.19414 2.98097C8.58199 2.98097 8.02759 3.11957 7.53094 3.39677C7.03429 3.67397 6.64159 4.05512 6.35284 4.54022C6.07564 5.02532 5.93704 5.56817 5.93704 6.16878V9.89365C5.93704 10.0323 5.99479 10.142 6.11029 10.2228L7.40967 10.9851V6.15145ZM16.2108 14.4328C16.7883 14.1787 17.2445 13.786 17.5794 13.2547C17.9259 12.7234 18.0992 12.1459 18.0992 11.5222C18.0992 10.9562 17.9548 10.4134 17.6661 9.89365C17.3773 9.3739 17.0019 8.9812 16.5399 8.71555L13.3002 6.84445C13.2309 6.79825 13.1673 6.78092 13.1096 6.79248C13.0518 6.79248 12.9941 6.8098 12.9363 6.84445L11.637 7.5721L15.8296 10.0149C15.9567 10.0842 16.0491 10.1766 16.1068 10.2921C16.1761 10.3961 16.2108 10.5231 16.2108 10.6733V14.4328ZM12.7284 5.6317C12.9825 5.47 13.2366 5.47 13.4907 5.6317L16.7825 7.55477C16.7825 7.47393 16.7825 7.36997 16.7825 7.24292C16.7825 6.68852 16.6439 6.163 16.3667 5.66635C16.101 5.15815 15.7141 4.7539 15.2059 4.4536C14.7093 4.1533 14.1318 4.00315 13.4734 4.00315C12.8959 4.00315 12.3935 4.12442 11.9661 4.36697L8.70904 6.23808C8.59354 6.31892 8.53579 6.42865 8.53579 6.56725V8.0572L12.7284 5.6317Z';
++const gptLogo = (size, fill) => `<svg class="ow-gpt-logo" width="${size}" height="${size}" viewBox="0 0 21 21" fill="none" aria-hidden="true"><path d="${GPT_LOGO_PATH}" fill="${fill}"/></svg>`;
++
+ let _status = null;
+ let _statusPromise = null;
+ 
+@@ -74,14 +100,28 @@ function injectStyle() {
+   const st = document.createElement('style');
+   st.id = 'ow-connect-style';
+   st.textContent = `
+-    #welcome-screen.ow-has-setup { z-index: 3; pointer-events: auto; width: min(640px, calc(100% - 24px)); }
++    /* Only while the welcome card is showing: once a chat starts upstream adds
++       .hidden, and the card must neither show nor take clicks (some looks set
++       display with !important, so say it as firmly here). */
++    #welcome-screen.ow-has-setup:not(.hidden) { z-index: 3; pointer-events: auto; width: min(640px, calc(100% - 24px)); }
++    html #welcome-screen.ow-has-setup.hidden { display: none !important; pointer-events: none !important; }
+     #welcome-screen.ow-has-setup .welcome-sub, #welcome-screen.ow-has-setup .welcome-tip { display: none !important; }
++    /* First run: the message box goes to the bottom so the choices get the
++       height between the top bar and it (fitWelcome places the card). */
++    @media (min-width: 769px) {
++      html:root .chat-container.welcome-active.ow-first-run.ow-first-run .chat-input-bar { margin-bottom: calc(14px + var(--safe-bottom, 0px)) !important; }
++    }
++    .ow-setup-scroll { overflow-y: auto; overscroll-behavior: contain; }
++    .ow-setup-scroll.ow-more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
++    .ow-more-cue { display: none; text-align: center; font-size: 11px; opacity: 0.75; margin-top: 2px; }
++    .ow-setup-scroll.ow-more + .ow-more-cue { display: block; }
++    .ow-member-note { margin-top: 10px; font-size: 13px; opacity: 0.8; text-align: center; }
+     /* First run is a task screen: a compact title leaves room for the choices
+        (doubled class so it outranks each look's own welcome title rule). */
+     html #welcome-screen.ow-has-setup.ow-has-setup .welcome-name { flex-direction: row !important; justify-content: center !important; align-items: center !important; gap: 10px !important; font-size: 26px !important; margin: 0 !important; }
+     html #welcome-screen.ow-has-setup.ow-has-setup .welcome-name .welcome-boat { width: 34px !important; height: 34px !important; border-radius: 10px !important; margin: 0 !important; }
+     .ow-welcome-head { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+-    #welcome-setup { pointer-events: auto; text-align: left; width: 100%; margin-top: 12px; overflow-y: auto; overscroll-behavior: contain; }
++    #welcome-setup { pointer-events: auto; text-align: left; width: 100%; margin-top: 12px; }
+     .ow-connect { display: flex; flex-direction: column; gap: 6px; }
+     .ow-connect .ow-lead { font-size: 12px; opacity: 0.75; margin-bottom: 2px; }
+     .ow-connect .ow-choice { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: color-mix(in srgb, var(--fg) 3%, transparent); }
+@@ -95,6 +135,14 @@ function injectStyle() {
+     .ow-connect .ow-found { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+     .ow-connect .ow-found span { flex: 1; min-width: 0; }
+     .ow-connect .ow-link { font-size: 12px; white-space: nowrap; }
++    /* Links in these panels take the look's accent (not the browser's blue). */
++    .ow-connect a:not(.ow-gpt-btn):not(.admin-btn-add), .ow-apps-grid a:not(.admin-btn-add) { color: var(--accent, var(--red)); text-decoration: underline; text-underline-offset: 2px; }
++    .ow-connect .ow-key-help { font-size: 11.5px; opacity: 0.85; margin-top: 4px; }
++    @media (max-width: 560px) {
++      .ow-connect .ow-choice-row { flex-direction: column; align-items: stretch; gap: 6px; }
++      .ow-connect .ow-choice-act { justify-content: flex-start; flex-wrap: wrap; }
++      .ow-connect .ow-found { flex-wrap: wrap; }
++    }
+     .ow-connect .adm-ep-inline-msg:empty { display: none; }
+     .ow-connect .ow-sub-panel ul { margin: 6px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5; }
+     .ow-connect .ow-sub-panel li { margin-bottom: 5px; }
+@@ -111,6 +159,24 @@ function injectStyle() {
+     .ow-app-dot.warn { background: var(--color-warning, #e5a33a); opacity: 1; }
+     .ow-app-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+     .ow-app-note { font-size: 10.5px; opacity: 0.6; margin-top: 6px; line-height: 1.4; }
++    .ow-app-error { font-size: 11px; opacity: 0.75; margin-top: 3px; line-height: 1.4; }
++    /* OpenAI's button format: "Continue with ChatGPT" on black, with the logo. */
++    .ow-gpt-btn { display: inline-flex; align-items: center; gap: 7px; background: #000; color: #fff !important; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 6px 13px 6px 10px; font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; cursor: pointer; text-decoration: none !important; white-space: nowrap; }
++    .ow-gpt-btn:hover { background: #1f1f1f; }
++    .ow-gpt-btn:disabled { opacity: 0.6; cursor: default; }
++    .ow-gpt-btn .ow-gpt-logo { flex-shrink: 0; }
++    .ow-connect .ow-gpt-steps { margin: 6px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5; }
++    .ow-connect .ow-gpt-steps li { margin-bottom: 6px; }
++    .ow-connect .ow-gpt-steps code, .ow-connect .ow-gpt-note code { display: block; margin-top: 3px; padding: 4px 6px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 7%, transparent); font-size: 11px; white-space: pre-wrap; word-break: break-all; user-select: all; }
++    .ow-connect .ow-gpt-note { font-size: 11.5px; opacity: 0.8; margin-top: 6px; line-height: 1.45; }
++    .ow-gpt-chip { display: flex; justify-content: flex-end; align-items: center; gap: 5px; font-size: 10.5px; line-height: 1.2; opacity: 0.85; margin-top: 2px; white-space: nowrap; }
++    .ow-gpt-chip[hidden] { display: none; }
++    .ow-gpt-chip a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
++    .ow-gpt-chip .ow-gpt-mark { display: inline-flex; width: 14px; height: 14px; border-radius: 50%; background: #000; align-items: center; justify-content: center; }
++    .ow-connect .ow-choice.ow-flash { outline: 2px solid var(--accent, var(--red)); outline-offset: 1px; }
++    #ow-gpt-welcome .modal-content { max-width: 420px; }
++    #ow-gpt-welcome .ow-gpt-welcome-logo { display: flex; justify-content: center; margin: 4px 0 10px; }
++    #ow-gpt-welcome .ow-gpt-welcome-logo span { display: inline-flex; width: 44px; height: 44px; border-radius: 50%; background: #000; align-items: center; justify-content: center; }
+   `;
+   document.head.appendChild(st);
+ }
+@@ -162,7 +228,7 @@ function aiPanelHtml(where) {
+         <div class="ow-choice-row">
+           <div class="ow-choice-text">
+             <div class="ow-choice-title">Connect OpenRouter</div>
+-            <div class="ow-choice-sub">One sign-in for Claude, GPT, Gemini, Llama and more, paid from your own OpenRouter credits.</div>
++            <div class="ow-choice-sub">One sign-in for Claude, GPT, Gemini, Llama and more, paid from your own OpenRouter credits. Everyone on this OpenWings can use it; you can set a <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">spending limit</a> for its key on OpenRouter.</div>
+           </div>
+           <div class="ow-choice-act"><button type="button" class="admin-btn-add" data-ow-act="openrouter">Connect</button></div>
+         </div>
+@@ -175,6 +241,17 @@ function aiPanelHtml(where) {
+         </div>
+         <div class="adm-ep-inline-msg" data-ow-or-msg></div>
+       </div>
++      <div class="ow-choice" data-ow-choice="chatgpt">
++        <div class="ow-choice-row">
++          <div class="ow-choice-text">
++            <div class="ow-choice-title">Use your ChatGPT plan</div>
++            <div class="ow-choice-sub" data-ow-gpt-sub>ChatGPT Plus or Pro: OpenWings' AI requests use your plan's usage, through OpenAI's own sign-in. No API key or extra charges from OpenWings.</div>
++          </div>
++          <div class="ow-choice-act" data-ow-gpt-act></div>
++        </div>
++        <div data-ow-gpt-more></div>
++        <div class="adm-ep-inline-msg" data-ow-gpt-msg></div>
++      </div>
+       <div class="ow-choice" data-ow-choice="key">
+         <div class="ow-choice-row">
+           <div class="ow-choice-text">
+@@ -193,33 +270,43 @@ function aiPanelHtml(where) {
+             <button type="button" class="admin-btn-sm" data-ow-act="key-test">Test</button>
+             <button type="button" class="admin-btn-add" data-ow-act="key-add">Add</button>
+           </div>
++          <div class="ow-key-help">Everyone on this OpenWings can use an AI you add here.</div>
+           <div class="adm-ep-inline-msg" data-ow-key-msg></div>
+         </div>
+       </div>
+       <div class="ow-choice ow-choice-quiet" data-ow-choice="subscription">
+         <button type="button" class="ow-plain" data-ow-act="toggle" data-ow-target="sub" aria-expanded="false">I have a Claude, ChatGPT or Gemini subscription</button>
+         <div class="ow-sub-panel" data-ow-panel="sub" hidden>
+-          <div class="ow-choice-sub" style="margin-top:6px;">Claude and Gemini plans only work in Anthropic's and Google's own apps: their rules don't let other apps use them (and ChatGPT plans have no approved way in yet), so OpenWings never asks for your plan login. What works instead:</div>
++          <div class="ow-choice-sub" style="margin-top:6px;"><strong>ChatGPT Plus or Pro:</strong> press Continue with ChatGPT under Use your ChatGPT plan above. It is OpenAI's own sign-in, so OpenWings never sees your password. <button type="button" class="ow-plain" data-ow-act="gpt-focus">Show me</button></div>
++          <div class="ow-choice-sub" style="margin-top:6px;">Claude and Gemini plans only work in Anthropic's and Google's own apps: their rules don't let other apps use them, so OpenWings never asks for your plan login. What works instead:</div>
+           <ul>
+             <li><strong>An API key</strong> from the same company, paid as you go: <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener noreferrer">Claude key</a>, <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Gemini key</a> (has a free tier), <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noopener noreferrer">OpenAI key</a>. Then use Paste a key.</li>
+             <li><strong>OpenRouter</strong>: one sign-in for Claude, GPT, Gemini and more. <button type="button" class="ow-plain" data-ow-act="openrouter">Connect OpenRouter</button></li>
+-            <li><strong>Keep using your plan</strong> and let your own Claude Code use OpenWings: Settings &gt; Integrations &gt; Add Integration &gt; Claude Agent. <button type="button" class="ow-plain" data-ow-act="claude-agent">Open it</button> (Codex users: Codex Agent, same place.)</li>
++            <li><strong>Keep using your Claude plan</strong> and let your own Claude Code use OpenWings: Settings &gt; Integrations &gt; Add Integration &gt; Claude Agent. <button type="button" class="ow-plain" data-ow-act="claude-agent">Open it</button> (Codex users: Codex Agent, same place.)</li>
+           </ul>
+         </div>
+       </div>
+     </div>`;
+ }
+ 
++const OLLAMA_HOST_HELP = 'https://docs.ollama.com/faq#how-do-i-configure-ollama-server';
++
+ function localLabel(item) {
+   const port = Number(item.port);
+   let kind = 'Model server';
+   if (item.provider === 'lmstudio' || port === 1234) kind = 'LM Studio';
+   else if (item.provider === 'llamacpp') kind = 'llama.cpp';
+   else if (port === 11434) kind = 'Ollama';
+-  const host = item.host === 'host.docker.internal' ? 'this computer' : `${item.host}:${port}`;
++  const here = ['host.docker.internal', 'localhost', '127.0.0.1'].includes(String(item.host || ''));
++  const host = here ? 'this computer' : `${item.host}:${port}`;
+   return { kind, text: `${kind} on ${host}` };
+ }
+ 
++// Make sure a result message is on screen (the first-run panel scrolls).
++function showMsg(el) {
++  try { el && el.scrollIntoView({ block: 'nearest' }); } catch (_) {}
++}
++
+ async function scanLocal(root, onAdded) {
+   const box = root.querySelector('[data-ow-local]');
+   const sub = root.querySelector('[data-ow-local-sub]');
+@@ -236,7 +323,7 @@ async function scanLocal(root, onAdded) {
+   } catch (_) { items = []; }
+   if (btn) { btn.disabled = false; btn.textContent = 'Look again'; }
+   if (!items.length) {
+-    if (sub) sub.innerHTML = 'None found. Using Ollama? Restart it with <code>OLLAMA_HOST=0.0.0.0</code> so OpenWings can reach it.';
++    if (sub) sub.innerHTML = `None found. Using Ollama? Start it with <code>OLLAMA_HOST=0.0.0.0</code> so OpenWings can reach it (<a href="${OLLAMA_HOST_HELP}" target="_blank" rel="noopener noreferrer">How?</a>). Other devices on your network can then reach Ollama too.`;
+     refit();
+     return;
+   }
+@@ -254,7 +341,7 @@ async function scanLocal(root, onAdded) {
+       const base = String(it.url || '').replace('/chat/completions', '').replace(/\/$/, '');
+       const fd = new FormData();
+       fd.append('base_url', base);
+-      fd.append('name', `${localLabel(it).kind} (${base.replace(/^https?:\/\//, '').split('/')[0]})`);
++      fd.append('name', localLabel(it).text);
+       fd.append('endpoint_kind', 'local');
+       fd.append('model_refresh_mode', 'auto');
+       fd.append('skip_probe', 'false');
+@@ -265,7 +352,8 @@ async function scanLocal(root, onAdded) {
+         const d = await r.json().catch(() => ({}));
+         if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+         setMsg(msg, `Added ${localLabel(it).kind}. You're ready to chat.`, 'ok');
+-        onAdded && onAdded();
++        showMsg(msg);
++        onAdded && onAdded(msg);
+       } catch (e) {
+         setMsg(msg, `Could not add it: ${e.message || 'request failed'}`, 'err');
+         b.disabled = false;
+@@ -300,12 +388,36 @@ function keyForm(root) {
+   return { p, key };
+ }
+ 
++function shortName(p) { return p ? p.name.replace(/ \(.*\)$/, '') : 'The provider'; }
++
++// Upstream's raw errors ("HTTP 404", "host does not resolve: [Errno -2] ...")
++// in words a new user can act on, with the key page where there is one.
++function keyErrorHtml(p, raw, status) {
++  const name = esc(shortName(p));
++  const text = String(raw || '');
++  const link = p && p.keyUrl ? ` <a href="${esc(p.keyUrl)}" target="_blank" rel="noopener noreferrer">Get your ${name} key</a>` : '';
++  if (status === 403 && /switched off/i.test(text)) return esc(text);
++  if (/does not resolve|name or service not known|getaddrinfo|nodename nor servname|temporary failure in name resolution|connecterror|connection refused|network is unreachable|could not connect|cannot reach|timed? ?out|timeout/i.test(text)) {
++    return `OpenWings could not reach ${name}. Check this computer's internet connection, then try again.`;
++  }
++  if (/\b(HTTP )?(400|401|402|403|404)\b|invalid|unauthori[sz]ed|forbidden|api[ _-]?key|no models found/i.test(text) || [400, 401, 403, 404].includes(status)) {
++    return `${name} did not accept that key. Check you copied all of it, or get a new one.${link}`;
++  }
++  return `${name} did not answer with any models. Check the key, or try again in a minute.${link}`;
++}
++
++function setMsgHtml(el, html, kind) {
++  if (!el) return;
++  el.innerHTML = html;
++  el.className = 'adm-ep-inline-msg' + (kind === 'ok' ? ' admin-success' : kind === 'err' ? ' admin-error' : '');
++}
++
+ async function testKey(root) {
+   const msg = root.querySelector('[data-ow-key-msg]');
+   const { p, key } = keyForm(root);
+   if (!p) return setMsg(msg, 'Pick a provider first.', 'err');
+   if (!key) return setMsg(msg, 'Paste your API key first.', 'err');
+-  setMsg(msg, 'Testing…');
++  setMsg(msg, `Checking the key with ${shortName(p)}…`);
+   const fd = new FormData();
+   fd.append('base_url', p.url);
+   fd.append('api_key', key);
+@@ -314,15 +426,16 @@ async function testKey(root) {
+   try {
+     const r = await fetch('/api/model-endpoints/test', { method: 'POST', body: fd, credentials: 'same-origin' });
+     const d = await r.json().catch(() => ({}));
+-    if (r.ok && d.online) {
+-      const n = (d.models || []).length;
+-      setMsg(msg, n ? `It works: ${n} model${n === 1 ? '' : 's'} available.` : 'It works.', 'ok');
++    const n = (d.models || []).length;
++    if (r.ok && d.online && n) {
++      setMsg(msg, `It works: ${n} model${n === 1 ? '' : 's'} available.`, 'ok');
+     } else {
+-      setMsg(msg, d.detail || (d.ping_error ? `Did not work: ${d.ping_error}` : 'Did not work. Check the key and the provider.'), 'err');
++      setMsgHtml(msg, keyErrorHtml(p, d.detail || d.ping_error || '', r.ok ? 0 : r.status), 'err');
+     }
+   } catch (e) {
+-    setMsg(msg, 'Test failed: ' + (e.message || 'request failed'), 'err');
++    setMsgHtml(msg, keyErrorHtml(p, e.message || 'could not connect', 0), 'err');
+   }
++  showMsg(msg);
+ }
+ 
+ async function addKey(root, onAdded) {
+@@ -332,27 +445,34 @@ async function addKey(root, onAdded) {
+   if (!key) return setMsg(msg, 'Paste your API key first.', 'err');
+   const btn = root.querySelector('[data-ow-act="key-add"]');
+   if (btn) btn.disabled = true;
+-  setMsg(msg, 'Adding…');
++  setMsg(msg, `Checking the key with ${shortName(p)}…`);
+   const fd = new FormData();
+   fd.append('base_url', p.url);
+   fd.append('api_key', key);
+-  fd.append('name', p.name.replace(/ \(.*\)$/, ''));
++  fd.append('name', shortName(p));
+   fd.append('endpoint_kind', 'api');
+   if (!/generativelanguage\.googleapis\.com/.test(p.url)) fd.append('model_refresh_mode', 'auto');
+   fd.append('model_refresh_timeout', '30');
+-  if (/openrouter\.ai|ollama\.com/i.test(p.url)) fd.append('require_models', 'true');
+-  else fd.append('skip_probe', 'false');
++  // Only keep an endpoint the provider actually answered with models for:
++  // the server refuses (400) otherwise, so a mistyped key leaves nothing.
++  fd.append('require_models', 'true');
+   try {
+     const r = await fetch('/api/model-endpoints', { method: 'POST', body: fd, credentials: 'same-origin' });
+     const d = await r.json().catch(() => ({}));
+-    if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++    const n = (d.models || []).length;
++    if (!r.ok || !n) {
++      setMsgHtml(msg, keyErrorHtml(p, d.detail || 'no models found', r.ok ? 0 : r.status), 'err');
++      showMsg(msg);
++      return;
++    }
+     const input = root.querySelector('[data-ow-key-input]');
+     if (input) input.value = '';
+-    const n = (d.models || []).length;
+-    setMsg(msg, d.online ? `Added ${p.name.replace(/ \(.*\)$/, '')}${n ? ` with ${n} model${n === 1 ? '' : 's'}` : ''}.` : 'Added, but the provider did not answer yet. It will be retried.', d.online ? 'ok' : 'err');
+-    onAdded && onAdded();
++    setMsg(msg, `Added ${shortName(p)} with ${n} model${n === 1 ? '' : 's'}. You're ready to chat.`, 'ok');
++    showMsg(msg);
++    onAdded && onAdded(msg);
+   } catch (e) {
+-    setMsg(msg, e.message || 'Could not add it.', 'err');
++    setMsgHtml(msg, keyErrorHtml(p, e.message || 'could not connect', 0), 'err');
++    showMsg(msg);
+   } finally {
+     if (btn) btn.disabled = false;
+   }
+@@ -400,16 +520,232 @@ async function finishOpenRouter(root, onAdded) {
+       body: JSON.stringify({ flow: root._owOrFlow || '', code }),
+     });
+     const d = await r.json().catch(() => ({}));
+-    if (!r.ok || !d.ok) throw new Error(OPENROUTER_ERRORS[d.error] || d.detail || 'Could not finish.');
+-    setMsg(msg, 'OpenRouter is connected.', 'ok');
++    if (!r.ok || !d.ok) {
++      // The code was used up either way: ask for a fresh one instead of
++      // leaving a box that can only fail again.
++      const err = new Error(d.error === 'exchange_failed' || d.error === 'expired'
++        ? 'That code did not work. Press Connect again for a new code.'
++        : (OPENROUTER_ERRORS[d.error] || d.detail || 'Could not finish. Press Connect again.'));
++      if (d.error !== 'no_code') err.restart = true;
++      throw err;
++    }
++    setMsg(msg, 'OpenRouter is connected. Everyone on this OpenWings can use it.', 'ok');
+     const paste = root.querySelector('[data-ow-or-paste]');
+     if (paste) paste.hidden = true;
+-    onAdded && onAdded();
++    showMsg(msg);
++    onAdded && onAdded(msg);
+   } catch (e) {
++    if (e.restart) {
++      const paste = root.querySelector('[data-ow-or-paste]');
++      if (paste) paste.hidden = true;
++      const codeInput = root.querySelector('[data-ow-or-code]');
++      if (codeInput) codeInput.value = '';
++      root._owOrFlow = '';
++    }
+     setMsg(msg, e.message, 'err');
++    showMsg(msg);
+   }
+ }
+ 
++// ------------------------------------------------------------ ChatGPT plan
++
++function gptStatus() { return (_status && _status.chatgpt) || { mode: 'remote', state: 'none' }; }
++
++function gptButton(extra = '') {
++  return `<button type="button" class="ow-gpt-btn" data-oai-siwc-button data-ow-act="gpt-start" ${extra}>${gptLogo(16, '#fff')}<span>Continue with ChatGPT</span></button>`;
++}
++
++function renderChatgpt(root) {
++  const box = root.querySelector('[data-ow-choice="chatgpt"]');
++  if (!box) return;
++  const g = gptStatus();
++  const sub = box.querySelector('[data-ow-gpt-sub]');
++  const act = box.querySelector('[data-ow-gpt-act]');
++  const more = box.querySelector('[data-ow-gpt-more]');
++  const who = g.email ? ` as ${esc(g.email)}` : '';
++  const manage = `<a href="${CHATGPT_USAGE_URL}" target="_blank" rel="noopener noreferrer">Manage usage</a>`;
++  let actions = '';
++  let notes = '';
++  if (g.state === 'connected') {
++    if (sub) sub.innerHTML = `Connected${who} · ${g.models || 0} model${g.models === 1 ? '' : 's'} · Using ChatGPT plan · ${manage}`;
++    actions = (g.models ? '' : '<button type="button" class="admin-btn-sm" data-ow-act="gpt-models">Load models</button>')
++      + '<button type="button" class="admin-btn-sm" data-ow-act="gpt-signout">Sign out</button>';
++    if (g.transferred) notes += '<div class="ow-gpt-note">This sign-in was moved here from another computer. OpenAI does not yet track usage per server or end moved sign-ins one by one; to end it for sure, disconnect OpenWings in ChatGPT settings.</div>';
++  } else if (g.state === 'plan_off') {
++    if (sub) sub.innerHTML = `Signed in${who}, but ChatGPT plan use is off, so OpenWings cannot use your plan. To turn it on, Continue with ChatGPT and allow plan use. ${manage}`;
++    actions = (g.mode === 'ready' ? gptButton('data-ow-consent="1"') : '')
++      + '<button type="button" class="admin-btn-sm" data-ow-act="gpt-signout">Sign out</button>';
++  } else {
++    const intro = 'ChatGPT Plus or Pro: OpenWings\' AI requests use your plan\'s usage, through OpenAI\'s own sign-in. No API key or extra charges from OpenWings.';
++    if (sub) {
++      if (g.state === 'needs_signin') sub.textContent = `Your ChatGPT sign-in${g.email ? ` (${g.email})` : ''} ended. Continue with ChatGPT to sign in again.`;
++      else if (g.state === 'signed_out' && g.email) sub.textContent = `Signed out (${g.email}). ${intro}`;
++      else sub.textContent = intro;
++    }
++    if (g.mode === 'ready') actions = gptButton();
++    else if (g.mode === 'switch' && /^http:\/\/127\.0\.0\.1:\d+\//.test(g.switch_url || '')) {
++      actions = `<a class="ow-gpt-btn" data-oai-siwc-button href="${esc(g.switch_url)}">${gptLogo(16, '#fff')}<span>Continue with ChatGPT</span></a>`;
++      notes += '<div class="ow-gpt-note">OpenAI sends the sign-in back to <strong>127.0.0.1</strong>, so this opens OpenWings at that address first (the same computer; you may need to sign in to OpenWings once more there). Then press Continue with ChatGPT again.</div>';
++    } else if (g.mode === 'remote') {
++      const port = Number(g.server_port) || 7011;
++      const user = g.user || 'YOUR-OPENWINGS-NAME';
++      notes += `<div class="ow-gpt-note">This OpenWings runs on another computer. OpenAI only sends the ChatGPT sign-in back to <strong>127.0.0.1</strong>, the computer you sign in on, so use one of these:</div>
++        <ol class="ow-gpt-steps">
++          <li><strong>Open OpenWings through an SSH tunnel</strong>, then press Continue with ChatGPT there. On your own computer run:<code>ssh -N -L ${port}:127.0.0.1:${port} you@your-server</code>then open <code>http://127.0.0.1:${port}</code></li>
++          <li><strong>Or OpenAI's steps for self-hosted servers:</strong> press Continue with ChatGPT in OpenWings on your own computer, then move that sign-in here over SSH, from the OpenWings folder on your computer (use your OpenWings user name on each side; it stops working on your computer and this server takes over):<code>cd ~/openwings &amp;&amp; docker compose exec -T openwings python -m wings.chatgpt_plan export --user ${esc(user)} | ssh you@your-server 'cd ~/openwings &amp;&amp; docker compose exec -T openwings python -m wings.chatgpt_plan import --user ${esc(user)}'</code>OpenAI does not yet track usage per server or end moved sign-ins one by one.</li>
++        </ol>`;
++    }
++    if (g.registered && (g.state === 'signed_out' || g.state === 'needs_signin')) {
++      notes += '<div class="ow-gpt-note"><button type="button" class="ow-plain" data-ow-act="gpt-forget">Use a different ChatGPT account</button></div>';
++    }
++  }
++  if (g.revoke_unconfirmed) {
++    notes += `<div class="ow-gpt-note">OpenWings could not confirm with OpenAI that its access was removed. To be sure, disconnect OpenWings in <a href="${CHATGPT_USAGE_URL}" target="_blank" rel="noopener noreferrer">ChatGPT settings</a>.</div>`;
++  }
++  if (act) act.innerHTML = actions;
++  if (more) more.innerHTML = notes;
++  refit();
++}
++
++async function refreshChatgptPanels() {
++  await fetchStatus(true);
++  document.querySelectorAll('.ow-connect').forEach((r) => renderChatgpt(r));
++  updatePlanChip();
++}
++
++async function startChatgpt(root, { consent = false } = {}) {
++  const msg = root.querySelector('[data-ow-gpt-msg]');
++  const btns = root.querySelectorAll('[data-ow-act="gpt-start"]');
++  btns.forEach((b) => { b.disabled = true; });
++  setMsg(msg, 'Opening ChatGPT…');
++  try {
++    const r = await fetch('/api/wings/connect/chatgpt/start', {
++      method: 'POST', credentials: 'same-origin',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ consent }),
++    });
++    const d = await r.json().catch(() => ({}));
++    if (r.status === 409 && d.mode) {
++      if (_status) _status.chatgpt = Object.assign({}, _status.chatgpt || {}, d);
++      renderChatgpt(root);
++      setMsg(msg, '');
++      return;
++    }
++    if (!r.ok || !d.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++    const url = String(d.authorize_url || '');
++    if (!url.startsWith('https://auth.openai.com/api/accounts/authorize?')) throw new Error('unexpected sign-in address');
++    // A top-level visit: OpenAI sends this browser back to 127.0.0.1 here.
++    window.location.assign(url);
++  } catch (e) {
++    setMsg(msg, 'Could not start: ' + (e.message || 'request failed'), 'err');
++    btns.forEach((b) => { b.disabled = false; });
++  }
++}
++
++async function signOutChatgpt(root) {
++  const ok = window.styledConfirm
++    ? await window.styledConfirm('Sign out of ChatGPT in OpenWings? OpenWings stops using your plan and asks OpenAI to end its access. You can sign in again any time.', { confirmText: 'Sign out', title: 'ChatGPT plan' })
++    : window.confirm('Sign out of ChatGPT in OpenWings?');
++  if (!ok) return;
++  const msg = root.querySelector('[data-ow-gpt-msg]');
++  setMsg(msg, 'Signing out…');
++  try {
++    const r = await fetch('/api/wings/connect/chatgpt/disconnect', { method: 'POST', credentials: 'same-origin' });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++    await refreshChatgptPanels();
++    setMsg(root.querySelector('[data-ow-gpt-msg]'), d.revoked ? 'Signed out. OpenAI ended OpenWings\' access.' : 'Signed out here.', d.revoked ? 'ok' : '');
++    try { settingsModule.refreshAiModelEndpoints && settingsModule.refreshAiModelEndpoints(); } catch (_) {}
++  } catch (e) {
++    setMsg(msg, 'Could not sign out: ' + (e.message || 'request failed'), 'err');
++  }
++}
++
++async function forgetChatgpt(root) {
++  const ok = window.styledConfirm
++    ? await window.styledConfirm('Use a different ChatGPT account? OpenWings forgets the account it knew; the next Continue with ChatGPT registers OpenWings with the account you pick.', { confirmText: 'Use a different account', title: 'ChatGPT plan' })
++    : window.confirm('Use a different ChatGPT account?');
++  if (!ok) return;
++  const msg = root.querySelector('[data-ow-gpt-msg]');
++  try {
++    const r = await fetch('/api/wings/connect/chatgpt/forget', { method: 'POST', credentials: 'same-origin' });
++    if (!r.ok) throw new Error(`HTTP ${r.status}`);
++    await refreshChatgptPanels();
++  } catch (e) {
++    setMsg(msg, 'Could not do that: ' + (e.message || 'request failed'), 'err');
++  }
++}
++
++async function reloadChatgptModels(root, onAdded) {
++  const msg = root.querySelector('[data-ow-gpt-msg]');
++  setMsg(msg, 'Loading models…');
++  try {
++    const r = await fetch('/api/wings/connect/chatgpt/models', { method: 'POST', credentials: 'same-origin' });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok || !d.ok) throw new Error(d.message || d.detail || `HTTP ${r.status}`);
++    await refreshChatgptPanels();
++    setMsg(root.querySelector('[data-ow-gpt-msg]'), `${d.models} model${d.models === 1 ? '' : 's'} ready.`, 'ok');
++    onAdded && onAdded();
++  } catch (e) {
++    setMsg(msg, e.message || 'Could not load models.', 'err');
++  }
++}
++
++function showChatgptWelcome() {
++  // OpenAI's UI guidelines: once, after the first sign-in with plan use on.
++  if (document.getElementById('ow-gpt-welcome')) return;
++  const overlay = document.createElement('div');
++  overlay.id = 'ow-gpt-welcome';
++  overlay.className = 'modal';
++  overlay.innerHTML = `<div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="ow-gpt-welcome-title">
++      <div class="modal-body">
++        <div class="ow-gpt-welcome-logo"><span>${gptLogo(26, '#fff')}</span></div>
++        <h4 id="ow-gpt-welcome-title" style="text-align:center;margin:0 0 8px;">You're using your ChatGPT plan</h4>
++        <p style="margin:0 0 8px;">AI requests you send to ChatGPT models in OpenWings now use your ChatGPT plan. You can review usage and set limits for OpenWings in ChatGPT settings.</p>
++        <p style="margin:0;font-size:12px;opacity:0.75;">On ChatGPT Plus, the five-hour limit is shared with every app that uses your plan.</p>
++      </div>
++      <div class="modal-footer">
++        <a class="confirm-btn confirm-btn-secondary" href="${CHATGPT_USAGE_URL}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Manage usage</a>
++        <button type="button" class="confirm-btn confirm-btn-primary" data-ow-gpt-gotit>Got it</button>
++      </div>
++    </div>`;
++  document.body.appendChild(overlay);
++  overlay.classList.remove('hidden');
++  overlay.style.display = '';
++  const done = () => {
++    overlay.remove();
++    fetch('/api/wings/connect/chatgpt/welcomed', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
++  };
++  overlay.querySelector('[data-ow-gpt-gotit]').addEventListener('click', done);
++  overlay.querySelector('[data-ow-gpt-gotit]').focus();
++}
++
++// "Using ChatGPT plan" beside the model picker while a ChatGPT plan model
++// is selected (the picker label's title carries the route address).
++const PLAN_ROUTE = 'https://api.openai.com/v1/responses';
++function updatePlanChip() {
++  const label = document.getElementById('model-picker-label');
++  const wrap = document.getElementById('model-picker-wrap');
++  if (!label || !wrap) return;
++  let chip = document.getElementById('ow-gpt-plan-chip');
++  if (!chip) {
++    chip = document.createElement('div');
++    chip.id = 'ow-gpt-plan-chip';
++    chip.className = 'ow-gpt-chip';
++    chip.hidden = true;
++    chip.innerHTML = `<span class="ow-gpt-mark">${gptLogo(10, '#fff')}</span><span>Using ChatGPT plan</span><a href="${CHATGPT_USAGE_URL}" target="_blank" rel="noopener noreferrer">Manage usage</a>`;
++    wrap.appendChild(chip);
++  }
++  const using = String(label.title || '').split(' · ').includes(PLAN_ROUTE);
++  chip.hidden = !using;
++}
++function watchPlanChip() {
++  const label = document.getElementById('model-picker-label');
++  if (!label) return;
++  updatePlanChip();
++  new MutationObserver(updatePlanChip).observe(label, { attributes: true, attributeFilter: ['title'] });
++}
++
+ function waitFor(fn, timeoutMs = 4000, stepMs = 100) {
+   return new Promise((resolve) => {
+     const t0 = Date.now();
+@@ -436,6 +772,7 @@ async function openClaudeAgentSetup() {
+ 
+ function wireAiPanel(root, onAdded) {
+   syncKeyLink(root);
++  renderChatgpt(root);
+   root.addEventListener('change', (e) => {
+     if (e.target.matches('[data-ow-key-provider]')) syncKeyLink(root);
+   });
+@@ -459,6 +796,14 @@ function wireAiPanel(root, onAdded) {
+     else if (act === 'key-test') testKey(root);
+     else if (act === 'key-add') addKey(root, onAdded);
+     else if (act === 'claude-agent') openClaudeAgentSetup();
++    else if (act === 'gpt-start') startChatgpt(root, { consent: btn.dataset.owConsent === '1' }, onAdded);
++    else if (act === 'gpt-signout') signOutChatgpt(root);
++    else if (act === 'gpt-forget') forgetChatgpt(root);
++    else if (act === 'gpt-models') reloadChatgptModels(root, onAdded);
++    else if (act === 'gpt-focus') {
++      const c = root.querySelector('[data-ow-choice="chatgpt"]');
++      if (c) { c.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); c.classList.add('ow-flash'); setTimeout(() => c.classList.remove('ow-flash'), 1200); }
++    }
+     else if (act === 'toggle') {
+       const panel = root.querySelector(`[data-ow-panel="${btn.dataset.owTarget}"]`);
+       const open = !!(panel && panel.hidden);
+@@ -478,25 +823,52 @@ function wireAiPanel(root, onAdded) {
+ // ------------------------------------------------------------ first run
+ 
+ // The welcome card is placed by the current look (centred, or anchored above
+-// the message box). Keep it between the top bar and the message box by
+-// letting the panel scroll inside instead of the card running off screen.
++// the message box), which leaves the first-run choices little room. While
++// they show, the message box moves to the bottom (.ow-first-run, see the
++// style above) and the card is placed in the free band between the top bar
++// and the message box, centred when it fits; only what does not fit scrolls
++// inside the panel, with a fade and a "More below" cue at its bottom edge.
++const WS_PROPS = ['top', 'bottom', 'transform', 'translate'];
++function clearWelcomePlacement(ws, scroller) {
++  WS_PROPS.forEach((p) => ws.style.removeProperty(p));
++  if (scroller) scroller.style.removeProperty('max-height');
++}
++function updateMoreCue() {
++  const scroller = document.querySelector('#welcome-setup .ow-setup-scroll');
++  if (!scroller) return;
++  scroller.classList.toggle('ow-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 4);
++}
+ function fitWelcome() {
+   const ws = document.getElementById('welcome-screen');
+-  const setup = document.getElementById('welcome-setup');
+-  if (!ws || !setup || !ws.classList.contains('ow-has-setup') || ws.classList.contains('hidden')) return;
+-  setup.style.maxHeight = 'none';
++  const scroller = document.querySelector('#welcome-setup .ow-setup-scroll');
++  if (!ws) return;
++  const active = ws.classList.contains('ow-has-setup') && !ws.classList.contains('hidden') && !!scroller;
++  const container = ws.closest('.chat-container');
++  if (container) container.classList.toggle('ow-first-run', active);
++  if (!active) { clearWelcomePlacement(ws, scroller); return; }
++  clearWelcomePlacement(ws, scroller);
+   const bar = document.querySelector('.chat-input-bar');
+   const topBar = document.querySelector('.chat-top-bar');
+-  for (let i = 0; i < 4; i++) {
+-    const r = ws.getBoundingClientRect();
+-    const limitTop = (topBar ? topBar.getBoundingClientRect().bottom : 0) + 6;
+-    const barTop = bar ? bar.getBoundingClientRect().top : window.innerHeight;
+-    const limitBottom = (barTop > r.top + 40 ? barTop : window.innerHeight) - 6;
+-    const over = Math.max(0, limitTop - r.top) + Math.max(0, r.bottom - limitBottom);
+-    if (over <= 1) break;
+-    const cur = setup.getBoundingClientRect().height;
+-    setup.style.maxHeight = Math.max(150, Math.floor(cur - over)) + 'px';
+-  }
++  const limitTop = (topBar ? topBar.getBoundingClientRect().bottom : 0) + 10;
++  const barTop = bar && bar.getClientRects().length ? bar.getBoundingClientRect().top : window.innerHeight;
++  const limitBottom = (barTop > limitTop + 160 ? barTop : window.innerHeight) - 10;
++  const avail = Math.max(200, limitBottom - limitTop);
++  const cueH = 18;
++  const wsH = ws.getBoundingClientRect().height;
++  const listH = scroller.getBoundingClientRect().height;
++  const chrome = Math.max(0, wsH - listH);
++  const fits = wsH <= avail;
++  const listMax = fits ? listH : Math.max(140, Math.floor(avail - chrome - cueH));
++  if (!fits) scroller.style.maxHeight = `${listMax}px`;
++  const finalH = fits ? wsH : chrome + listMax + cueH;
++  const parent = ws.offsetParent || document.body;
++  const pr = parent.getBoundingClientRect();
++  const top = limitTop + Math.max(0, (avail - finalH) / 2) - pr.top;
++  ws.style.setProperty('top', `${Math.round(top)}px`, 'important');
++  ws.style.setProperty('bottom', 'auto', 'important');
++  ws.style.setProperty('transform', 'translateX(-50%)', 'important');
++  ws.style.setProperty('translate', 'none', 'important');
++  updateMoreCue();
+ }
+ let _fitQueued = false;
+ function refit() {
+@@ -505,29 +877,50 @@ function refit() {
+   requestAnimationFrame(() => { _fitQueued = false; fitWelcome(); });
+ }
+ 
++function reloadSoon(msgEl) {
++  showMsg(msgEl);
++  setTimeout(() => window.location.reload(), 1600);
++}
++
+ async function renderWelcome() {
+   const box = document.getElementById('welcome-setup');
+   const screen = document.getElementById('welcome-screen');
+   if (!box || !screen) return;
+   const st = await fetchStatus();
+-  if (!st.admin || st.model_endpoints !== 0) {
++  if (!st.admin) {
++    screen.classList.remove('ow-has-setup');
++    // A member cannot add an AI; say whom to ask while there is none.
++    if (st.ai_ready === false) {
++      box.innerHTML = '<div class="ow-member-note">No AI is connected yet. Ask your OpenWings admin to connect one.</div>';
++      box.style.display = '';
++    } else {
++      box.style.display = 'none';
++    }
++    return;
++  }
++  // Shown until some endpoint actually has models (an endpoint whose key the
++  // provider refused has none, and leaves nothing to chat with).
++  const usable = typeof st.usable_endpoints === 'number' ? st.usable_endpoints : st.model_endpoints;
++  if (usable !== 0) {
+     box.style.display = 'none';
+     screen.classList.remove('ow-has-setup');
++    fitWelcome();
+     return;
+   }
+-  box.innerHTML = `<div class="ow-welcome-head">Connect your AI</div>${aiPanelHtml('welcome')}`;
++  // The title stays put; only the choices scroll, with a fade and a cue
++  // at the bottom edge while more is hidden below.
++  box.innerHTML = `<div class="ow-welcome-head">Connect your AI</div><div class="ow-setup-scroll">${aiPanelHtml('welcome')}</div><div class="ow-more-cue" aria-hidden="true">More below ↓</div>`;
+   box.style.display = '';
+   screen.classList.add('ow-has-setup');
+   const root = box.querySelector('.ow-connect');
+-  const done = () => {
+-    setTimeout(() => window.location.reload(), 1400);
+-  };
+-  wireAiPanel(root, done);
++  wireAiPanel(root, (msgEl) => reloadSoon(msgEl));
++  box.querySelector('.ow-setup-scroll').addEventListener('scroll', updateMoreCue, { passive: true });
+   window.addEventListener('resize', refit);
+-  new MutationObserver(refit).observe(screen, { attributes: true, attributeFilter: ['class', 'style'] });
++  new MutationObserver(refit).observe(screen, { attributes: true, attributeFilter: ['class'] });
++  new MutationObserver(refit).observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+   refit();
+   setTimeout(refit, 600);
+-  scanLocal(root, done);
++  scanLocal(root, (msgEl) => reloadSoon(msgEl));
+ }
+ 
+ // ------------------------------------------------------------ Settings cards
+@@ -548,14 +941,22 @@ async function renderSettingsAiCard() {
+   });
+ }
+ 
++// What the card says. `signed_in` (from GET /api/mcp/servers) tells a
++// first connection apart from one that worked before.
+ function appState(app, servers) {
+   const norm = (u) => String(u || '').replace(/\/+$/, '');
+   const srv = servers.find((s) => norm(s.url) === norm(app.url));
+-  if (!srv) return { srv: null, label: 'Not connected', dot: '' };
++  if (!srv) return { srv: null, label: 'Not connected', dot: '', fresh: true };
++  const before = srv.signed_in === true;
+   if (srv.status === 'connected') return { srv, label: `Connected · ${srv.enabled_tool_count ?? srv.tool_count ?? 0} tools`, dot: 'on' };
+   if (srv.status === 'needs_auth') return { srv, label: 'Waiting for sign-in', dot: 'warn' };
+   if (srv.status === 'connecting') return { srv, label: 'Connecting…', dot: 'warn' };
+-  if (srv.status === 'error') return { srv, label: 'Needs a new sign-in', dot: 'warn' };
++  if (srv.status === 'error') {
++    return before
++      ? { srv, label: 'Needs a new sign-in', dot: 'warn', error: srv.error }
++      : { srv, label: 'Could not connect', dot: 'warn', error: srv.error, fresh: true };
++  }
++  if (!before) return { srv, label: 'Not connected', dot: '', fresh: true };
+   return { srv, label: srv.is_enabled === false ? 'Turned off' : 'Not connected right now', dot: 'warn' };
+ }
+ 
+@@ -580,8 +981,9 @@ async function renderAppsGrid(card) {
+     const connected = s.dot === 'on';
+     const buttons = [];
+     const finishUrl = s.srv && s.srv.status === 'needs_auth' ? safeAuthUrl(s.srv.auth_url) : null;
+-    if (!s.srv) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Connect</button>`);
+-    else {
++    if (!s.srv || (s.fresh && !finishUrl)) {
++      buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">${s.error ? 'Try again' : 'Connect'}</button>`);
++    } else {
+       if (finishUrl) {
+         buttons.push(`<a class="admin-btn-add" style="text-decoration:none;" href="${esc(finishUrl)}" target="_blank" rel="noopener noreferrer">Finish sign-in</a>`);
+         buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-connect="${esc(app.slug)}">Start over</button>`);
+@@ -592,6 +994,7 @@ async function renderAppsGrid(card) {
+       <div class="ow-app-head"><span style="color:var(--accent, var(--red));display:inline-flex;">${APP_ICON}</span>${esc(app.name)}</div>
+       <div class="ow-app-about">${esc(app.about)}</div>
+       <div class="ow-app-state"><span class="ow-app-dot ${s.dot}"></span><span data-ow-app-label>${esc(s.label)}</span></div>
++      ${s.error ? `<div class="ow-app-error">${esc(s.error)}</div>` : ''}
+       <div class="ow-app-actions">${buttons.join('')}</div>
+       <div class="adm-ep-inline-msg" data-ow-app-msg></div>
+       ${app.note ? `<div class="ow-app-note">${esc(app.note)}</div>` : ''}
+@@ -618,6 +1021,14 @@ async function connectApp(card, slug) {
+   } catch (_) { tab = null; }
+   setMsg(msg, 'Opening the sign-in page…');
+   appCard?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
++  // Say at once what is happening, not "Not connected" with a Connect button.
++  const label = appCard && appCard.querySelector('[data-ow-app-label]');
++  if (label) label.textContent = 'Waiting for sign-in';
++  const dot = appCard && appCard.querySelector('.ow-app-dot');
++  if (dot) dot.className = 'ow-app-dot warn';
++  appCard?.querySelector('.ow-app-error')?.remove();
++  const pressed = appCard && appCard.querySelector(`[data-ow-app-connect="${CSS.escape(slug)}"]`);
++  if (pressed) pressed.textContent = 'Waiting…';
+   let serverId = null;
+   try {
+     const r = await fetch(`/api/wings/connect/apps/${encodeURIComponent(slug)}`, { method: 'POST', credentials: 'same-origin' });
+@@ -648,15 +1059,24 @@ async function connectApp(card, slug) {
+     try { backHost = new URL(new URL(authUrl).searchParams.get('redirect_uri') || '').host; } catch (_) {}
+     if (backHost && backHost !== window.location.host) {
+       const wrap = document.createElement('div');
+-      wrap.className = 'ow-row';
+-      wrap.innerHTML = '<input type="text" class="settings-input" placeholder="Sign-in did not come back? Paste the address it ended on" aria-label="Address the sign-in ended on"><button type="button" class="admin-btn-sm">Send</button>';
++      wrap.innerHTML = '<div class="ow-app-note" style="opacity:0.8">Sign-in did not come back here? Paste the address it ended on:</div>'
++        + '<div class="ow-row"><input type="text" class="settings-input" placeholder="Paste the address here" aria-label="Address the sign-in ended on"><button type="button" class="admin-btn-sm">Send</button></div>'
++        + '<div class="adm-ep-inline-msg" data-ow-paste-msg></div>';
+       msg.appendChild(wrap);
++      const pasteMsg = wrap.querySelector('[data-ow-paste-msg]');
+       wrap.querySelector('button').addEventListener('click', async () => {
+         const v = wrap.querySelector('input').value.trim();
+-        if (!v) return;
++        if (!v) return setMsg(pasteMsg, 'Paste the address first.', 'err');
+         const f = new FormData();
+         f.append('callback_url', v);
+-        try { await fetch(`/api/mcp/oauth/exchange/${encodeURIComponent(serverId)}`, { method: 'POST', body: f, credentials: 'same-origin' }); } catch (_) {}
++        setMsg(pasteMsg, 'Sending…');
++        try {
++          const r = await fetch(`/api/mcp/oauth/exchange/${encodeURIComponent(serverId)}`, { method: 'POST', body: f, credentials: 'same-origin' });
++          if (r.ok) setMsg(pasteMsg, 'Got it, finishing the connection…', 'ok');
++          else setMsg(pasteMsg, 'That address did not work. Copy the whole address from the sign-in tab and send it again.', 'err');
++        } catch (_) {
++          setMsg(pasteMsg, 'That address did not work. Copy the whole address from the sign-in tab and send it again.', 'err');
++        }
+       });
+     }
+     for (let i = 0; i < 150; i++) {
+@@ -665,13 +1085,23 @@ async function connectApp(card, slug) {
+       if (!s) break;
+       if (s.status === 'connected') { await renderAppsGrid(card); return; }
+       if (s.status === 'error') throw new Error(s.error || 'sign-in failed');
++      if (s.status !== 'needs_auth' && s.status !== 'connecting') {
++        // Cancelled on the app's own page: the server ended the sign-in.
++        await renderAppsGrid(card);
++        const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
++        setMsg(m, 'Sign-in cancelled. Nothing was connected.');
++        return;
++      }
+     }
+     await renderAppsGrid(card);
+   } catch (e) {
+     if (tab && !tab.closed) { try { tab.close(); } catch (_) {} }
+     await renderAppsGrid(card);
+     const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
+-    setMsg(m, 'Could not connect: ' + (e.message || 'request failed'), 'err');
++    // The card itself now shows the reason under its label.
++    if (!m || !m.closest('[data-ow-app]')?.querySelector('.ow-app-error')) {
++      setMsg(m, 'Could not connect: ' + (e.message || 'request failed'), 'err');
++    }
+   }
+ }
+ 
+@@ -693,7 +1123,7 @@ async function renderSettingsAppsCard() {
+   card.className = 'admin-card';
+   card.id = 'ow-connect-apps-card';
+   card.innerHTML = `<h2>${APP_ICON.replace('aria-hidden="true"', 'class="ow-card-ico" aria-hidden="true"')}Connect your apps</h2>
+-    <div class="admin-toggle-sub" style="margin-bottom:8px">One click: you sign in on the app's own page, OpenWings never sees your password, and your assistant can then use the app.</div>
++    <div class="admin-toggle-sub" style="margin-bottom:8px">One click: you sign in on the app's own page and OpenWings never sees your password. The assistant can then use the app with your account, for everyone on this OpenWings: anyone who chats here can read and change what your account can.</div>
+     <div class="ow-apps-grid"></div>`;
+   panel.insertBefore(card, panel.firstChild);
+   card.addEventListener('click', (e) => {
+@@ -712,7 +1142,37 @@ async function renderSettingsAppsCard() {
+ 
+ // ------------------------------------------------------------ return notes
+ 
++function handleChatgptReturn() {
++  const sp = new URLSearchParams(window.location.search);
++  if (!sp.has('ow_chatgpt') && !sp.has('ow_open')) return;
++  const res = sp.get('ow_chatgpt');
++  const open = sp.get('ow_open');
++  sp.delete('ow_chatgpt');
++  sp.delete('ow_open');
++  const rest = sp.toString();
++  window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
++  setTimeout(async () => {
++    if (res === 'connected') {
++      try { await fetch('/api/models?refresh=true', { credentials: 'same-origin' }); } catch (_) {}
++      const st = await fetchStatus(true);
++      uiModule.showToast('ChatGPT is connected. Pick a ChatGPT plan model and say hello.', { duration: 6000 });
++      if (st.chatgpt && st.chatgpt.state === 'connected' && !st.chatgpt.welcomed) showChatgptWelcome();
++    } else if (res) {
++      uiModule.showError(CHATGPT_ERRORS[res] || 'ChatGPT could not be connected. Please try again.');
++    }
++    if (open === 'chatgpt' || (res && res !== 'connected')) {
++      const st = await fetchStatus();
++      if (st.admin && st.model_endpoints !== 0) {
++        settingsModule.open('services');
++        const c = await waitFor(() => document.querySelector('#ow-connect-ai-card [data-ow-choice="chatgpt"]'));
++        if (c) c.scrollIntoView({ block: 'center' });
++      }
++    }
++  }, 600);
++}
++
+ function handleReturn() {
++  handleChatgptReturn();
+   const sp = new URLSearchParams(window.location.search);
+   if (!sp.has('ow_connect') && !sp.has('ow_connect_error')) return;
+   const ok = sp.get('ow_connect');
+@@ -722,7 +1182,7 @@ function handleReturn() {
+   const rest = sp.toString();
+   window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+   setTimeout(() => {
+-    if (ok === 'openrouter') uiModule.showToast('OpenRouter is connected. Pick a model and say hello.', { duration: 6000 });
++    if (ok === 'openrouter') uiModule.showToast('OpenRouter is connected for everyone on this OpenWings. Pick a model and say hello.', { duration: 6000 });
+     else if (err) uiModule.showError(OPENROUTER_ERRORS[err] || 'OpenRouter could not be connected.');
+   }, 600);
+ }
+@@ -734,6 +1194,7 @@ async function init() {
+   renderWelcome();
+   renderSettingsAiCard();
+   renderSettingsAppsCard();
++  watchPlanChip();
+ }
+ 
+ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

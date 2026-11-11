@@ -62,12 +62,39 @@ const SETUP_PROVIDER_URLS = {
   nvidia: { name: 'NVIDIA', url: 'https://integrate.api.nvidia.com/v1' },
 };
 const SETUP_PROVIDER_NAMES = ['deepseek', 'openai', 'openrouter', 'ollama', 'xai', 'anthropic', 'groq', 'gemini', 'opencode-zen', 'opencode-go', 'nvidia'];
-const SETUP_DEVICE_AUTH_PROVIDERS = [
+const SETUP_DEVICE_AUTH_PROVIDERS_ALL = [
   { key: 'copilot', name: 'GitHub Copilot', aliases: ['github'], command: '/setup copilot' },
   { key: 'chatgpt-subscription', name: 'ChatGPT Subscription', aliases: ['chatgptsubscription', 'chatgpt-sub', 'codex'], command: '/setup chatgpt-subscription' },
 ];
-const SETUP_PROVIDER_HINT_NAMES = SETUP_PROVIDER_NAMES.concat(SETUP_DEVICE_AUTH_PROVIDERS.map(provider => provider.key));
-const SETUP_PROVIDER_HINT = SETUP_PROVIDER_HINT_NAMES.slice(0, -1).join(', ') + ', or ' + SETUP_PROVIDER_HINT_NAMES[SETUP_PROVIDER_HINT_NAMES.length - 1];
+// Wings (patch 0021): these two sign in by posing as another company's app
+// (OpenAI's Codex app, Visual Studio Code), so they are offered only when the
+// deployment sets WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (static/js/wings-connect.js
+// sets window.__owUnofficialSignin from /api/wings/connect/status).
+function _setupDeviceAuthProviders() {
+  return window.__owUnofficialSignin === true ? SETUP_DEVICE_AUTH_PROVIDERS_ALL : [];
+}
+function _setupProviderHintNames() {
+  return SETUP_PROVIDER_NAMES.concat(_setupDeviceAuthProviders().map(provider => provider.key));
+}
+function _setupProviderHint() {
+  const names = _setupProviderHintNames();
+  return names.slice(0, -1).join(', ') + ', or ' + names[names.length - 1];
+}
+function _setupSwitchedOffProvider(input) {
+  if (window.__owUnofficialSignin === true) return null;
+  const raw = (input || '').trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-');
+  if (!raw) return null;
+  return SETUP_DEVICE_AUTH_PROVIDERS_ALL.find(provider => [provider.key, provider.name, ...(provider.aliases || [])]
+    .map(value => String(value || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '-'))
+    .includes(raw)) || null;
+}
+function _setupSwitchedOffText(provider) {
+  const safer = provider.key === 'chatgpt-subscription'
+    ? "Use Continue with ChatGPT in Settings > Add Models (OpenAI's own sign-in for your plan), an API key (for example /setup openai KEY), or Connect OpenRouter there."
+    : 'Use an API key (for example /setup openai KEY), or Connect OpenRouter in Settings > Add Models.';
+  return provider.name + ' sign-in is switched off in OpenWings: it works by pretending to be another '
+    + "company's app, and accounts used that way can be closed. " + safer;
+}
 const SETUP_LOCAL_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px;"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>';
 const SETUP_API_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 const SETUP_SETTINGS_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
@@ -79,7 +106,7 @@ function _setupApiProviderChips() {
 }
 
 function _setupDeviceAuthProviderChips() {
-  return SETUP_DEVICE_AUTH_PROVIDERS.map(provider =>
+  return _setupDeviceAuthProviders().map(provider =>
     '<span class="setup-clickable-provider" data-setup-kind="device-auth" data-setup-provider="' + provider.key + '" style="cursor:pointer;text-decoration:underline;margin-right:8px;" title="Run ' + provider.command + '">' + provider.name + '</span>'
   ).join(' ');
 }
@@ -111,7 +138,7 @@ function _setupProviderFromInput(input) {
 function _setupDeviceAuthProviderFromInput(input) {
   const raw = (input || '').trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-');
   if (!raw) return '';
-  for (const provider of SETUP_DEVICE_AUTH_PROVIDERS) {
+  for (const provider of _setupDeviceAuthProviders()) {
     const candidates = [provider.key, provider.name, ...(provider.aliases || [])]
       .map(value => String(value || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '-'));
     if (candidates.includes(raw)) return provider.key;
@@ -217,7 +244,7 @@ function _showSetupEndpointChoices() {
         '<div>Paste provider name then API key (example):</div>' +
         '<pre style="margin:4px 0 0;"><code class="setup-clickable-code" style="cursor:pointer;text-decoration:underline;" title="Click to fill in chat">deepseek sk-...</code></pre>' +
         '<div style="margin-top:8px;font-size:1em;"><span>Supported providers:</span><br>' + providers + '</div>' +
-        '<div style="margin-top:8px;font-size:1em;"><span>Account sign-in:</span><br>' + deviceAuthProviders + '</div>' +
+        (deviceAuthProviders ? '<div style="margin-top:8px;font-size:1em;"><span>Account sign-in:</span><br>' + deviceAuthProviders + '</div>' : '') +
       '</div>' +
     '</div>'
   );
@@ -255,7 +282,7 @@ function _showSetupEndpointChoicesStreamed(options = {}) {
       copyText: 'deepseek sk-...',
     },
     { kind: 'p', html: '<strong>Supported providers:</strong><br>' + _setupApiProviderChips() },
-    { kind: 'p', html: '<strong>Account sign-in:</strong><br>' + _setupDeviceAuthProviderChips() },
+    ...(_setupDeviceAuthProviders().length ? [{ kind: 'p', html: '<strong>Account sign-in:</strong><br>' + _setupDeviceAuthProviderChips() }] : []),
   ];
   return typewriterBlocksReply(blocks, { gap: '4px', bodyClass: 'setup-guide-no-censor', interval: 3 });
 }
@@ -276,7 +303,7 @@ async function _hasConfiguredModels() {
 }
 
 function _setupProviderPrompt() {
-  const chips = SETUP_PROVIDER_HINT_NAMES.map(name =>
+  const chips = _setupProviderHintNames().map(name =>
     '<span style="font-weight:650;">' + name + '</span>'
   ).join('  ');
   slashReply('<b>Supported providers:</b><br>' + chips);
@@ -790,12 +817,19 @@ async function handleSetupWizard(mode, input) {
       await _setupProviderDeviceFlow(deviceAuthProvider);
       return;
     }
+    const switchedOff = _setupSwitchedOffProvider(input);
+    if (switchedOff) {
+      _addMessage('user', input);
+      setupMode = false;
+      await _setupReply(_setupSwitchedOffText(switchedOff));
+      return;
+    }
     const paired = _extractSetupProviderCredential(input);
     const provider = paired?.provider || _setupProviderFromInput(input);
     if (!provider) {
       _addMessage('user', input);
       setupMode = false;
-      await _setupReply('Provider not recognised. Try ' + SETUP_PROVIDER_HINT + '. Type /setup endpoint to try again.');
+      await _setupReply('Provider not recognised. Try ' + _setupProviderHint() + '. Type /setup endpoint to try again.');
       return;
     }
     if (paired?.credential) {
@@ -856,7 +890,7 @@ async function handleSetupWizard(mode, input) {
     if (!provider) {
       pendingSetupApiKey = '';
       setupMode = false;
-      await typewriterReply('Provider not recognised. Try ' + SETUP_PROVIDER_HINT + '. Type /setup endpoint to try again.');
+      await typewriterReply('Provider not recognised. Try ' + _setupProviderHint() + '. Type /setup endpoint to try again.');
       return;
     }
     await connectDetectedSetupEndpoint({ base_url: provider.url, api_key: key, name: provider.name });
@@ -5101,6 +5135,11 @@ async function _cmdSetup(args, ctx) {
     await _setupProviderDeviceFlow(deviceAuthProvider, { label: topicArgs.join(' ') });
     return true;
   }
+  const switchedOff = _setupSwitchedOffProvider(topic);
+  if (switchedOff) {
+    await _setupReply(_setupSwitchedOffText(switchedOff));
+    return true;
+  }
   const provider = _setupProviderFromInput(topic);
   if (provider) {
     _clearSetupGuideMessages();
@@ -5710,6 +5749,7 @@ async function _cmdHelp(args, ctx) {
     if (def.subs) {
       for (const [sub, sDef] of Object.entries(def.subs)) {
         if (sub.startsWith('_')) continue; // skip internal subs
+        if (sDef.hidden) continue; // Wings: hidden subs stay out of help
         const usage = sDef.usage || `/${name} ${sub}`;
         const desc = sDef.help || '';
         categories[cat].push(`  ${usage.padEnd(21)}${desc}`);
@@ -5864,7 +5904,7 @@ const COMMANDS = {
     category: 'Getting started',
     help: 'Add local or API model endpoints',
     handler: _cmdSetup,
-    usage: '/setup local URL  ·  /setup groq KEY  ·  /setup copilot  ·  /setup chatgpt-subscription',
+    usage: '/setup local URL  ·  /setup groq KEY  ·  /setup openrouter KEY',
     // Provider subs so the autocomplete popup surfaces "/setup deepseek",
     // "/setup openai", etc. when the user types "/setup de". Each sub's
     // handler is a thin wrapper that re-prepends the sub name and
@@ -6167,6 +6207,22 @@ const COMMANDS = {
   color:   { alias: ['colour'],     hidden: true, handler: _cmdColor,   usage: '/color [hex]' },
 };
 
+// Wings (patch 0021): keep the switched-off sign-ins out of /setup autocomplete
+// and help unless the deployment allows them (see _setupDeviceAuthProviders
+// above). They stay hidden subs, so "/setup copilot", "/setup codex" and
+// "/setup chatgpt-subscription" still answer, with why they are off.
+const _OW_SWITCHABLE_SETUP_SUBS = ['copilot', 'chatgpt-subscription'];
+function _owSyncSwitchedOffSubs(allowed) {
+  for (const key of _OW_SWITCHABLE_SETUP_SUBS) {
+    const def = COMMANDS.setup && COMMANDS.setup.subs && COMMANDS.setup.subs[key];
+    if (def) def.hidden = !allowed;
+  }
+}
+_owSyncSwitchedOffSubs(window.__owUnofficialSignin === true);
+window.addEventListener('ow-connect-status', (e) => {
+  _owSyncSwitchedOffSubs(!!(e && e.detail && e.detail.unofficial_signin === true));
+});
+
 // ── Legacy aliases ────────────────────────────────────────────────
 // Maps old flat command names to { parent, sub } so `/new` still works.
 
@@ -6340,6 +6396,7 @@ async function handleSlashCommand(input) {
           lines.push('');
           for (const [sub, sDef] of Object.entries(cmdDef.subs)) {
             if (sub.startsWith('_')) continue; // skip internal subs like _show
+            if (sDef.hidden) continue; // Wings: hidden subs stay out of help
             const usage = sDef.usage || `/${cmdKey} ${sub}`;
             lines.push(`  ${usage.padEnd(25)}${sDef.help || ''}`);
           }

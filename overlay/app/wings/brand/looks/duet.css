@@ -584,9 +584,10 @@
 :root[data-ow-skin="ow-duet-night"] .export-dl-btn:hover { color: var(--dw-ink) !important; }
 
 /* ================= welcome: a blank card waiting for its first question ================= */
-:root[data-ow-skin="ow-duet"] #welcome-screen,
+/* :not(.hidden): upstream hides the card with .hidden once a chat starts. */
+:root[data-ow-skin="ow-duet"] #welcome-screen:not(.hidden),
 
-:root[data-ow-skin="ow-duet-night"] #welcome-screen {
+:root[data-ow-skin="ow-duet-night"] #welcome-screen:not(.hidden) {
   display: grid !important;
   grid-template-columns: 1fr auto !important;
   align-items: center !important;

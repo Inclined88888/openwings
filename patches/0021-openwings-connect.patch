@@ -1,0 +1,2430 @@
+OpenWings patch 0021: Connect (use what you already have, in one click)
+
+Setting up an AI and apps meant URLs, keys and forms. This patch adds one
+click choices that use what people already have, and switches off the
+upstream sign-ins that pose as another company's app.
+
+  * static/js/wings-connect.js (new), static/index.html: "Connect your
+    AI" in the empty #welcome-setup container while no model endpoint
+    exists, and as a card in Settings > Add Models: models already on
+    this computer (/api/discover, one click to add; a one line Ollama
+    hint when none is found), Connect OpenRouter (its OAuth PKCE flow,
+    wings/connect_routes.py), Paste a key (provider picker with each
+    provider's own key page, prefix detection, Test), and a plain panel
+    for Claude, ChatGPT and Gemini subscribers. "Connect your apps" in
+    Settings > Integrations: Notion, Linear, Jira and Confluence through
+    the existing MCP OAuth client, with Connected / Reconnect /
+    Disconnect.
+  * app.py: mounts wings/connect_routes.py next to the MCP routes.
+  * src/mcp_oauth.py, routes/mcp/mcp_routes.py: a sign-in returns to the
+    origin the browser uses when it is trusted (wings/origin.py), not a
+    fixed localhost:7000; the callback completes only for the person who
+    started the flow, and only from a signed-in person's own browser (an
+    admin's for flows started by the app, an API token or the agent);
+    Google MCP sign-ins get a random state bound to that person, a ten
+    minute expiry and S256 PKCE (wings/mcp_google.py) instead of the
+    server id; Cancel on the app's own page ends the waiting sign-in at
+    once; the client registers as "OpenWings"; result pages are in
+    OpenWings' own plain style; the server list says whether an app was
+    ever signed in (no token data).
+  * src/mcp_manager.py: when discovery or sign-in fails inside the MCP
+    SDK's transport, the connect is reported as an error ("Could not reach
+    the server's sign-in service", "The sign-in did not finish") instead of
+    re-raising the SDK's cancellation into the web request (a bare HTTP 500)
+    or leaving a stale "waiting for sign-in".
+  * src/chatgpt_subscription.py, src/copilot.py, routes/copilot_routes.py,
+    routes/chatgpt_subscription_routes.py, src/llm_core.py,
+    src/endpoint_resolver.py, static/js/admin.js, static/js/slashCommands.js:
+    ChatGPT Subscription (OpenAI's Codex app id), GitHub Copilot (VS
+    Code's app id) and Kimi Code's borrowed User-Agent are off unless the
+    deployment sets WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (wings/unofficial.py).
+    Off: not offered in Settings or /setup (which explains why), existing
+    connections keep their data and every call answers with a plain note
+    on why and how to turn it back on at the owner's own risk. Nothing at
+    all goes to those services while off: model lists, probes, pings and
+    background refreshes (routes/model_routes.py), the agent's model
+    lookup (src/ai_interaction.py, src/agent_tools/
+    model_interaction_tools.py) and webhooks (routes/webhook/
+    webhook_routes.py) skip them, their stored token reaches no caller,
+    no borrowed headers are built, and new endpoints or tests for them
+    are refused.
+  * static/js/settings.js, routes/email/email_helpers.py: Gmail, iCloud
+    and Yahoo presets show short steps and a link to the provider's app
+    password page; the Outlook preset says Outlook sign-in is coming and
+    what to do for now, and hides the account fields, instead of failing
+    after Create. static/js/settings.js, static/js/emailLibrary/
+    settingsPage.js: visible "Odysseus" wording says OpenWings.
+  * scripts/generate_env_reference.py, website/configuration-reference.md:
+    the Copilot client id note names the new switch.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/app.py b/app.py
+index 5baf69f..a298561 100644
+--- a/app.py
++++ b/app.py
+@@ -884,6 +884,9 @@ from routes.mcp.mcp_routes import setup_mcp_routes
+ mcp_manager = McpManager()
+ set_mcp_manager(mcp_manager)
+ app.include_router(setup_mcp_routes(mcp_manager))
++# Wings: one-click Connect for AI providers and apps (wings/connect_routes.py).
++from wings.connect_routes import setup_connect_routes as _wings_connect_routes
++app.include_router(_wings_connect_routes(mcp_manager))
+ logger.info("MCP routes initialized")
+ 
+ # AI Interaction tools (debates, pipelines, self-managing AI, UI control)
+diff --git a/routes/chatgpt_subscription_routes.py b/routes/chatgpt_subscription_routes.py
+index a9a19b8..d41e058 100644
+--- a/routes/chatgpt_subscription_routes.py
++++ b/routes/chatgpt_subscription_routes.py
+@@ -228,6 +228,9 @@ def _form_value(form, key: str) -> str:
+ 
+ 
+ def _start_device_flow(request: Request, form) -> DeviceFlowStart:
++    # Wings: off unless WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (wings/unofficial.py).
++    from wings.unofficial import require_allowed
++    require_allowed("chatgpt-subscription")
+     owner = effective_user(request) or None
+     try:
+         label = chatgpt_subscription.normalize_account_label(_form_value(form, "label"))
+diff --git a/routes/copilot_routes.py b/routes/copilot_routes.py
+index 1d8be52..6920bc5 100644
+--- a/routes/copilot_routes.py
++++ b/routes/copilot_routes.py
+@@ -100,6 +100,9 @@ def _provision_endpoint(token: str, base: str, owner: Optional[str]) -> Dict:
+ 
+ 
+ def _start_device_flow(request: Request, form) -> DeviceFlowStart:
++    # Wings: off unless WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (wings/unofficial.py).
++    from wings.unofficial import require_allowed
++    require_allowed("copilot")
+     host = copilot.GITHUB_HOST
+     ent = str(form.get("enterprise_url") or "").strip()
+     if ent:
+diff --git a/routes/email/email_helpers.py b/routes/email/email_helpers.py
+index e231963..5aa9748 100644
+--- a/routes/email/email_helpers.py
++++ b/routes/email/email_helpers.py
+@@ -312,11 +312,15 @@ def _friendly_email_auth_error(protocol: str, host: str, error: object) -> str:
+         or ("authentication unsuccessful" in lower and microsoft_host)
+     )
+     if microsoft_basic_auth_failure:
++        # Wings: say what to do instead (patch 0021).
+         return (
+-            "Microsoft no longer accepts normal mailbox passwords for "
+-            "Outlook/Office 365 IMAP/SMTP in most accounts. Odysseus "
+-            "does not support Microsoft OAuth/Graph mail yet, so Outlook "
+-            "accounts cannot be added with this password form."
++            "Outlook sign-in (Microsoft OAuth/Graph) is coming to OpenWings. "
++            "Microsoft no longer accepts normal mailbox passwords from other apps, "
++            "so Outlook/Office 365, Hotmail and Live mail can't be added with this "
++            "password form yet. For "
++            "now, use another mailbox (Gmail, iCloud, Yahoo, Fastmail), or have "
++            "Outlook forward your mail to one (Outlook on the web: Settings > "
++            "Mail > Forwarding)."
+         )
+     return raw[:200]
+ 
+diff --git a/routes/mcp/mcp_routes.py b/routes/mcp/mcp_routes.py
+index 13bbff7..f7dfbf9 100644
+--- a/routes/mcp/mcp_routes.py
++++ b/routes/mcp/mcp_routes.py
+@@ -114,6 +114,48 @@ def _mcp_oauth_redirect_uri() -> str:
+     return REDIRECT_URI
+ 
+ 
++def _wings_caller(request) -> tuple:
++    """(username, is_admin) of the signed-in person behind this request, for
++    OAuth sign-ins.
++
++    Only a person's own browser session counts: API tokens and the agent's
++    in-process calls (which pass require_admin) get (None, False), so they
++    can neither finish a sign-in nor be recorded as the one who started it;
++    a flow they start has no owner and only an admin's own browser can finish
++    it. With sign-in switched off for the whole install (AUTH_ENABLED=false)
++    everyone is the admin, as upstream."""
++    if request is None:
++        return None, False
++    from src.owner_identity import auth_disabled
++    if auth_disabled():
++        return None, True
++    from wings.email_gate import is_human_request
++    if not is_human_request(request):
++        return None, False
++    user = getattr(request.state, "current_user", None)
++    try:
++        require_admin(request)
++        is_admin = True
++    except Exception:
++        is_admin = False
++    return user, is_admin
++
++
++def _wings_set_flow(server_id: str, request) -> None:
++    """Wings: return to the origin this person is using, and only for them."""
++    from src.mcp_oauth import redirect_uri_for_request, set_flow_context
++    user, _ = _wings_caller(request)
++    set_flow_context(server_id, redirect_uri=redirect_uri_for_request(request), owner=user)
++
++
++def _wings_has_tokens(srv) -> bool:
++    try:
++        data = json.loads(srv.oauth_tokens) if srv.oauth_tokens else {}
++        return bool(isinstance(data, dict) and data.get("tokens"))
++    except Exception:
++        return False
++
++
+ def _is_legacy_google_flow(identifier: str) -> bool:
+     """Determine whether an identifier is the server_id of a configured Google OAuth MCP server."""
+     if not identifier:
+@@ -162,6 +204,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
+                     "auth_url": status.get("auth_url"),
+                     "has_oauth": oauth_cfg is not None,
+                     "needs_oauth": needs_oauth,
++                    # Wings: has this server ever completed a sign-in? (no token data)
++                    "signed_in": _wings_has_tokens(srv),
+                 })
+             return result
+         finally:
+@@ -280,6 +324,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
+ 
+         connected = False
+         if not needs_oauth:
++            if transport == "http":
++                _wings_set_flow(server_id, request)
+             connected = await mcp_manager.connect_server(
+                 server_id=server_id,
+                 name=name,
+@@ -318,6 +364,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
+ 
+             args = json.loads(srv.args) if srv.args else []
+             env = json.loads(srv.env) if srv.env else {}
++            if srv.transport == "http":
++                _wings_set_flow(server_id, request)
+             connected = await mcp_manager.connect_server(
+                 server_id=server_id,
+                 name=srv.name,
+@@ -357,6 +405,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
+             if enabled:
+                 args = json.loads(srv.args) if srv.args else []
+                 env = json.loads(srv.env) if srv.env else {}
++                if srv.transport == "http":
++                    _wings_set_flow(server_id, request)
+                 await mcp_manager.connect_server(
+                     server_id=server_id,
+                     name=srv.name,
+@@ -475,6 +525,11 @@ def setup_mcp_routes(mcp_manager: McpManager):
+             # paste the resulting URL back if they're on a different device.
+             redirect_uri = _mcp_oauth_redirect_uri()
+ 
++            # Wings: a random state bound to this person, with an expiry and
++            # S256 PKCE (wings/mcp_google.py), instead of the server id.
++            from wings import mcp_google
++            _user, _ = _wings_caller(request)
++            state, challenge = mcp_google.start(server_id, _user, redirect_uri)
+             params = {
+                 "client_id": client_id,
+                 "redirect_uri": redirect_uri,
+@@ -482,7 +537,9 @@ def setup_mcp_routes(mcp_manager: McpManager):
+                 "scope": " ".join(scopes),
+                 "access_type": "offline",
+                 "prompt": "consent",
+-                "state": server_id,
++                "state": state,
++                "code_challenge": challenge,
++                "code_challenge_method": "S256",
+             }
+             auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+ 
+@@ -500,32 +557,92 @@ def setup_mcp_routes(mcp_manager: McpManager):
+             db.close()
+ 
+     @router.get("/oauth/callback")
+-    async def oauth_callback(code: str = "", state: str = "", request: Request = None):
++    async def oauth_callback(code: str = "", state: str = "", error: str = "", request: Request = None):
+         """Handle OAuth callback. Generic MCP OAuth flows resolve via the
+         pending-state registry; Google flows fall through to the legacy path."""
++        if error:
++            # Wings: the person pressed Cancel (or the app refused) on the
++            # app's own sign-in page.
++            return await _wings_sign_in_cancelled(state, request)
+         if not state:
+             return HTMLResponse(_oauth_result_page("Error", "No OAuth state parameter found in the callback URL."), status_code=400)
+         if not code:
+             return HTMLResponse(_oauth_result_page("Error", "No authorization code found in the URL. Make sure you copied the full URL from your browser."), status_code=400)
+ 
+-        from src.mcp_oauth import resolve_pending
+-        if resolve_pending(state, code):
++        from src.mcp_oauth import pending_owner, resolve_pending
++        _user, _is_admin = _wings_caller(request)
++        if resolve_pending(state, code, user=_user, is_admin=_is_admin):
+             return HTMLResponse(_oauth_result_page(
+-                "Authorization Successful",
+-                "The MCP server is connecting. You can close this window and return to Odysseus.",
++                "Signed in",
++                "OpenWings is finishing the connection; you can close this tab and go back to OpenWings.",
+                 success=True,
+             ))
+-
+-        # Check if this callback belongs to a legacy Google flow vs expired generic flow
+-        if _is_legacy_google_flow(state):
+-            require_admin(request)
+-            return await _exchange_and_connect(state, code, request)
++        if pending_owner(state)[0]:
++            return HTMLResponse(_oauth_result_page(
++                "Not your sign-in",
++                "This sign-in was started by another OpenWings account. Sign in to OpenWings as that person, or press Connect again yourself.",
++            ), status_code=403)
++
++        # Google sign-ins: only an attempt started here, by this person
++        # (wings/mcp_google.py); the server id comes from that record.
++        google = _wings_take_google(state, _user, _is_admin)
++        if isinstance(google, HTMLResponse):
++            return google
++        if google is not None:
++            return await _exchange_and_connect(google.server_id, code, request,
++                                               code_verifier=google.verifier, redirect_uri=google.redirect_uri)
+ 
+         return HTMLResponse(_oauth_result_page(
+-            "Authorization Expired",
+-            "This authorization round has expired. Press Reconnect in Odysseus and try again.",
++            "Sign-in expired",
++            "This sign-in took too long or was already used. Go back to OpenWings and press Connect (or Reconnect) again.",
+         ), status_code=400)
+ 
++    def _wings_take_google(state: str, user, is_admin):
++        from wings import mcp_google
++        try:
++            return mcp_google.take(state, user, is_admin)
++        except mcp_google.NotYours:
++            return HTMLResponse(_oauth_result_page(
++                "Not your sign-in",
++                "This sign-in was started by another OpenWings account. Sign in to OpenWings as that person, or start the sign-in again yourself.",
++            ), status_code=403)
++
++    async def _wings_sign_in_cancelled(state: str, request: Request):
++        """End the waiting sign-in at once (for the person who started it)
++        instead of leaving it to time out, and say what happened."""
++        from src.mcp_oauth import may_finish, server_for_state
++        user, is_admin = _wings_caller(request)
++        server_id = server_for_state(state)
++        name = None
++        if server_id and may_finish(state, user, is_admin):
++            await mcp_manager.disconnect_server(server_id)
++            db = SessionLocal()
++            try:
++                srv = db.query(McpServer).filter(McpServer.id == server_id).first()
++                if srv is not None:
++                    name = srv.name
++                    # Never signed in: do not retry it by itself at the next
++                    # start (Connect turns it back on).
++                    if not _wings_has_tokens(srv):
++                        srv.is_enabled = False
++                        db.commit()
++            finally:
++                db.close()
++        else:
++            from wings import mcp_google
++            flow = mcp_google.peek(state)
++            if flow is not None:
++                try:
++                    mcp_google.take(state, user, is_admin)
++                except mcp_google.NotYours:
++                    pass
++        what = f"OpenWings did not connect to {name}." if name else "Nothing was changed."
++        return HTMLResponse(_oauth_result_page(
++            "Sign-in cancelled",
++            f"{what} You can close this tab and go back to OpenWings.",
++            neutral=True,
++        ))
++
+     @router.post("/oauth/exchange/{server_id}")
+     async def oauth_exchange(server_id: str, request: Request, callback_url: str = Form(...)):
+         """Manual code exchange — user pastes the callback URL from their browser."""
+@@ -546,23 +663,33 @@ def setup_mcp_routes(mcp_manager: McpManager):
+         # Generic MCP OAuth: if the pasted URL carries a state we are waiting on,
+         # resolve it directly (the background connect finishes the handshake).
+         from src.mcp_oauth import resolve_pending
+-        if resolve_pending(state, code):
++        _user, _is_admin = _wings_caller(request)
++        if resolve_pending(state, code, user=_user, is_admin=_is_admin):
+             return HTMLResponse(_oauth_result_page(
+-                "Authorization Successful",
+-                "The MCP server is connecting. You can close this window and return to Odysseus.",
++                "Signed in",
++                "OpenWings is finishing the connection; you can close this tab and go back to OpenWings.",
+                 success=True,
+             ))
+ 
+-        # Check if this exchange belongs to a legacy Google flow vs expired generic flow
+-        if _is_legacy_google_flow(server_id):
+-            return await _exchange_and_connect(server_id, code, request)
++        # Google sign-ins: only an attempt started here, by this person, for
++        # this server (wings/mcp_google.py).
++        from wings import mcp_google
++        _flow = mcp_google.peek(state)
++        if _flow is not None and _flow.server_id == server_id:
++            google = _wings_take_google(state, _user, _is_admin)
++            if isinstance(google, HTMLResponse):
++                return google
++            if google is not None:
++                return await _exchange_and_connect(google.server_id, code, request,
++                                                   code_verifier=google.verifier, redirect_uri=google.redirect_uri)
+ 
+         return HTMLResponse(_oauth_result_page(
+-            "Authorization Expired",
+-            "This authorization round has expired. Press Reconnect in Odysseus and try again.",
++            "Sign-in expired",
++            "This sign-in took too long, was already used, or was started by another OpenWings account. Press Connect (or Reconnect) in OpenWings and try again.",
+         ), status_code=400)
+ 
+-    async def _exchange_and_connect(server_id: str, code: str, request: Request):
++    async def _exchange_and_connect(server_id: str, code: str, request: Request,
++                                    code_verifier: str = None, redirect_uri: str = None):
+         """Exchange auth code for tokens and connect the MCP server."""
+         db = SessionLocal()
+         try:
+@@ -584,18 +711,21 @@ def setup_mcp_routes(mcp_manager: McpManager):
+             client_id = keys["client_id"]
+             client_secret = keys["client_secret"]
+ 
+-            redirect_uri = _mcp_oauth_redirect_uri()
++            redirect_uri = redirect_uri or _mcp_oauth_redirect_uri()
++            token_request = {
++                "code": code,
++                "client_id": client_id,
++                "client_secret": client_secret,
++                "redirect_uri": redirect_uri,
++                "grant_type": "authorization_code",
++            }
++            if code_verifier:
++                token_request["code_verifier"] = code_verifier  # Wings: PKCE
+ 
+             async with httpx.AsyncClient() as client:
+                 resp = await client.post(
+                     "https://oauth2.googleapis.com/token",
+-                    data={
+-                        "code": code,
+-                        "client_id": client_id,
+-                        "client_secret": client_secret,
+-                        "redirect_uri": redirect_uri,
+-                        "grant_type": "authorization_code",
+-                    },
++                    data=token_request,
+                 )
+ 
+             if resp.status_code != 200:
+@@ -664,7 +794,7 @@ def _oauth_authorize_page(
+     redirect_uri = html.escape(redirect_uri, quote=True)
+     return f"""<!DOCTYPE html>
+ <html><head>
+-<meta charset="UTF-8"><title>Authorize — Odysseus</title>
++<meta charset="UTF-8"><title>Authorize — OpenWings</title>
+ <style>
+   body {{ font-family: 'Fira Code', monospace; background: #0f0f0f; color: #e0e0e0;
+     display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
+@@ -720,26 +850,37 @@ def _oauth_authorize_page(
+ </div></body></html>"""
+ 
+ 
+-def _oauth_result_page(title: str, message: str, success: bool = False) -> str:
+-    """Generate a simple HTML page for the OAuth result."""
++def _oauth_result_page(title: str, message: str, success: bool = False, neutral: bool = False) -> str:
++    """Generate a simple HTML page for the OAuth result (Wings: in OpenWings'
++    own plain style, light or dark with the system)."""
+     safe_title = html.escape(title)
+     safe_message = html.escape(message)
+-    color = "#00661a" if success else "#e06c75"
+-    icon = "&#10003;" if success else "&#10007;"
++    if success:
++        color, icon = "#2f7d4f", "&#10003;"
++    elif neutral:
++        color, icon = "#6b7280", "&#8617;"
++    else:
++        color, icon = "#b4413c", "&#10007;"
+     return f"""<!DOCTYPE html>
+ <html><head>
+-<meta charset="UTF-8"><title>{safe_title}</title>
++<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
++<title>{safe_title} · OpenWings</title>
+ <style>
+-  body {{ font-family: 'Fira Code', monospace; background: #0f0f0f; color: #e0e0e0;
+-    display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
+-  .card {{ background: #1a1a1a; border: 1px solid #333; border-radius: 12px;
+-    padding: 2rem; max-width: 420px; text-align: center; }}
+-  .icon {{ font-size: 3rem; color: {color}; margin-bottom: 1rem; }}
+-  h2 {{ color: {color}; margin-bottom: 0.5rem; font-size: 1.1rem; }}
+-  p {{ color: #aaa; font-size: 0.85rem; line-height: 1.5; }}
++  :root {{ color-scheme: light dark; --bg: #f5f5f2; --card: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d8dad3; }}
++  @media (prefers-color-scheme: dark) {{ :root {{ --bg: #17181a; --card: #222326; --fg: #e8e8e6; --muted: #a4a7ab; --line: #34363a; }} }}
++  body {{ margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg);
++    display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; box-sizing: border-box; }}
++  .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 16px;
++    padding: 28px 28px 24px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.06); }}
++  .icon {{ display: inline-flex; width: 44px; height: 44px; border-radius: 50%; align-items: center; justify-content: center;
++    font-size: 22px; color: #fff; background: {color}; margin-bottom: 12px; }}
++  h2 {{ margin: 0 0 8px; font-size: 18px; font-weight: 600; }}
++  p {{ margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }}
++  .brand {{ margin-top: 18px; font-size: 12px; color: var(--muted); }}
+ </style></head>
+ <body><div class="card">
+-  <div class="icon">{icon}</div>
++  <div class="icon" aria-hidden="true">{icon}</div>
+   <h2>{safe_title}</h2>
+   <p>{safe_message}</p>
++  <div class="brand">OpenWings</div>
+ </div></body></html>"""
+diff --git a/routes/model_routes.py b/routes/model_routes.py
+index f1f1e19..04092ec 100644
+--- a/routes/model_routes.py
++++ b/routes/model_routes.py
+@@ -741,6 +741,17 @@ def _is_discovery_only_provider(provider: str) -> bool:
+     return provider == "chatgpt-subscription"
+ 
+ 
++def _wings_switched_off(base_url: str) -> Optional[str]:
++    """Wings: the reason when base_url is a sign-in that poses as another
++    company's app and is switched off (wings/unofficial.py); then no request
++    of any kind may go to it."""
++    try:
++        from wings.unofficial import url_blocked
++        return url_blocked(base_url)
++    except Exception:
++        return None
++
++
+ def _resolve_probe_key(ep) -> Optional[str]:
+     """API key/bearer to probe an endpoint with."""
+     try:
+@@ -757,6 +768,9 @@ def _probe_single_model(base: str, api_key: str, model_id: str, timeout: int = 1
+     provider = _safe_detect_provider(base)
+     if _is_discovery_only_provider(provider):
+         return {"status": "ok", "latency_ms": 0, "skipped": True}
++    _wings_off = _wings_switched_off(base)
++    if _wings_off:
++        return {"status": "skipped", "latency_ms": 0, "skipped": True, "error": _wings_off}
+     messages = [
+         {"role": "system", "content": "You are a helpful assistant."},
+         {"role": "user", "content": "Say OK"},
+@@ -1017,6 +1031,8 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
+     from src.llm_core import httpx_get_kimi_aware
+     base = resolve_url(_normalize_base(base_url))
+     provider = _safe_detect_provider(base)
++    if _wings_switched_off(base):
++        return []
+     if provider == "chatgpt-subscription":
+         from src.chatgpt_subscription import fetch_available_models
+         if api_key:
+@@ -1127,6 +1143,9 @@ def _ping_endpoint(base_url: str, api_key: str = None, timeout: float = 1.5) ->
+     """Reachability probe that does not require installed/listed models."""
+     from src.endpoint_resolver import resolve_url
+     base = resolve_url(_normalize_base(base_url))
++    _wings_off = _wings_switched_off(base)
++    if _wings_off:
++        return {"reachable": False, "error": _wings_off, "switched_off": True}
+     headers = _safe_build_headers(api_key, base)
+ 
+     # Ollama exposes /v1/models (OpenAI-compatible) AND native /api/version,
+@@ -1553,6 +1572,9 @@ def setup_model_routes(model_discovery):
+             return False, info
+         if _host_match(base, "featherless.ai") or _safe_detect_provider(base) == "featherless":
+             return False, info
++        # Wings: never refresh a switched-off sign-in (wings/unofficial.py).
++        if _wings_switched_off(base):
++            return False, info
+         if state.get("inflight"):
+             return False, info
+         if mode in ("manual", "disabled") and not force:
+@@ -1915,6 +1937,11 @@ def setup_model_routes(model_discovery):
+                 "category": _classify_endpoint(base, kind),
+                 "endpoint_kind": kind,
+             }
++            _wings_off = _wings_switched_off(base)
++            if _wings_off:
++                entry.update({"latency_ms": None, "status": "offline", "error": _wings_off, "model_count": cached_count})
++                results.append(entry)
++                continue
+             try:
+                 t0 = _time.time()
+                 ping = _ping_endpoint(base, ep.api_key, timeout=1.5)
+@@ -2156,6 +2183,10 @@ def setup_model_routes(model_discovery):
+         base_url = _normalize_base(base_url)
+         if not base_url:
+             raise HTTPException(400, "Base URL is required")
++        # Wings: no new endpoints for a switched-off sign-in (wings/unofficial.py).
++        _wings_off = _wings_switched_off(base_url)
++        if _wings_off:
++            raise HTTPException(403, _wings_off)
+         # Resolve hostname via Tailscale if DNS fails
+         from src.endpoint_resolver import resolve_url
+         base_url = resolve_url(base_url)
+@@ -2410,6 +2441,9 @@ def setup_model_routes(model_discovery):
+         base_url = _normalize_base(base_url)
+         if not base_url:
+             raise HTTPException(400, "Base URL is required")
++        _wings_off = _wings_switched_off(base_url)
++        if _wings_off:
++            raise HTTPException(403, _wings_off)
+         from src.endpoint_resolver import resolve_url
+         base_url = resolve_url(base_url)
+         base_url = _rewrite_loopback_for_docker(base_url)
+@@ -2453,6 +2487,9 @@ def setup_model_routes(model_discovery):
+             ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
+             if not ep or not _chatgpt_endpoint_visible(ep, request):
+                 raise HTTPException(404, "Endpoint not found")
++            _wings_off = _wings_switched_off(ep.base_url or "")
++            if _wings_off:
++                raise HTTPException(403, _wings_off)
+             ep_data = {"id": ep.id, "name": ep.name, "base_url": ep.base_url, "api_key": _resolve_probe_key(ep)}
+         finally:
+             db.close()
+diff --git a/routes/webhook/webhook_routes.py b/routes/webhook/webhook_routes.py
+index 2410976..5a7886e 100644
+--- a/routes/webhook/webhook_routes.py
++++ b/routes/webhook/webhook_routes.py
+@@ -333,6 +333,12 @@ def setup_webhook_routes(
+                     "Pass api_key + model, or configure an endpoint in Admin.")
+ 
+             base_url = normalize_base(ep.base_url)
++            # Wings: a switched-off sign-in (wings/unofficial.py) answers
++            # with the reason; no request goes to it.
++            from wings.unofficial import url_blocked as _wings_url_blocked
++            _wings_off = _wings_url_blocked(base_url)
++            if _wings_off:
++                raise HTTPException(403, _wings_off)
+             endpoint_url = build_chat_url(base_url)
+             model = body.model or "auto"
+             api_key = ep.api_key
+diff --git a/scripts/generate_env_reference.py b/scripts/generate_env_reference.py
+index 34571bd..b5ae883 100644
+--- a/scripts/generate_env_reference.py
++++ b/scripts/generate_env_reference.py
+@@ -456,7 +456,10 @@ VARIABLE_NOTES: dict[str, tuple[str, str, str]] = {
+     "ODYSSEUS_COPILOT_CLIENT_ID": (
+         "Model routing and providers", USER,
+         "GitHub OAuth client id for the Copilot device flow. The default is the "
+-        "public VS Code client id; override it only with your own allow-listed app.",
++        "public VS Code client id; override it only with your own allow-listed app. "
++        "OpenWings: the Copilot and ChatGPT Subscription sign-ins (which pose as "
++        "VS Code and OpenAI's Codex app) and Kimi Code's borrowed User-Agent are "
++        "off unless the deployment sets `WINGS_ALLOW_UNOFFICIAL_SIGNIN=1`.",
+     ),
+     "ODYSSEUS_COPILOT_API_VERSION": (
+         "Model routing and providers", USER,
+diff --git a/src/agent_tools/model_interaction_tools.py b/src/agent_tools/model_interaction_tools.py
+index 712c8c0..bf41561 100644
+--- a/src/agent_tools/model_interaction_tools.py
++++ b/src/agent_tools/model_interaction_tools.py
+@@ -206,6 +206,10 @@ async def list_models(content: str, session_id: Optional[str] = None, owner: Opt
+                 base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+             except Exception:
+                 continue
++            # Wings: no request to a switched-off sign-in (wings/unofficial.py).
++            from wings.unofficial import url_blocked as _wings_url_blocked
++            if _wings_url_blocked(base):
++                continue
+             provider = _detect_provider(base)
+             headers = build_headers(api_key, base)
+ 
+diff --git a/src/ai_interaction.py b/src/ai_interaction.py
+index 019e28e..d5f1c1c 100644
+--- a/src/ai_interaction.py
++++ b/src/ai_interaction.py
+@@ -138,6 +138,11 @@ def _resolve_model(spec: str, owner: Optional[str] = None, model_type: Optional[
+                 base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+             except Exception:
+                 continue
++            # Wings: skip a switched-off sign-in (wings/unofficial.py); no
++            # request goes to it.
++            from wings.unofficial import url_blocked as _wings_url_blocked
++            if _wings_url_blocked(base):
++                continue
+             provider = _detect_provider(base)
+             headers = build_headers(api_key, base)
+ 
+diff --git a/src/chatgpt_subscription.py b/src/chatgpt_subscription.py
+index 3a8cb68..c635259 100644
+--- a/src/chatgpt_subscription.py
++++ b/src/chatgpt_subscription.py
+@@ -89,6 +89,11 @@ def is_chatgpt_subscription_base(url: str) -> bool:
+ 
+ 
+ def chatgpt_headers(access_token: Optional[str]) -> Dict[str, str]:
++    # Wings: no Codex token or Codex page headers while switched off
++    # (wings/unofficial.py).
++    from wings.unofficial import provider_blocked as _wings_blocked
++    if _wings_blocked(CHATGPT_SUBSCRIPTION_PROVIDER):
++        return {}
+     headers = {
+         "Accept": "application/json, text/event-stream",
+         "Origin": "https://chatgpt.com",
+@@ -243,6 +248,9 @@ def validate_reasoning_effort(model: str, effort: Optional[str]) -> Optional[str
+ def fetch_available_models(access_token: str, timeout: float = 10.0) -> list[str]:
+     if not access_token:
+         return []
++    from wings.unofficial import provider_blocked as _wings_blocked
++    if _wings_blocked(CHATGPT_SUBSCRIPTION_PROVIDER):
++        return []
+     try:
+         response = httpx.get(
+             "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+@@ -286,6 +294,15 @@ def fetch_available_models(access_token: str, timeout: float = 10.0) -> list[str
+     return ordered
+ 
+ 
++def _wings_guard() -> None:
++    """Wings: this provider signs in as OpenAI's Codex app; switched off
++    unless WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (wings/unofficial.py)."""
++    from wings.unofficial import provider_blocked
++    msg = provider_blocked(CHATGPT_SUBSCRIPTION_PROVIDER)
++    if msg:
++        raise ChatGPTSubscriptionError(msg)
++
++
+ def _raise_for_oauth_response(response: httpx.Response, action: str) -> None:
+     if response.status_code < 400:
+         return
+@@ -321,6 +338,7 @@ def _json_or_error(response: httpx.Response, action: str) -> Dict[str, Any]:
+ 
+ 
+ def request_device_code(timeout: float = 15.0) -> Dict[str, Any]:
++    _wings_guard()
+     response = httpx.post(
+         f"{CHATGPT_OAUTH_ISSUER}/api/accounts/deviceauth/usercode",
+         json={"client_id": CHATGPT_OAUTH_CLIENT_ID},
+@@ -337,6 +355,7 @@ def request_device_code(timeout: float = 15.0) -> Dict[str, Any]:
+ 
+ 
+ def poll_device_auth(device_auth_id: str, user_code: str, timeout: float = 15.0) -> Dict[str, Any]:
++    _wings_guard()
+     response = httpx.post(
+         f"{CHATGPT_OAUTH_ISSUER}/api/accounts/deviceauth/token",
+         json={"device_auth_id": device_auth_id, "user_code": user_code},
+@@ -349,6 +368,7 @@ def poll_device_auth(device_auth_id: str, user_code: str, timeout: float = 15.0)
+ 
+ 
+ def exchange_authorization_code(authorization_code: str, code_verifier: str, timeout: float = 15.0) -> Dict[str, Any]:
++    _wings_guard()
+     response = httpx.post(
+         CHATGPT_OAUTH_TOKEN_URL,
+         headers={"Content-Type": "application/x-www-form-urlencoded"},
+@@ -368,6 +388,7 @@ def exchange_authorization_code(authorization_code: str, code_verifier: str, tim
+ 
+ 
+ def refresh_oauth_tokens(access_token: str, refresh_token: str, timeout: float = 20.0) -> Dict[str, Any]:
++    _wings_guard()
+     del access_token
+     if not refresh_token:
+         raise ChatGPTSubscriptionReauthRequired("ChatGPT Subscription is missing a refresh token. Reconnect the provider.")
+@@ -662,6 +683,10 @@ def normalize_usage_payload(payload: Any) -> Dict[str, Any]:
+ 
+ def fetch_usage_payload(access_token: str, timeout: float = CHATGPT_USAGE_TIMEOUT_SECONDS) -> Dict[str, Any]:
+     """Read the raw usage JSON for one access token; classify failures."""
++    from wings.unofficial import provider_blocked as _wings_blocked
++    _wings_msg = _wings_blocked(CHATGPT_SUBSCRIPTION_PROVIDER)
++    if _wings_msg:
++        raise ChatGPTUsageUnavailable("disabled", _wings_msg, status_code=403)
+     if not access_token:
+         raise ChatGPTUsageUnavailable("reauth", "ChatGPT Subscription has no access token.")
+     try:
+diff --git a/src/copilot.py b/src/copilot.py
+index 92c9c0a..c423293 100644
+--- a/src/copilot.py
++++ b/src/copilot.py
+@@ -120,6 +120,11 @@ def copilot_headers(
+                  Copilot's agent-vs-user request accounting.
+         vision:  the request carries an image part.
+     """
++    # Wings: while this sign-in is switched off (wings/unofficial.py), send
++    # neither the token nor the headers that present OpenWings as VS Code.
++    from wings.unofficial import provider_blocked as _wings_blocked
++    if _wings_blocked("copilot"):
++        return {}
+     headers: Dict[str, str] = {
+         "X-GitHub-Api-Version": COPILOT_API_VERSION,
+         "Openai-Intent": "conversation-edits",
+@@ -139,6 +144,13 @@ def copilot_headers(
+ # Device-flow OAuth (pure HTTP; orchestration lives in routes.copilot_routes)
+ # ---------------------------------------------------------------------------
+ 
++def _wings_guard() -> None:
++    """Wings: this provider signs in as Visual Studio Code; switched off
++    unless WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (wings/unofficial.py)."""
++    from wings.unofficial import require_allowed
++    require_allowed("copilot")
++
++
+ def _oauth_post_headers() -> Dict[str, str]:
+     return {
+         "Accept": "application/json",
+@@ -151,6 +163,7 @@ def request_device_code(host: str = GITHUB_HOST, *, timeout: float = 10.0) -> Di
+     """Start the device flow. Returns GitHub's
+     ``{device_code, user_code, verification_uri, expires_in, interval}``.
+     """
++    _wings_guard()
+     r = httpx.post(
+         device_code_url(host),
+         headers=_oauth_post_headers(),
+@@ -166,6 +179,7 @@ def poll_access_token(host: str, device_code: str, *, timeout: float = 10.0) ->
+     ``error`` field (``authorization_pending``/``slow_down``) while the user
+     hasn't authorised yet, or ``{access_token, ...}`` once they have.
+     """
++    _wings_guard()
+     r = httpx.post(
+         access_token_url(host),
+         headers=_oauth_post_headers(),
+@@ -187,6 +201,9 @@ def fetch_models(base: str, token: str, *, timeout: float = 15.0) -> List[Dict]:
+     full list if no model advertises ``model_picker_enabled`` (defensive
+     against API-shape drift).
+     """
++    from wings.unofficial import provider_blocked as _wings_blocked
++    if _wings_blocked("copilot"):
++        return []
+     url = base.rstrip("/") + "/models"
+     r = httpx.get(url, headers=copilot_headers(token), timeout=timeout)
+     r.raise_for_status()
+diff --git a/src/endpoint_resolver.py b/src/endpoint_resolver.py
+index f4745c4..6d0bda3 100644
+--- a/src/endpoint_resolver.py
++++ b/src/endpoint_resolver.py
+@@ -14,7 +14,7 @@ from typing import Optional, Tuple, Dict
+ from urllib.parse import urlparse, urlunparse
+ 
+ from core.database import SessionLocal, ModelEndpoint
+-from src.llm_core import _detect_provider, _host_match, _is_kimi_code_url, KIMI_CODE_USER_AGENT, _ollama_api_root
++from src.llm_core import _detect_provider, _host_match, _is_kimi_code_url, _kimi_code_disguise, KIMI_CODE_USER_AGENT, _ollama_api_root
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -180,6 +180,13 @@ def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Opti
+     )
+     api_key = getattr(ep, "api_key", None)
+     auth_id = getattr(ep, "provider_auth_id", None)
++    # Wings: a switched-off sign-in (wings/unofficial.py) keeps its stored
++    # tokens untouched and unrefreshed, and hands no token to any caller
++    # (Copilot keeps its token in api_key, not a provider auth row); the
++    # model call itself then answers with the reason.
++    from wings.unofficial import provider_blocked as _wings_blocked
++    if _wings_blocked(_detect_provider(base)):
++        return base, None
+     if auth_id:
+         from src.chatgpt_subscription import resolve_runtime_credentials
+ 
+@@ -416,6 +423,10 @@ def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
+     """Build auth headers for an endpoint."""
+     provider = _detect_provider(base)
+     headers: Dict[str, str] = {}
++    # Wings: no borrowed identity and no token for a switched-off sign-in.
++    from wings.unofficial import provider_blocked as _wings_blocked
++    if _wings_blocked(provider):
++        return headers
+     if provider == "anthropic":
+         if api_key:
+             headers["x-api-key"] = api_key
+@@ -432,7 +443,7 @@ def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
+     if provider == "openrouter":
+         headers.setdefault("HTTP-Referer", "https://github.com/odysseus-dev/odysseus")
+         headers.setdefault("X-OpenRouter-Title", "Odysseus")
+-    if _is_kimi_code_url(base):
++    if _kimi_code_disguise(base):
+         headers.setdefault("User-Agent", KIMI_CODE_USER_AGENT)
+     return headers
+ 
+diff --git a/src/llm_core.py b/src/llm_core.py
+index ba9ace8..503ef2c 100644
+--- a/src/llm_core.py
++++ b/src/llm_core.py
+@@ -920,6 +920,22 @@ def _is_kimi_code_url(url: str) -> bool:
+         return False
+ 
+ 
++def _kimi_code_disguise(url: str) -> bool:
++    """Wings: send a borrowed coding-tool User-Agent to Kimi Code only when
++    the deployment opted in (WINGS_ALLOW_UNOFFICIAL_SIGNIN=1, wings/unofficial.py).
++    Otherwise Kimi requests go out as themselves."""
++    if not _is_kimi_code_url(url):
++        return False
++    from wings.unofficial import kimi_user_agent_allowed
++    return kimi_user_agent_allowed()
++
++
++def _wings_unofficial_block(provider: str) -> Optional[str]:
++    """Wings: message for a switched-off sign-in provider, else None."""
++    from wings.unofficial import provider_blocked
++    return provider_blocked(provider)
++
++
+ def _kimi_code_base_key(url: str) -> str:
+     """Normalize a Kimi Code chat/models URL to its OpenAI base (.../coding/v1)."""
+     parsed = urlparse(url)
+@@ -944,7 +960,7 @@ def _is_kimi_code_access_denied(status: int, body: bytes | str) -> bool:
+ 
+ 
+ def _kimi_code_ua_candidates(url: str) -> list[str]:
+-    if not _is_kimi_code_url(url):
++    if not _kimi_code_disguise(url):
+         return []
+     base_key = _kimi_code_base_key(url)
+     cached = _kimi_code_ua_cache.get(base_key)
+@@ -960,7 +976,7 @@ def _remember_kimi_code_user_agent(url: str, user_agent: str) -> None:
+ def apply_kimi_code_headers(headers: Optional[Dict], url: str) -> Dict[str, str]:
+     """Pick a Kimi Code User-Agent (cached probe when possible)."""
+     h = dict(headers or {})
+-    if not _is_kimi_code_url(url):
++    if not _kimi_code_disguise(url):
+         return h
+     base_key = _kimi_code_base_key(url)
+     cached = _kimi_code_ua_cache.get(base_key)
+@@ -991,7 +1007,7 @@ def apply_kimi_code_headers(headers: Optional[Dict], url: str) -> Dict[str, str]
+ async def apply_kimi_code_headers_async(client, headers: Optional[Dict], url: str) -> Dict[str, str]:
+     """Pick a Kimi Code User-Agent without blocking the event loop."""
+     h = dict(headers or {})
+-    if not _is_kimi_code_url(url):
++    if not _kimi_code_disguise(url):
+         return h
+     base_key = _kimi_code_base_key(url)
+     cached = _kimi_code_ua_cache.get(base_key)
+@@ -1020,7 +1036,7 @@ async def apply_kimi_code_headers_async(client, headers: Optional[Dict], url: st
+ 
+ def httpx_get_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
+     h = apply_kimi_code_headers(headers, url)
+-    if not _is_kimi_code_url(url):
++    if not _kimi_code_disguise(url):
+         return httpx.get(url, headers=h, **kwargs)
+     last = None
+     for ua in _kimi_code_ua_candidates(url):
+@@ -1036,7 +1052,7 @@ def httpx_get_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
+ 
+ def httpx_post_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
+     h = apply_kimi_code_headers(headers, url)
+-    if not _is_kimi_code_url(url):
++    if not _kimi_code_disguise(url):
+         return httpx.post(url, headers=h, **kwargs)
+     last = None
+     for ua in _kimi_code_ua_candidates(url):
+@@ -1052,7 +1068,7 @@ def httpx_post_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
+ 
+ async def httpx_post_kimi_aware_async(client, url: str, headers: Optional[Dict], **kwargs):
+     h = await apply_kimi_code_headers_async(client, headers, url)
+-    if not _is_kimi_code_url(url):
++    if not _kimi_code_disguise(url):
+         return await client.post(url, headers=h, **kwargs)
+     last = None
+     for ua in _kimi_code_ua_candidates(url):
+@@ -2213,6 +2229,8 @@ def list_model_ids(
+     provider = _detect_provider(base_chat_url)
+     if provider == "anthropic":
+         return list(ANTHROPIC_MODELS)
++    if _wings_unofficial_block(provider):
++        return []
+     try:
+         h = {}
+         if headers:
+@@ -2288,6 +2306,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
+              thinking_mode: Optional[str] = None,
+              reasoning_effort: Optional[str] = None) -> str:
+     """Synchronous LLM call with optional prompt type enhancement."""
++    _wings_msg = _wings_unofficial_block(_detect_provider(url))
++    if _wings_msg:
++        raise HTTPException(403, _wings_msg)
+     h = _provider_headers(_detect_provider(url))
+     # Tolerate headers that arrive as a JSON string (some sessions stored them
+     # double-encoded) — otherwise h.update() throws "dictionary update sequence
+@@ -2623,6 +2644,9 @@ async def llm_call_async(
+ ) -> str | tuple[str, str]:
+     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
+     provider = _detect_provider(url)
++    _wings_msg = _wings_unofficial_block(provider)
++    if _wings_msg:
++        raise HTTPException(403, _wings_msg)
+     messages_copy = _sanitize_llm_messages(messages)
+ 
+     # Consolidate multiple system messages into one at the start.
+@@ -2989,6 +3013,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
+       - data: [DONE]                       — end of stream
+     """
+     provider = _detect_provider(url)
++    _wings_msg = _wings_unofficial_block(provider)
++    if _wings_msg:
++        yield f'event: error\ndata: {json.dumps({"status": 403, "text": _wings_msg})}\n\n'
++        return
+     messages_copy = _sanitize_llm_messages(messages)
+ 
+     # Consolidate multiple system messages into one at the start.
+diff --git a/src/mcp_manager.py b/src/mcp_manager.py
+index 611e616..56bc1e0 100644
+--- a/src/mcp_manager.py
++++ b/src/mcp_manager.py
+@@ -398,6 +398,16 @@ class McpManager:
+         self._connect_tasks[server_id] = task
+         done, _ = await asyncio.wait({task}, timeout=wait)
+         if task in done:
++            if task.cancelled():
++                # Wings: when discovery or registration fails inside the SDK's
++                # transport, its task group cancels the connect task. Report
++                # that here; task.result() would re-raise the cancellation in
++                # the caller and turn the request into a bare HTTP 500.
++                self._connections[server_id] = {
++                    "status": "error", "name": name,
++                    "error": "Could not reach the server's sign-in service. Try again later.",
++                }
++                return False
+             try:
+                 return task.result()
+             except Exception as e:
+@@ -467,6 +477,17 @@ class McpManager:
+             logger.warning("MCP package not installed. Install with: pip install mcp")
+             self._connections[server_id] = {"status": "error", "error": "mcp package not installed", "name": name}
+             return False
++        except asyncio.CancelledError:
++            # Wings: a sign-in that failed or timed out inside the SDK
++            # transport cancels this task. Unless disconnect_server did it (it
++            # forgets the task first), show that instead of a stale "waiting".
++            if self._connect_tasks.get(server_id) is asyncio.current_task():
++                logger.warning(f"HTTP MCP server {name} ({server_id}): sign-in or connection did not finish")
++                self._connections[server_id] = {
++                    "status": "error", "name": name,
++                    "error": "The sign-in did not finish. Press Reconnect to try again.",
++                }
++            raise
+         except Exception as e:
+             logger.error(f"Failed to connect HTTP MCP server {name} ({server_id}): {e}")
+             self._connections[server_id] = {"status": "error", "error": str(e), "name": name}
+diff --git a/src/mcp_oauth.py b/src/mcp_oauth.py
+index 8c69717..25ab1f6 100644
+--- a/src/mcp_oauth.py
++++ b/src/mcp_oauth.py
+@@ -4,6 +4,11 @@ Bridges the mcp SDK's OAuthClientProvider (RFC 9728 discovery, Dynamic Client
+ Registration, authorization-code + PKCE, token refresh) to Odysseus's web
+ callback route. Tokens and the dynamic registration persist per-server,
+ encrypted, so the interactive flow runs only once.
++
++Wings (patch 0021): a flow started from the web app returns to the origin the
++browser is using (wings/origin.py) instead of one fixed guess, and remembers
++who started it: the callback completes only for that signed-in person (an
++admin for flows started by the app itself, e.g. a reconnect at startup).
+ """
+ import asyncio
+ import json
+@@ -49,6 +54,29 @@ AUTH_WAIT_SECONDS = 300
+ _pending: Dict[str, asyncio.Future] = {}   # state -> Future[(code, state)]
+ _pending_ts: Dict[str, float] = {}         # state -> monotonic timestamp, for pruning
+ _auth_urls: Dict[str, str] = {}            # server_id -> authorization URL
++# Wings: who started each flow, and where it must come back to.
++_pending_owner: Dict[str, Optional[str]] = {}  # state -> username (None = started by the app)
++_flow_ctx: Dict[str, dict] = {}                # server_id -> {"redirect_uri", "owner"}
++
++
++def set_flow_context(server_id: str, redirect_uri: Optional[str] = None, owner: Optional[str] = None) -> None:
++    """Record, before a connect, the callback URL and the person starting it.
++
++    Consumed by the next build_provider() for this server. Without it (a
++    connect the app starts by itself) the redirect URI already registered with
++    the server is reused and only an admin may complete the callback."""
++    _flow_ctx[server_id] = {"redirect_uri": redirect_uri or None, "owner": owner or None}
++
++
++def redirect_uri_for_request(request) -> str:
++    """Callback URL on the origin this request came from, when trusted."""
++    from wings.origin import redirect_base_for
++    return f"{redirect_base_for(request)}/api/mcp/oauth/callback"
++
++
++def pending_owner(state: str) -> Tuple[bool, Optional[str]]:
++    """(is_pending, owner) for a state value."""
++    return (state in _pending, _pending_owner.get(state))
+ 
+ 
+ def _prune_stale() -> None:
+@@ -59,6 +87,7 @@ def _prune_stale() -> None:
+     for state in [s for s, ts in _pending_ts.items() if now - ts > AUTH_WAIT_SECONDS]:
+         fut = _pending.pop(state, None)
+         _pending_ts.pop(state, None)
++        _pending_owner.pop(state, None)
+         if fut is not None and not fut.done():
+             fut.cancel()
+ 
+@@ -68,22 +97,54 @@ def _discard_pending(state: Optional[str]) -> None:
+         return
+     _pending.pop(state, None)
+     _pending_ts.pop(state, None)
++    _pending_owner.pop(state, None)
+ 
+ 
+-def register_pending(state: str) -> asyncio.Future:
++def register_pending(state: str, owner: Optional[str] = None) -> asyncio.Future:
+     _prune_stale()
+     fut = asyncio.get_running_loop().create_future()
+     _pending[state] = fut
+     _pending_ts[state] = time.monotonic()
++    _pending_owner[state] = owner or None
+     return fut
+ 
+ 
+-def resolve_pending(state: str, code: str) -> bool:
++def may_finish(state: str, user: Optional[str] = None, is_admin: bool = False) -> bool:
++    """True when `user` may finish (or cancel) the waiting flow for `state`.
++
++    A flow started by a signed-in person: only that person. One the app, an
++    API token or the agent started (owner None): only an admin's own browser
++    (the caller decides what counts as that, routes/mcp/mcp_routes.py)."""
+     fut = _pending.get(state)
+-    if fut is not None and not fut.done():
+-        fut.set_result((code, state))
+-        return True
+-    return False
++    if fut is None or fut.done():
++        return False
++    owner = _pending_owner.get(state)
++    if owner is not None:
++        if user != owner:
++            logger.warning("MCP OAuth: callback for a flow started by another user refused")
++            return False
++    elif not is_admin:
++        logger.warning("MCP OAuth: callback for an app-started flow refused (not an admin)")
++        return False
++    return True
++
++
++def resolve_pending(state: str, code: str, user: Optional[str] = None, is_admin: bool = False) -> bool:
++    """Hand the code to the waiting flow, only for the person who started it."""
++    if not may_finish(state, user, is_admin):
++        return False
++    _pending[state].set_result((code, state))
++    return True
++
++
++def server_for_state(state: str) -> Optional[str]:
++    """The server whose waiting sign-in carries this state, if any."""
++    if not state:
++        return None
++    for server_id, url in list(_auth_urls.items()):
++        if (parse_qs(urlparse(url).query).get("state") or [None])[0] == state:
++            return server_id
++    return None
+ 
+ 
+ def pop_auth_url(server_id: str) -> Optional[str]:
+@@ -103,6 +164,14 @@ class DbTokenStorage:
+             from core.database import SessionLocal
+             session_factory = SessionLocal
+         self._sf = session_factory
++        self._required_redirect: Optional[str] = None
++
++    def require_redirect_uri(self, redirect_uri: str) -> None:
++        """Wings: a stored registration made for another callback URL is not
++        reused (the server would refuse the new redirect); the SDK then
++        registers again for this one. Tokens are kept, so a still-valid
++        access token works without any sign-in."""
++        self._required_redirect = redirect_uri
+ 
+     def _load(self) -> dict:
+         from core.database import McpServer
+@@ -146,6 +215,10 @@ class DbTokenStorage:
+     async def get_client_info(self):
+         from mcp.shared.auth import OAuthClientInformationFull
+         data = self._load().get("client_info")
++        if data and self._required_redirect:
++            registered = [str(u) for u in (data.get("redirect_uris") or [])]
++            if self._required_redirect not in registered:
++                return None
+         return OAuthClientInformationFull.model_validate(data) if data else None
+ 
+     async def set_client_info(self, client_info) -> None:
+@@ -164,9 +237,28 @@ def build_provider(server_id: str, url: str, on_redirect=None):
+     from mcp.client.auth import OAuthClientProvider
+     from mcp.shared.auth import OAuthClientMetadata
+ 
++    # Wings: the callback goes to the origin the person is using when the flow
++    # was started from the web app; otherwise to the one already registered
++    # with this server (so a background reconnect can still refresh); else the
++    # configured default.
++    ctx = _flow_ctx.pop(server_id, None) or {}
++    owner = ctx.get("owner")
++    storage = DbTokenStorage(server_id)
++    redirect_uri = ctx.get("redirect_uri")
++    explicit_redirect = bool(redirect_uri)
++    if not redirect_uri:
++        try:
++            registered = (storage._load().get("client_info") or {}).get("redirect_uris") or []
++            redirect_uri = str(registered[0]) if registered else None
++        except Exception:
++            redirect_uri = None
++    redirect_uri = redirect_uri or REDIRECT_URI
++    if explicit_redirect:
++        storage.require_redirect_uri(redirect_uri)
++
+     client_metadata = OAuthClientMetadata(
+-        client_name="Odysseus",
+-        redirect_uris=[REDIRECT_URI],
++        client_name="OpenWings",
++        redirect_uris=[redirect_uri],
+         grant_types=["authorization_code", "refresh_token"],
+         response_types=["code"],
+         # Leave scope unset: the SDK applies the MCP scope-selection strategy and
+@@ -180,7 +272,7 @@ def build_provider(server_id: str, url: str, on_redirect=None):
+     async def redirect_handler(authorization_url: str) -> None:
+         state = (parse_qs(urlparse(authorization_url).query).get("state") or [None])[0]
+         if state:
+-            register_pending(state)
++            register_pending(state, owner=owner)
+         _auth_urls[server_id] = authorization_url
+         if on_redirect is not None:
+             try:
+@@ -205,7 +297,7 @@ def build_provider(server_id: str, url: str, on_redirect=None):
+     return OAuthClientProvider(
+         server_url=url,
+         client_metadata=client_metadata,
+-        storage=DbTokenStorage(server_id),
++        storage=storage,
+         redirect_handler=redirect_handler,
+         callback_handler=callback_handler,
+     )
+diff --git a/static/index.html b/static/index.html
+index 2664e19..0ae4d22 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -2714,6 +2714,8 @@
+ <script type="module" src="/static/js/theme.js?v=20260911organsrain1"></script>
+ <script type="module" src="/static/js/censor.js"></script>
+ <script type="module" src="/static/js/settings.js?v=20260912writingstyle3"></script>
++<!-- Wings (patch 0021): Connect your AI / Connect your apps -->
++<script type="module" src="/static/js/wings-connect.js?v=1"></script>
+ <script type="module" src="/static/js/assistant.js?v=20260912firefoxjscleanup1"></script>
+ <script type="module" src="/static/app.js?v=20260929csssplit"></script>  <!-- app.js must be LAST -->
+   <script type="module" src="/static/js/init.js?v=20260829chatstyle12"></script>
+diff --git a/static/js/admin.js b/static/js/admin.js
+index 9c7a1ea..875d1e1 100644
+--- a/static/js/admin.js
++++ b/static/js/admin.js
+@@ -1704,7 +1704,12 @@ function initEndpointForm() {
+   }
+   function _renderPickerMenu() {
+     if (!pickerMenu) return;
+-    pickerMenu.innerHTML = Array.from(provider.options).map(o => {
++    // Wings (patch 0021): ChatGPT Subscription and GitHub Copilot sign in by
++    // posing as another company's app; list them only when the deployment
++    // allows it (WINGS_ALLOW_UNOFFICIAL_SIGNIN, see static/js/wings-connect.js).
++    pickerMenu.innerHTML = Array.from(provider.options).filter(o =>
++      !(o.dataset && o.dataset.authFlow) || window.__owUnofficialSignin === true || o.value === provider.value
++    ).map(o => {
+       const logo = o.dataset.logo ? (providerLogo(o.dataset.logo) || '') : '';
+       const active = o.value === provider.value ? ' active' : '';
+       return `<div class="adm-provider-item${active}" role="option" data-value="${o.value.replace(/"/g, '&quot;')}">
+diff --git a/static/js/emailLibrary/settingsPage.js b/static/js/emailLibrary/settingsPage.js
+index a528315..664d4ce 100644
+--- a/static/js/emailLibrary/settingsPage.js
++++ b/static/js/emailLibrary/settingsPage.js
+@@ -494,7 +494,7 @@ export function _emailWritingStyleHtml(style) {
+       <div class="email-settings-section-head">
+         <div>
+           <div class="email-settings-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Email Reply Writing Style</span></div>
+-          <div class="email-settings-section-desc email-settings-support-copy">Used when Odysseus drafts replies for you.</div>
++          <div class="email-settings-section-desc email-settings-support-copy">Used when OpenWings drafts replies for you.</div>
+         </div>
+       </div>
+       <div id="email-settings-style-body" class="email-settings-section-body">
+diff --git a/static/js/settings.js b/static/js/settings.js
+index b63b28b..ee8ac1f 100644
+--- a/static/js/settings.js
++++ b/static/js/settings.js
+@@ -2172,7 +2172,7 @@ async function initReminderSettings() {
+   // regardless of channel). The hint should make that clear so
+   // users don't think they have to choose between channels.
+   const CHANNEL_HINTS = {
+-    browser: 'Reminders appear as browser notifications inside Odysseus.',
++    browser: 'Reminders appear as browser notifications inside OpenWings.',
+     email: 'Reminders are emailed and shown as a browser notification.',
+     ntfy: 'Reminders are pushed via ntfy AND shown as a browser notification.',
+     webhook: 'Reminders are POSTed to the selected integration AND shown as a browser notification. Use {{title}} and {{message}} in the payload template.',
+@@ -2518,7 +2518,7 @@ async function initEmailAccountsSettings() {
+       google_workspace:  { label: 'Google Workspace / .edu',   imap: { host: 'imap.gmail.com',        port: 993, starttls: false }, smtp: { host: 'smtp.gmail.com',        port: 587 }, oauth: 'google' },
+       migadu:            { label: 'Migadu',                     imap: { host: 'imap.migadu.com',       port: 993, starttls: false }, smtp: { host: 'smtp.migadu.com',       port: 465 } },
+       icloud:            { label: 'iCloud',                     imap: { host: 'imap.mail.me.com',      port: 993, starttls: false }, smtp: { host: 'smtp.mail.me.com',      port: 587 } },
+-      outlook:           { label: 'Outlook / Office 365',       imap: { host: 'outlook.office365.com', port: 993, starttls: false }, smtp: { host: 'smtp.office365.com',    port: 587 } },
++      outlook:           { label: 'Outlook / Office 365',       imap: { host: 'outlook.office365.com', port: 993, starttls: false }, smtp: { host: 'smtp.office365.com',    port: 587 }, noPassword: true },
+       fastmail:          { label: 'Fastmail',                   imap: { host: 'imap.fastmail.com',     port: 993, starttls: false }, smtp: { host: 'smtp.fastmail.com',     port: 465 } },
+       yahoo:             { label: 'Yahoo',                      imap: { host: 'imap.mail.yahoo.com',   port: 993, starttls: false }, smtp: { host: 'smtp.mail.yahoo.com',   port: 465 } },
+       dovecot:           { label: 'Dovecot IMAP (no SMTP)',     imap: { host: '',                      port: 31143, starttls: false }, smtp: { host: '',                     port: 465 } },
+@@ -2571,18 +2571,23 @@ async function initEmailAccountsSettings() {
+     function _syncOauthUI(providerKey) {
+       const p = PROVIDERS[providerKey];
+       const isOauth = !!(p && p.oauth);
++      // Wings: Outlook refuses passwords; hide the password form and Save.
++      const noPassword = !!(p && p.noPassword);
+       el('eaf-oauth-section').style.display = isOauth ? '' : 'none';
+       formEl.querySelectorAll('.eaf-password-section').forEach(r => {
+-        r.style.display = isOauth ? 'none' : '';
++        r.style.display = (isOauth || noPassword) ? 'none' : '';
+       });
++      const saveBtn = el('eaf-save');
++      if (saveBtn) {
++        saveBtn.disabled = noPassword;
++        saveBtn.style.opacity = noPassword ? '0.45' : '';
++        saveBtn.title = noPassword ? 'Outlook accounts cannot be added with a password yet' : '';
++      }
++      _owToggleAccountFields(el('eaf-provider-note'), saveBtn, noPassword);
+     }
+ 
+-    const eafProviderNotes = {
+-      outlook: {
+-        title: 'Outlook / Office 365 needs OAuth',
+-        body: 'Microsoft disables normal password login for IMAP/SMTP in most Outlook and Microsoft 365 accounts. Odysseus does not support Microsoft OAuth/Graph mail yet, so this preset is only a placeholder for future support.',
+-      },
+-    };
++    // Wings (patch 0021): the same steps and links as the Integrations form.
++    const eafProviderNotes = OW_EMAIL_PROVIDER_NOTES;
+     const eafNoteEl = el('eaf-provider-note');
+     const _renderEafProviderNote = (key) => {
+       const n = eafProviderNotes[key];
+@@ -2594,7 +2599,9 @@ async function initEmailAccountsSettings() {
+         return;
+       }
+       eafNoteEl.style.display = '';
+-      eafNoteEl.innerHTML = `<div style="font-weight:600;margin-bottom:3px;">${esc(n.title)}</div><div style="opacity:0.8;">${esc(n.body)}</div>`;
++      eafNoteEl.innerHTML = `<div style="font-weight:600;margin-bottom:3px;">${esc(n.title)}</div><div style="opacity:0.8;">${esc(n.body)}</div>`
++        + (n.steps ? `<ol style="margin:4px 0 0 18px;padding:0;opacity:0.8;">${n.steps.map(st => `<li>${esc(st)}</li>`).join('')}</ol>` : '')
++        + (n.url ? `<div style="margin-top:6px;"><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.linkLabel || 'Open the app password page')}</a></div>` : '');
+     };
+ 
+     // Provider preset → autofill host/port/STARTTLS for both halves.
+@@ -3128,8 +3135,8 @@ const AGENT_CONFIGS = {
+     buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
+ export ODYSSEUS_API_TOKEN='${token}'
+ mkdir -p ~/plugins
+-curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/codex/plugin.zip" -o /tmp/odysseus-codex-plugin.zip
+-python3 -m zipfile -e /tmp/odysseus-codex-plugin.zip ~/plugins
++curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/codex/plugin.zip" -o /tmp/openwings-codex-plugin.zip
++python3 -m zipfile -e /tmp/openwings-codex-plugin.zip ~/plugins
+ python3 - <<'PY'
+ import json
+ from pathlib import Path
+@@ -3166,12 +3173,78 @@ python3 ~/plugins/odysseus/scripts/odysseus_api.py capabilities`,
+     buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
+ export ODYSSEUS_API_TOKEN='${token}'
+ mkdir -p ~/.claude
+-curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/claude/plugin.zip" -o /tmp/odysseus-claude-skill.zip
+-python3 -m zipfile -e /tmp/odysseus-claude-skill.zip ~/.claude/
++curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/claude/plugin.zip" -o /tmp/openwings-claude-skill.zip
++python3 -m zipfile -e /tmp/openwings-claude-skill.zip ~/.claude/
+ python3 ~/.claude/skills/odysseus/scripts/odysseus_api.py capabilities`,
+   },
+ };
+ 
++// Wings (patch 0021): while a preset that cannot be added with a password
++// (Outlook) is picked, hide the account fields between the provider note and
++// the buttons row, so the form does not invite input that can never be
++// saved. A class on the form (not inline styles) so the forms' own show/hide
++// logic keeps working underneath.
++function _owToggleAccountFields(noteEl, buttonEl, hide) {
++  if (!noteEl || !noteEl.parentElement) return;
++  if (!document.getElementById('ow-email-fields-style')) {
++    const st = document.createElement('style');
++    st.id = 'ow-email-fields-style';
++    st.textContent = '.ow-no-password > .ow-acct-field { display: none !important; }';
++    document.head.appendChild(st);
++  }
++  const box = noteEl.parentElement;
++  let stop = buttonEl;
++  while (stop && stop.parentElement !== box) stop = stop.parentElement;
++  for (let n = noteEl.nextElementSibling; n && n !== stop; n = n.nextElementSibling) n.classList.add('ow-acct-field');
++  box.classList.toggle('ow-no-password', !!hide);
++}
++
++// Wings (patch 0021): email provider notes shared by both email forms. Links
++// go to each provider's own page: Google's app passwords page and Apple's
++// account page (both named on their help pages, support.google.com/accounts/
++// answer/185833 and support.apple.com/102654), Yahoo's Account Security page.
++const OW_EMAIL_PROVIDER_NOTES = {
++  gmail: {
++    title: 'Gmail needs an app password',
++    body: 'Your normal Google password will not work here. An app password is a 16-character code just for OpenWings.',
++    steps: [
++      'Turn on 2-Step Verification in your Google Account (needed for app passwords).',
++      'Open the app passwords page below, type a name such as OpenWings, and press Create.',
++      'Copy the 16-character code and paste it as the Password here.',
++    ],
++    url: 'https://myaccount.google.com/apppasswords',
++    linkLabel: 'Open Google app passwords',
++  },
++  icloud: {
++    title: 'iCloud needs an app-specific password',
++    body: 'Your Apple Account password will not work here. Apple gives each app its own password.',
++    steps: [
++      'Sign in at account.apple.com (two-factor authentication must be on).',
++      'Go to Sign-In and Security, then App-Specific Passwords, and generate one.',
++      'Paste it as the Password here. Username: your full iCloud email address.',
++    ],
++    url: 'https://account.apple.com',
++    linkLabel: 'Open Apple Account',
++  },
++  yahoo: {
++    title: 'Yahoo needs an app password',
++    body: 'Your normal Yahoo password will not work here.',
++    steps: [
++      'Open Yahoo Account Security (link below).',
++      'Choose Generate app password, name it OpenWings, and generate.',
++      'Paste the code as the Password here.',
++    ],
++    url: 'https://login.yahoo.com/account/security',
++    linkLabel: 'Open Yahoo Account Security',
++  },
++  outlook: {
++    title: 'Outlook sign-in is coming',
++    body: 'Microsoft stopped accepting passwords from other mail apps, so Outlook, Hotmail, Live and Microsoft 365 mail cannot be added here yet. For now, add another mailbox (Gmail, iCloud, Yahoo, Fastmail), or have Outlook forward your mail to one: in Outlook on the web, Settings > Mail > Forwarding.',
++    url: 'https://support.microsoft.com/en-us/office/modern-authentication-methods-now-needed-to-continue-syncing-outlook-email-in-non-microsoft-email-apps-c5d65390-9676-4763-b41f-d7986499a90d',
++    linkLabel: 'Why (Microsoft)',
++  },
++};
++
+ let _unifiedInited = false;
+ 
+ async function initUnifiedIntegrations() {
+@@ -3507,7 +3580,7 @@ async function initUnifiedIntegrations() {
+       if (ntfyHint) {
+         ntfyHint.style.display = isNtfy ? 'block' : 'none';
+         if (isNtfy) {
+-          ntfyHint.innerHTML = 'Enter the ntfy server URL Odysseus can reach. Examples: <code>http://127.0.0.1:8091</code>, <code>http://100.x.y.z:8091</code>, or <code>https://ntfy.example.com</code>.';
++          ntfyHint.innerHTML = 'Enter the ntfy server URL OpenWings can reach. Examples: <code>http://127.0.0.1:8091</code>, <code>http://100.x.y.z:8091</code>, or <code>https://ntfy.example.com</code>.';
+         }
+       }
+       if (url) {
+@@ -3998,7 +4071,7 @@ async function initUnifiedIntegrations() {
+       google_workspace: { label: 'Google Workspace / .edu', emailEx: 'you@yourschool.edu', imap: { host: 'imap.gmail.com', port: 993, starttls: false }, smtp: { host: 'smtp.gmail.com', port: 587 }, oauth: 'google' },
+       migadu:   { label: 'Migadu',                  emailEx: 'you@yourdomain.com', imap: { host: 'imap.migadu.com',          port: 993, starttls: false }, smtp: { host: 'smtp.migadu.com',    port: 465 } },
+       icloud:   { label: 'iCloud',                  emailEx: 'you@icloud.com',    imap: { host: 'imap.mail.me.com',         port: 993, starttls: false }, smtp: { host: 'smtp.mail.me.com',   port: 587 } },
+-      outlook:  { label: 'Outlook / Office 365',    emailEx: 'you@outlook.com',   imap: { host: 'outlook.office365.com',    port: 993, starttls: false }, smtp: { host: 'smtp.office365.com', port: 587 } },
++      outlook:  { label: 'Outlook / Office 365',    emailEx: 'you@outlook.com',   imap: { host: 'outlook.office365.com',    port: 993, starttls: false }, smtp: { host: 'smtp.office365.com', port: 587 }, noPassword: true },
+       fastmail: { label: 'Fastmail',                emailEx: 'you@fastmail.com',  imap: { host: 'imap.fastmail.com',        port: 993, starttls: false }, smtp: { host: 'smtp.fastmail.com',  port: 465 } },
+       yahoo:    { label: 'Yahoo',                   emailEx: 'you@yahoo.com',     imap: { host: 'imap.mail.yahoo.com',      port: 993, starttls: false }, smtp: { host: 'smtp.mail.yahoo.com', port: 465 } },
+       dovecot:  { label: 'Dovecot IMAP (no SMTP)',  emailEx: 'you@example.com',   imap: { host: '',                         port: 31143, starttls: false }, smtp: { host: '',                   port: 465 } },
+@@ -4089,29 +4162,10 @@ async function initUnifiedIntegrations() {
+     // in 2022; iCloud + Yahoo follow the same model). The Generate
+     // button opens the right page in a new tab and copies the URL for
+     // mobile / cross-device flows.
+-    const PROVIDER_NOTES = {
+-      gmail: {
+-        title: 'Gmail needs an App Password',
+-        body: 'Your regular Google password won\'t work for IMAP. Generate a 16-character App Password (requires 2-Step Verification enabled) and paste it as the Password.',
+-        url: 'https://myaccount.google.com/apppasswords',
+-      },
+-      icloud: {
+-        title: 'iCloud needs an App-Specific Password',
+-        body: 'Sign in to your Apple ID, go to Sign-In and Security → App-Specific Passwords, and generate one (requires 2FA on your Apple ID).',
+-        url: 'https://account.apple.com/account/manage',
+-      },
+-      yahoo: {
+-        title: 'Yahoo needs an App Password',
+-        body: 'Generate an App Password from Yahoo Account Security (requires 2-Step Verification enabled) and paste it as the Password.',
+-        url: 'https://login.yahoo.com/account/security/app-passwords',
+-      },
+-      outlook: {
+-        title: 'Outlook / Office 365 needs OAuth',
+-        body: 'Microsoft disables normal password login for IMAP/SMTP in most Outlook and Microsoft 365 accounts. Odysseus does not support Microsoft OAuth/Graph mail yet, so this preset is only a placeholder for future support.',
+-        url: 'https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/disable-basic-authentication-in-exchange-online',
+-        linkLabel: 'Read Microsoft note',
+-      },
+-    };
++    // Wings (patch 0021): short steps and the provider's own app-password
++    // page (checked on Google's and Apple's help pages; Yahoo's from its
++    // Account Security page). Outlook: say plainly what to do for now.
++    const PROVIDER_NOTES = OW_EMAIL_PROVIDER_NOTES;
+     const noteEl = el('uf-email-provider-note');
+     const _copyProviderUrl = async (text) => {
+       const value = String(text || '');
+@@ -4165,6 +4219,7 @@ async function initUnifiedIntegrations() {
+       noteEl.innerHTML = `
+         <div style="font-weight:600;margin-bottom:3px;">${esc(n.title)}</div>
+         <div style="opacity:0.8;margin-bottom:6px;">${esc(n.body)}</div>
++        ${n.steps ? `<ol style="margin:0 0 6px 18px;padding:0;opacity:0.8;">${n.steps.map(st => `<li>${esc(st)}</li>`).join('')}</ol>` : ''}
+         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+           <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="admin-btn-sm" style="background:var(--red);border-color:var(--red);color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:5px;font-weight:600;">
+             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+@@ -4181,10 +4236,21 @@ async function initUnifiedIntegrations() {
+     function _syncOauthUI(providerKey) {
+       const p = PROVIDERS[providerKey];
+       const isOauth = !!(p && p.oauth);
++      // Wings: a preset whose provider refuses passwords (Outlook) hides the
++      // password form and its buttons instead of failing after Create.
++      const noPassword = !!(p && p.noPassword);
+       el('uf-oauth-section').style.display = isOauth ? '' : 'none';
+       formEl.querySelectorAll('.uf-password-section').forEach(r => {
+-        r.style.display = isOauth ? 'none' : '';
++        r.style.display = (isOauth || noPassword) ? 'none' : '';
++      });
++      ['uf-email-test', 'uf-email-save'].forEach(id => {
++        const b = el(id);
++        if (!b) return;
++        b.disabled = noPassword;
++        b.style.opacity = noPassword ? '0.45' : '';
++        b.title = noPassword ? 'Outlook accounts cannot be added with a password yet' : '';
+       });
++      _owToggleAccountFields(el('uf-email-provider-note'), el('uf-email-save'), noPassword);
+     }
+ 
+     // Custom dropdown wire-up — the native <select> stays in the DOM as the
+@@ -4623,8 +4689,8 @@ async function initUnifiedIntegrations() {
+       const msg = el('uf-mcp-msg'); if (!msg) return;
+       if (el('uf-mcp-pasteback')) return;  // already shown
+       msg.innerHTML =
+-        'Authorize in the opened tab. If the redirect fails (remote access), paste the resulting URL here: ' +
+-        '<input id="uf-mcp-pasteback" class="settings-input" placeholder="http://localhost:7000/api/mcp/oauth/callback?code=..." style="margin-top:4px">' +
++        'Sign in on the page that opened. If it does not come back to OpenWings by itself, paste the address it ends on here: ' +
++        '<input id="uf-mcp-pasteback" class="settings-input" placeholder="' + esc(window.location.origin) + '/api/mcp/oauth/callback?code=..." style="margin-top:4px">' +
+         '<button class="admin-btn-sm" id="uf-mcp-paste-go" style="margin-top:4px">Submit</button>';
+       const pasteGo = el('uf-mcp-paste-go');
+       if (pasteGo) pasteGo.addEventListener('click', async () => {
+@@ -4936,7 +5002,7 @@ async function initUnifiedIntegrations() {
+               </button>
+             </div>
+             <div id="uf-codex-config-body" style="display:none;">
+-              <div style="font-size:11px;opacity:0.62;margin:4px 0 6px;">Toggle which Odysseus tools this agent can use. New agents start with chat only.</div>
++              <div style="font-size:11px;opacity:0.62;margin:4px 0 6px;">Toggle which OpenWings tools this agent can use. New agents start with chat only.</div>
+               <div id="uf-codex-inline-scopes"></div>
+             </div>
+           </div>
+diff --git a/static/js/slashCommands.js b/static/js/slashCommands.js
+index 05d893d..9652588 100644
+--- a/static/js/slashCommands.js
++++ b/static/js/slashCommands.js
+@@ -62,12 +62,39 @@ const SETUP_PROVIDER_URLS = {
+   nvidia: { name: 'NVIDIA', url: 'https://integrate.api.nvidia.com/v1' },
+ };
+ const SETUP_PROVIDER_NAMES = ['deepseek', 'openai', 'openrouter', 'ollama', 'xai', 'anthropic', 'groq', 'gemini', 'opencode-zen', 'opencode-go', 'nvidia'];
+-const SETUP_DEVICE_AUTH_PROVIDERS = [
++const SETUP_DEVICE_AUTH_PROVIDERS_ALL = [
+   { key: 'copilot', name: 'GitHub Copilot', aliases: ['github'], command: '/setup copilot' },
+   { key: 'chatgpt-subscription', name: 'ChatGPT Subscription', aliases: ['chatgptsubscription', 'chatgpt-sub', 'codex'], command: '/setup chatgpt-subscription' },
+ ];
+-const SETUP_PROVIDER_HINT_NAMES = SETUP_PROVIDER_NAMES.concat(SETUP_DEVICE_AUTH_PROVIDERS.map(provider => provider.key));
+-const SETUP_PROVIDER_HINT = SETUP_PROVIDER_HINT_NAMES.slice(0, -1).join(', ') + ', or ' + SETUP_PROVIDER_HINT_NAMES[SETUP_PROVIDER_HINT_NAMES.length - 1];
++// Wings (patch 0021): these two sign in by posing as another company's app
++// (OpenAI's Codex app, Visual Studio Code), so they are offered only when the
++// deployment sets WINGS_ALLOW_UNOFFICIAL_SIGNIN=1 (static/js/wings-connect.js
++// sets window.__owUnofficialSignin from /api/wings/connect/status).
++function _setupDeviceAuthProviders() {
++  return window.__owUnofficialSignin === true ? SETUP_DEVICE_AUTH_PROVIDERS_ALL : [];
++}
++function _setupProviderHintNames() {
++  return SETUP_PROVIDER_NAMES.concat(_setupDeviceAuthProviders().map(provider => provider.key));
++}
++function _setupProviderHint() {
++  const names = _setupProviderHintNames();
++  return names.slice(0, -1).join(', ') + ', or ' + names[names.length - 1];
++}
++function _setupSwitchedOffProvider(input) {
++  if (window.__owUnofficialSignin === true) return null;
++  const raw = (input || '').trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-');
++  if (!raw) return null;
++  return SETUP_DEVICE_AUTH_PROVIDERS_ALL.find(provider => [provider.key, provider.name, ...(provider.aliases || [])]
++    .map(value => String(value || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '-'))
++    .includes(raw)) || null;
++}
++function _setupSwitchedOffText(provider) {
++  const safer = provider.key === 'chatgpt-subscription'
++    ? "Use Continue with ChatGPT in Settings > Add Models (OpenAI's own sign-in for your plan), an API key (for example /setup openai KEY), or Connect OpenRouter there."
++    : 'Use an API key (for example /setup openai KEY), or Connect OpenRouter in Settings > Add Models.';
++  return provider.name + ' sign-in is switched off in OpenWings: it works by pretending to be another '
++    + "company's app, and accounts used that way can be closed. " + safer;
++}
+ const SETUP_LOCAL_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px;"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>';
+ const SETUP_API_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+ const SETUP_SETTINGS_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+@@ -79,7 +106,7 @@ function _setupApiProviderChips() {
+ }
+ 
+ function _setupDeviceAuthProviderChips() {
+-  return SETUP_DEVICE_AUTH_PROVIDERS.map(provider =>
++  return _setupDeviceAuthProviders().map(provider =>
+     '<span class="setup-clickable-provider" data-setup-kind="device-auth" data-setup-provider="' + provider.key + '" style="cursor:pointer;text-decoration:underline;margin-right:8px;" title="Run ' + provider.command + '">' + provider.name + '</span>'
+   ).join(' ');
+ }
+@@ -111,7 +138,7 @@ function _setupProviderFromInput(input) {
+ function _setupDeviceAuthProviderFromInput(input) {
+   const raw = (input || '').trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-');
+   if (!raw) return '';
+-  for (const provider of SETUP_DEVICE_AUTH_PROVIDERS) {
++  for (const provider of _setupDeviceAuthProviders()) {
+     const candidates = [provider.key, provider.name, ...(provider.aliases || [])]
+       .map(value => String(value || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '-'));
+     if (candidates.includes(raw)) return provider.key;
+@@ -217,7 +244,7 @@ function _showSetupEndpointChoices() {
+         '<div>Paste provider name then API key (example):</div>' +
+         '<pre style="margin:4px 0 0;"><code class="setup-clickable-code" style="cursor:pointer;text-decoration:underline;" title="Click to fill in chat">deepseek sk-...</code></pre>' +
+         '<div style="margin-top:8px;font-size:1em;"><span>Supported providers:</span><br>' + providers + '</div>' +
+-        '<div style="margin-top:8px;font-size:1em;"><span>Account sign-in:</span><br>' + deviceAuthProviders + '</div>' +
++        (deviceAuthProviders ? '<div style="margin-top:8px;font-size:1em;"><span>Account sign-in:</span><br>' + deviceAuthProviders + '</div>' : '') +
+       '</div>' +
+     '</div>'
+   );
+@@ -255,7 +282,7 @@ function _showSetupEndpointChoicesStreamed(options = {}) {
+       copyText: 'deepseek sk-...',
+     },
+     { kind: 'p', html: '<strong>Supported providers:</strong><br>' + _setupApiProviderChips() },
+-    { kind: 'p', html: '<strong>Account sign-in:</strong><br>' + _setupDeviceAuthProviderChips() },
++    ...(_setupDeviceAuthProviders().length ? [{ kind: 'p', html: '<strong>Account sign-in:</strong><br>' + _setupDeviceAuthProviderChips() }] : []),
+   ];
+   return typewriterBlocksReply(blocks, { gap: '4px', bodyClass: 'setup-guide-no-censor', interval: 3 });
+ }
+@@ -276,7 +303,7 @@ async function _hasConfiguredModels() {
+ }
+ 
+ function _setupProviderPrompt() {
+-  const chips = SETUP_PROVIDER_HINT_NAMES.map(name =>
++  const chips = _setupProviderHintNames().map(name =>
+     '<span style="font-weight:650;">' + name + '</span>'
+   ).join('  ');
+   slashReply('<b>Supported providers:</b><br>' + chips);
+@@ -790,12 +817,19 @@ async function handleSetupWizard(mode, input) {
+       await _setupProviderDeviceFlow(deviceAuthProvider);
+       return;
+     }
++    const switchedOff = _setupSwitchedOffProvider(input);
++    if (switchedOff) {
++      _addMessage('user', input);
++      setupMode = false;
++      await _setupReply(_setupSwitchedOffText(switchedOff));
++      return;
++    }
+     const paired = _extractSetupProviderCredential(input);
+     const provider = paired?.provider || _setupProviderFromInput(input);
+     if (!provider) {
+       _addMessage('user', input);
+       setupMode = false;
+-      await _setupReply('Provider not recognised. Try ' + SETUP_PROVIDER_HINT + '. Type /setup endpoint to try again.');
++      await _setupReply('Provider not recognised. Try ' + _setupProviderHint() + '. Type /setup endpoint to try again.');
+       return;
+     }
+     if (paired?.credential) {
+@@ -856,7 +890,7 @@ async function handleSetupWizard(mode, input) {
+     if (!provider) {
+       pendingSetupApiKey = '';
+       setupMode = false;
+-      await typewriterReply('Provider not recognised. Try ' + SETUP_PROVIDER_HINT + '. Type /setup endpoint to try again.');
++      await typewriterReply('Provider not recognised. Try ' + _setupProviderHint() + '. Type /setup endpoint to try again.');
+       return;
+     }
+     await connectDetectedSetupEndpoint({ base_url: provider.url, api_key: key, name: provider.name });
+@@ -5101,6 +5135,11 @@ async function _cmdSetup(args, ctx) {
+     await _setupProviderDeviceFlow(deviceAuthProvider, { label: topicArgs.join(' ') });
+     return true;
+   }
++  const switchedOff = _setupSwitchedOffProvider(topic);
++  if (switchedOff) {
++    await _setupReply(_setupSwitchedOffText(switchedOff));
++    return true;
++  }
+   const provider = _setupProviderFromInput(topic);
+   if (provider) {
+     _clearSetupGuideMessages();
+@@ -5710,6 +5749,7 @@ async function _cmdHelp(args, ctx) {
+     if (def.subs) {
+       for (const [sub, sDef] of Object.entries(def.subs)) {
+         if (sub.startsWith('_')) continue; // skip internal subs
++        if (sDef.hidden) continue; // Wings: hidden subs stay out of help
+         const usage = sDef.usage || `/${name} ${sub}`;
+         const desc = sDef.help || '';
+         categories[cat].push(`  ${usage.padEnd(21)}${desc}`);
+@@ -5864,7 +5904,7 @@ const COMMANDS = {
+     category: 'Getting started',
+     help: 'Add local or API model endpoints',
+     handler: _cmdSetup,
+-    usage: '/setup local URL  ·  /setup groq KEY  ·  /setup copilot  ·  /setup chatgpt-subscription',
++    usage: '/setup local URL  ·  /setup groq KEY  ·  /setup openrouter KEY',
+     // Provider subs so the autocomplete popup surfaces "/setup deepseek",
+     // "/setup openai", etc. when the user types "/setup de". Each sub's
+     // handler is a thin wrapper that re-prepends the sub name and
+@@ -6167,6 +6207,22 @@ const COMMANDS = {
+   color:   { alias: ['colour'],     hidden: true, handler: _cmdColor,   usage: '/color [hex]' },
+ };
+ 
++// Wings (patch 0021): keep the switched-off sign-ins out of /setup autocomplete
++// and help unless the deployment allows them (see _setupDeviceAuthProviders
++// above). They stay hidden subs, so "/setup copilot", "/setup codex" and
++// "/setup chatgpt-subscription" still answer, with why they are off.
++const _OW_SWITCHABLE_SETUP_SUBS = ['copilot', 'chatgpt-subscription'];
++function _owSyncSwitchedOffSubs(allowed) {
++  for (const key of _OW_SWITCHABLE_SETUP_SUBS) {
++    const def = COMMANDS.setup && COMMANDS.setup.subs && COMMANDS.setup.subs[key];
++    if (def) def.hidden = !allowed;
++  }
++}
++_owSyncSwitchedOffSubs(window.__owUnofficialSignin === true);
++window.addEventListener('ow-connect-status', (e) => {
++  _owSyncSwitchedOffSubs(!!(e && e.detail && e.detail.unofficial_signin === true));
++});
++
+ // ── Legacy aliases ────────────────────────────────────────────────
+ // Maps old flat command names to { parent, sub } so `/new` still works.
+ 
+@@ -6340,6 +6396,7 @@ async function handleSlashCommand(input) {
+           lines.push('');
+           for (const [sub, sDef] of Object.entries(cmdDef.subs)) {
+             if (sub.startsWith('_')) continue; // skip internal subs like _show
++            if (sDef.hidden) continue; // Wings: hidden subs stay out of help
+             const usage = sDef.usage || `/${cmdKey} ${sub}`;
+             lines.push(`  ${usage.padEnd(25)}${sDef.help || ''}`);
+           }
+diff --git a/static/js/wings-connect.js b/static/js/wings-connect.js
+new file mode 100644
+index 0000000..ce7c83e
+--- /dev/null
++++ b/static/js/wings-connect.js
+@@ -0,0 +1,742 @@
++// Wings (patch 0021): Connect. Use what people already have, in one click.
++//
++// * First run: while no model endpoint exists, the welcome screen shows a
++//   short "Connect your AI" panel in #welcome-setup (left empty upstream).
++// * Settings > Add Models: the same choices as a "Connect your AI" card.
++// * Settings > Integrations: a "Connect your apps" card grid at the top.
++// * Coming back from OpenRouter (?ow_connect=...): a short note.
++// * window.__owUnofficialSignin tells admin.js and slashCommands.js whether
++//   to offer the sign-ins that pose as another company's app.
++//
++// Back end: wings/connect_routes.py. Styling: upstream's own classes
++// (admin-card, admin-btn-add, settings-input, intg-card ...), so every look
++// styles these too; the few rules below only lay them out.
++import uiModule from './ui.js?v=20260916largetoolscroll1';
++import settingsModule from './settings.js?v=20260912writingstyle3';
++
++const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
++
++// Key pages, checked on each provider's own docs or official repos.
++const FEATURED_KEY_PROVIDERS = [
++  { id: 'anthropic', name: 'Anthropic (Claude)', url: 'https://api.anthropic.com', logo: 'anthropic', keyUrl: 'https://platform.claude.com/settings/keys' },
++  { id: 'openai', name: 'OpenAI', url: 'https://api.openai.com/v1', logo: 'openai', keyUrl: 'https://platform.openai.com/settings/organization/api-keys' },
++  { id: 'gemini', name: 'Google Gemini (AI Studio)', url: 'https://generativelanguage.googleapis.com/v1beta/openai', logo: 'gemini', keyUrl: 'https://aistudio.google.com/app/apikey' },
++  { id: 'xai', name: 'xAI Grok', url: 'https://api.x.ai/v1', logo: 'grok', keyUrl: 'https://console.x.ai' },
++  { id: 'mistral', name: 'Mistral', url: 'https://api.mistral.ai/v1', logo: 'mistral', keyUrl: 'https://console.mistral.ai/api-keys' },
++  { id: 'groq', name: 'Groq', url: 'https://api.groq.com/openai/v1', logo: 'groq', keyUrl: 'https://console.groq.com/keys' },
++  { id: 'deepseek', name: 'DeepSeek', url: 'https://api.deepseek.com/v1', logo: 'deepseek', keyUrl: 'https://platform.deepseek.com/api_keys' },
++  { id: 'openrouter', name: 'OpenRouter', url: 'https://openrouter.ai/api/v1', logo: 'openrouter', keyUrl: 'https://openrouter.ai/settings/keys' },
++  { id: 'huggingface', name: 'Hugging Face', url: 'https://router.huggingface.co/v1', logo: '', keyUrl: 'https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained' },
++];
++// Same prefixes /setup recognises (slashCommands.js), plus Hugging Face.
++const KEY_PREFIXES = [
++  [/^sk-ant-/, 'https://api.anthropic.com'],
++  [/^sk-or-/, 'https://openrouter.ai/api/v1'],
++  [/^sk-proj-/, 'https://api.openai.com/v1'],
++  [/^gsk_/, 'https://api.groq.com/openai/v1'],
++  [/^AIza/, 'https://generativelanguage.googleapis.com/v1beta/openai'],
++  [/^xai-/, 'https://api.x.ai/v1'],
++  [/^nvapi-/, 'https://integrate.api.nvidia.com/v1'],
++  [/^hf_/, 'https://router.huggingface.co/v1'],
++];
++
++const OPENROUTER_ERRORS = {
++  denied: 'OpenRouter sign-in was cancelled. Nothing was changed.',
++  expired: 'That sign-in ran out of time or was already used. Press Connect OpenRouter again.',
++  other_user: 'That sign-in was started by another OpenWings account. Press Connect OpenRouter again.',
++  exchange_failed: 'OpenRouter did not hand over a key. Please try again.',
++  save_failed: 'OpenRouter signed you in, but the key could not be saved. Please try again.',
++  not_admin: 'Only an OpenWings admin can add AI providers.',
++  no_code: 'Paste the code OpenRouter showed you.',
++};
++
++let _status = null;
++let _statusPromise = null;
++
++function fetchStatus(force = false) {
++  if (_statusPromise && !force) return _statusPromise;
++  _statusPromise = (async () => {
++    try {
++      const r = await fetch('/api/wings/connect/status', { credentials: 'same-origin' });
++      _status = r.ok ? await r.json() : { admin: false };
++    } catch (_) {
++      _status = { admin: false };
++    }
++    window.__owUnofficialSignin = _status.unofficial_signin === true;
++    try { window.dispatchEvent(new CustomEvent('ow-connect-status', { detail: _status })); } catch (_) {}
++    return _status;
++  })();
++  return _statusPromise;
++}
++
++function injectStyle() {
++  if (document.getElementById('ow-connect-style')) return;
++  const st = document.createElement('style');
++  st.id = 'ow-connect-style';
++  st.textContent = `
++    #welcome-screen.ow-has-setup { z-index: 3; pointer-events: auto; width: min(640px, calc(100% - 24px)); }
++    #welcome-screen.ow-has-setup .welcome-sub, #welcome-screen.ow-has-setup .welcome-tip { display: none !important; }
++    /* First run is a task screen: a compact title leaves room for the choices
++       (doubled class so it outranks each look's own welcome title rule). */
++    html #welcome-screen.ow-has-setup.ow-has-setup .welcome-name { flex-direction: row !important; justify-content: center !important; align-items: center !important; gap: 10px !important; font-size: 26px !important; margin: 0 !important; }
++    html #welcome-screen.ow-has-setup.ow-has-setup .welcome-name .welcome-boat { width: 34px !important; height: 34px !important; border-radius: 10px !important; margin: 0 !important; }
++    .ow-welcome-head { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
++    #welcome-setup { pointer-events: auto; text-align: left; width: 100%; margin-top: 12px; overflow-y: auto; overscroll-behavior: contain; }
++    .ow-connect { display: flex; flex-direction: column; gap: 6px; }
++    .ow-connect .ow-lead { font-size: 12px; opacity: 0.75; margin-bottom: 2px; }
++    .ow-connect .ow-choice { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: color-mix(in srgb, var(--fg) 3%, transparent); }
++    .ow-connect .ow-choice-row { display: flex; align-items: center; gap: 10px; }
++    .ow-connect .ow-choice-text { flex: 1; min-width: 0; }
++    .ow-connect .ow-choice-title { font-weight: 600; font-size: 13px; }
++    .ow-connect .ow-choice-sub { font-size: 11.5px; opacity: 0.7; line-height: 1.4; margin-top: 1px; }
++    .ow-connect .ow-choice-act { flex-shrink: 0; display: flex; gap: 6px; align-items: center; }
++    .ow-connect .ow-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
++    .ow-connect .ow-row > .settings-input, .ow-connect .ow-row > .settings-select { flex: 1 1 180px; min-width: 0; }
++    .ow-connect .ow-found { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
++    .ow-connect .ow-found span { flex: 1; min-width: 0; }
++    .ow-connect .ow-link { font-size: 12px; white-space: nowrap; }
++    .ow-connect .adm-ep-inline-msg:empty { display: none; }
++    .ow-connect .ow-sub-panel ul { margin: 6px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5; }
++    .ow-connect .ow-sub-panel li { margin-bottom: 5px; }
++    .ow-connect .ow-choice-quiet { background: none; border-style: dashed; }
++    .ow-connect button.ow-plain { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-align: left; }
++    .ow-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
++    .ow-apps-grid .intg-card { display: flex; flex-direction: column; align-items: stretch; cursor: default; margin-bottom: 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--fg) 3%, transparent); }
++    .ow-card-ico { vertical-align: -2px; margin-right: 5px; opacity: 0.6; }
++    .ow-app-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
++    .ow-app-about { font-size: 11px; opacity: 0.65; margin-top: 2px; }
++    .ow-app-state { font-size: 11px; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
++    .ow-app-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg); opacity: 0.3; flex-shrink: 0; }
++    .ow-app-dot.on { background: var(--color-success, #50fa7b); opacity: 1; }
++    .ow-app-dot.warn { background: var(--color-warning, #e5a33a); opacity: 1; }
++    .ow-app-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
++    .ow-app-note { font-size: 10.5px; opacity: 0.6; margin-top: 6px; line-height: 1.4; }
++  `;
++  document.head.appendChild(st);
++}
++
++function setMsg(el, text, kind) {
++  if (!el) return;
++  el.textContent = text || '';
++  el.className = 'adm-ep-inline-msg' + (kind === 'ok' ? ' admin-success' : kind === 'err' ? ' admin-error' : '');
++}
++
++// ------------------------------------------------------------ AI panel
++
++function keyProviders() {
++  const out = FEATURED_KEY_PROVIDERS.slice();
++  const seen = new Set(out.map((p) => p.url));
++  // Reuse the other presets from Settings > Add Models (same base URLs).
++  const sel = document.getElementById('adm-epProvider');
++  if (sel) {
++    for (const o of Array.from(sel.options)) {
++      if (!o.value || (o.dataset && o.dataset.authFlow) || seen.has(o.value)) continue;
++      out.push({ id: o.value, name: o.textContent.trim(), url: o.value, logo: (o.dataset && o.dataset.logo) || '', keyUrl: '' });
++      seen.add(o.value);
++    }
++  }
++  return out;
++}
++
++function aiPanelHtml(where) {
++  const providers = keyProviders();
++  const options = providers.map((p) => `<option value="${esc(p.url)}">${esc(p.name)}</option>`).join('');
++  const lead = where === 'welcome'
++    ? 'OpenWings needs an AI to talk to. Pick any one; you can add more later.'
++    : 'The quickest ways to add an AI. The cards below are for anything else.';
++  const keyOpen = where !== 'welcome';
++  return `
++    <div class="ow-connect" data-ow-where="${esc(where)}">
++      <div class="ow-lead">${lead}</div>
++      <div class="ow-choice" data-ow-choice="local">
++        <div class="ow-choice-row">
++          <div class="ow-choice-text">
++            <div class="ow-choice-title">Models already on this computer</div>
++            <div class="ow-choice-sub" data-ow-local-sub>Ollama or LM Studio: free and private.</div>
++          </div>
++          <div class="ow-choice-act"><button type="button" class="admin-btn-sm" data-ow-act="local-scan">Look for them</button></div>
++        </div>
++        <div data-ow-local></div>
++      </div>
++      <div class="ow-choice" data-ow-choice="openrouter">
++        <div class="ow-choice-row">
++          <div class="ow-choice-text">
++            <div class="ow-choice-title">Connect OpenRouter</div>
++            <div class="ow-choice-sub">One sign-in for Claude, GPT, Gemini, Llama and more, paid from your own OpenRouter credits.</div>
++          </div>
++          <div class="ow-choice-act"><button type="button" class="admin-btn-add" data-ow-act="openrouter">Connect</button></div>
++        </div>
++        <div data-ow-or-paste hidden>
++          <div class="ow-choice-sub" style="margin-top:6px;">After you approve, OpenRouter shows a code. Paste it here.</div>
++          <div class="ow-row">
++            <input type="text" class="settings-input" data-ow-or-code placeholder="Code from OpenRouter" autocomplete="off" aria-label="Code from OpenRouter">
++            <button type="button" class="admin-btn-add" data-ow-act="openrouter-finish">Finish</button>
++          </div>
++        </div>
++        <div class="adm-ep-inline-msg" data-ow-or-msg></div>
++      </div>
++      <div class="ow-choice" data-ow-choice="key">
++        <div class="ow-choice-row">
++          <div class="ow-choice-text">
++            <div class="ow-choice-title">Paste a key</div>
++            <div class="ow-choice-sub">Anthropic, OpenAI, Google Gemini, xAI, Mistral, Groq, DeepSeek, Hugging Face and more.</div>
++          </div>
++          <div class="ow-choice-act"><button type="button" class="admin-btn-sm" data-ow-act="toggle" data-ow-target="key" aria-expanded="${keyOpen}">${keyOpen ? 'Hide' : 'Paste a key'}</button></div>
++        </div>
++        <div data-ow-panel="key"${keyOpen ? '' : ' hidden'}>
++          <div class="ow-row">
++            <select class="settings-select" data-ow-key-provider aria-label="Provider">${options}</select>
++            <a class="ow-link" data-ow-key-link href="#" target="_blank" rel="noopener noreferrer">Get a key</a>
++          </div>
++          <div class="ow-row">
++            <input type="password" class="settings-input" data-ow-key-input placeholder="Paste your API key" autocomplete="off" aria-label="API key">
++            <button type="button" class="admin-btn-sm" data-ow-act="key-test">Test</button>
++            <button type="button" class="admin-btn-add" data-ow-act="key-add">Add</button>
++          </div>
++          <div class="adm-ep-inline-msg" data-ow-key-msg></div>
++        </div>
++      </div>
++      <div class="ow-choice ow-choice-quiet" data-ow-choice="subscription">
++        <button type="button" class="ow-plain" data-ow-act="toggle" data-ow-target="sub" aria-expanded="false">I have a Claude, ChatGPT or Gemini subscription</button>
++        <div class="ow-sub-panel" data-ow-panel="sub" hidden>
++          <div class="ow-choice-sub" style="margin-top:6px;">Claude and Gemini plans only work in Anthropic's and Google's own apps: their rules don't let other apps use them (and ChatGPT plans have no approved way in yet), so OpenWings never asks for your plan login. What works instead:</div>
++          <ul>
++            <li><strong>An API key</strong> from the same company, paid as you go: <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener noreferrer">Claude key</a>, <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Gemini key</a> (has a free tier), <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noopener noreferrer">OpenAI key</a>. Then use Paste a key.</li>
++            <li><strong>OpenRouter</strong>: one sign-in for Claude, GPT, Gemini and more. <button type="button" class="ow-plain" data-ow-act="openrouter">Connect OpenRouter</button></li>
++            <li><strong>Keep using your plan</strong> and let your own Claude Code use OpenWings: Settings &gt; Integrations &gt; Add Integration &gt; Claude Agent. <button type="button" class="ow-plain" data-ow-act="claude-agent">Open it</button> (Codex users: Codex Agent, same place.)</li>
++          </ul>
++        </div>
++      </div>
++    </div>`;
++}
++
++function localLabel(item) {
++  const port = Number(item.port);
++  let kind = 'Model server';
++  if (item.provider === 'lmstudio' || port === 1234) kind = 'LM Studio';
++  else if (item.provider === 'llamacpp') kind = 'llama.cpp';
++  else if (port === 11434) kind = 'Ollama';
++  const host = item.host === 'host.docker.internal' ? 'this computer' : `${item.host}:${port}`;
++  return { kind, text: `${kind} on ${host}` };
++}
++
++async function scanLocal(root, onAdded) {
++  const box = root.querySelector('[data-ow-local]');
++  const sub = root.querySelector('[data-ow-local-sub]');
++  const btn = root.querySelector('[data-ow-act="local-scan"]');
++  if (!box) return;
++  box.innerHTML = '';
++  if (sub) sub.textContent = 'Looking for Ollama and LM Studio…';
++  if (btn) btn.disabled = true;
++  let items = [];
++  try {
++    const r = await fetch('/api/discover', { credentials: 'same-origin' });
++    const d = r.ok ? await r.json() : {};
++    items = d.items || [];
++  } catch (_) { items = []; }
++  if (btn) { btn.disabled = false; btn.textContent = 'Look again'; }
++  if (!items.length) {
++    if (sub) sub.innerHTML = 'None found. Using Ollama? Restart it with <code>OLLAMA_HOST=0.0.0.0</code> so OpenWings can reach it.';
++    refit();
++    return;
++  }
++  if (sub) sub.textContent = items.length === 1 ? 'Found one. Add it:' : `Found ${items.length}. Add one:`;
++  box.innerHTML = items.map((it, i) => {
++    const lab = localLabel(it);
++    const n = (it.models || []).length;
++    return `<div class="ow-found"><span>${esc(lab.text)} · ${n} model${n === 1 ? '' : 's'}</span><button type="button" class="admin-btn-add" data-ow-add-local="${i}">Add</button></div>`;
++  }).join('') + '<div class="adm-ep-inline-msg" data-ow-local-msg></div>';
++  refit();
++  box.querySelectorAll('[data-ow-add-local]').forEach((b) => {
++    b.addEventListener('click', async () => {
++      const it = items[Number(b.dataset.owAddLocal)];
++      const msg = box.querySelector('[data-ow-local-msg]');
++      const base = String(it.url || '').replace('/chat/completions', '').replace(/\/$/, '');
++      const fd = new FormData();
++      fd.append('base_url', base);
++      fd.append('name', `${localLabel(it).kind} (${base.replace(/^https?:\/\//, '').split('/')[0]})`);
++      fd.append('endpoint_kind', 'local');
++      fd.append('model_refresh_mode', 'auto');
++      fd.append('skip_probe', 'false');
++      b.disabled = true;
++      setMsg(msg, 'Adding…');
++      try {
++        const r = await fetch('/api/model-endpoints', { method: 'POST', body: fd, credentials: 'same-origin' });
++        const d = await r.json().catch(() => ({}));
++        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++        setMsg(msg, `Added ${localLabel(it).kind}. You're ready to chat.`, 'ok');
++        onAdded && onAdded();
++      } catch (e) {
++        setMsg(msg, `Could not add it: ${e.message || 'request failed'}`, 'err');
++        b.disabled = false;
++      }
++    });
++  });
++}
++
++function selectedKeyProvider(root) {
++  const sel = root.querySelector('[data-ow-key-provider]');
++  const url = sel ? sel.value : '';
++  return keyProviders().find((p) => p.url === url) || null;
++}
++
++function syncKeyLink(root) {
++  const p = selectedKeyProvider(root);
++  const link = root.querySelector('[data-ow-key-link]');
++  if (!link) return;
++  if (p && p.keyUrl) {
++    link.href = p.keyUrl;
++    link.hidden = false;
++    link.textContent = `Get your ${p.name.replace(/ \(.*\)$/, '')} key`;
++  } else {
++    link.hidden = true;
++    link.removeAttribute('href');
++  }
++}
++
++function keyForm(root) {
++  const p = selectedKeyProvider(root);
++  const key = (root.querySelector('[data-ow-key-input]')?.value || '').trim();
++  return { p, key };
++}
++
++async function testKey(root) {
++  const msg = root.querySelector('[data-ow-key-msg]');
++  const { p, key } = keyForm(root);
++  if (!p) return setMsg(msg, 'Pick a provider first.', 'err');
++  if (!key) return setMsg(msg, 'Paste your API key first.', 'err');
++  setMsg(msg, 'Testing…');
++  const fd = new FormData();
++  fd.append('base_url', p.url);
++  fd.append('api_key', key);
++  fd.append('endpoint_kind', 'api');
++  fd.append('model_refresh_timeout', '30');
++  try {
++    const r = await fetch('/api/model-endpoints/test', { method: 'POST', body: fd, credentials: 'same-origin' });
++    const d = await r.json().catch(() => ({}));
++    if (r.ok && d.online) {
++      const n = (d.models || []).length;
++      setMsg(msg, n ? `It works: ${n} model${n === 1 ? '' : 's'} available.` : 'It works.', 'ok');
++    } else {
++      setMsg(msg, d.detail || (d.ping_error ? `Did not work: ${d.ping_error}` : 'Did not work. Check the key and the provider.'), 'err');
++    }
++  } catch (e) {
++    setMsg(msg, 'Test failed: ' + (e.message || 'request failed'), 'err');
++  }
++}
++
++async function addKey(root, onAdded) {
++  const msg = root.querySelector('[data-ow-key-msg]');
++  const { p, key } = keyForm(root);
++  if (!p) return setMsg(msg, 'Pick a provider first.', 'err');
++  if (!key) return setMsg(msg, 'Paste your API key first.', 'err');
++  const btn = root.querySelector('[data-ow-act="key-add"]');
++  if (btn) btn.disabled = true;
++  setMsg(msg, 'Adding…');
++  const fd = new FormData();
++  fd.append('base_url', p.url);
++  fd.append('api_key', key);
++  fd.append('name', p.name.replace(/ \(.*\)$/, ''));
++  fd.append('endpoint_kind', 'api');
++  if (!/generativelanguage\.googleapis\.com/.test(p.url)) fd.append('model_refresh_mode', 'auto');
++  fd.append('model_refresh_timeout', '30');
++  if (/openrouter\.ai|ollama\.com/i.test(p.url)) fd.append('require_models', 'true');
++  else fd.append('skip_probe', 'false');
++  try {
++    const r = await fetch('/api/model-endpoints', { method: 'POST', body: fd, credentials: 'same-origin' });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++    const input = root.querySelector('[data-ow-key-input]');
++    if (input) input.value = '';
++    const n = (d.models || []).length;
++    setMsg(msg, d.online ? `Added ${p.name.replace(/ \(.*\)$/, '')}${n ? ` with ${n} model${n === 1 ? '' : 's'}` : ''}.` : 'Added, but the provider did not answer yet. It will be retried.', d.online ? 'ok' : 'err');
++    onAdded && onAdded();
++  } catch (e) {
++    setMsg(msg, e.message || 'Could not add it.', 'err');
++  } finally {
++    if (btn) btn.disabled = false;
++  }
++}
++
++async function connectOpenRouter(root) {
++  const msg = root.querySelector('[data-ow-or-msg]');
++  const buttons = root.querySelectorAll('[data-ow-act="openrouter"]');
++  buttons.forEach((b) => { b.disabled = true; });
++  setMsg(msg, 'Opening OpenRouter…');
++  try {
++    const r = await fetch('/api/wings/connect/openrouter/start', { method: 'POST', credentials: 'same-origin' });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++    const url = String(d.authorize_url || '');
++    if (!url.startsWith('https://openrouter.ai/')) throw new Error('unexpected sign-in address');
++    if (d.mode === 'callback') {
++      // OpenRouter sends the browser back here; the server finishes.
++      window.location.assign(url);
++      return;
++    }
++    // Plain-http address other than localhost: OpenRouter shows a code to paste.
++    root._owOrFlow = d.flow;
++    const paste = root.querySelector('[data-ow-or-paste]');
++    if (paste) paste.hidden = false;
++    msg.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open OpenRouter</a>, approve, then paste the code below.`;
++    msg.className = 'adm-ep-inline-msg';
++    window.open(url, '_blank', 'noopener');
++  } catch (e) {
++    setMsg(msg, 'Could not start: ' + (e.message || 'request failed'), 'err');
++  } finally {
++    buttons.forEach((b) => { b.disabled = false; });
++  }
++}
++
++async function finishOpenRouter(root, onAdded) {
++  const msg = root.querySelector('[data-ow-or-msg]');
++  const code = (root.querySelector('[data-ow-or-code]')?.value || '').trim();
++  if (!code) return setMsg(msg, OPENROUTER_ERRORS.no_code, 'err');
++  setMsg(msg, 'Finishing…');
++  try {
++    const r = await fetch('/api/wings/connect/openrouter/code', {
++      method: 'POST', credentials: 'same-origin',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ flow: root._owOrFlow || '', code }),
++    });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok || !d.ok) throw new Error(OPENROUTER_ERRORS[d.error] || d.detail || 'Could not finish.');
++    setMsg(msg, 'OpenRouter is connected.', 'ok');
++    const paste = root.querySelector('[data-ow-or-paste]');
++    if (paste) paste.hidden = true;
++    onAdded && onAdded();
++  } catch (e) {
++    setMsg(msg, e.message, 'err');
++  }
++}
++
++function waitFor(fn, timeoutMs = 4000, stepMs = 100) {
++  return new Promise((resolve) => {
++    const t0 = Date.now();
++    const tick = () => {
++      const v = fn();
++      if (v) return resolve(v);
++      if (Date.now() - t0 > timeoutMs) return resolve(null);
++      setTimeout(tick, stepMs);
++    };
++    tick();
++  });
++}
++
++async function openClaudeAgentSetup() {
++  settingsModule.open('integrations');
++  const add = await waitFor(() => document.getElementById('unified-intg-add-btn'));
++  if (!add) return;
++  for (let i = 0; i < 20; i++) {
++    if (!document.querySelector('.uf-add-menu')) add.click();
++    const opt = await waitFor(() => document.querySelector('.uf-add-menu .uf-type-option[data-value="claude"]'), 300, 50);
++    if (opt) { opt.click(); return; }
++  }
++}
++
++function wireAiPanel(root, onAdded) {
++  syncKeyLink(root);
++  root.addEventListener('change', (e) => {
++    if (e.target.matches('[data-ow-key-provider]')) syncKeyLink(root);
++  });
++  root.addEventListener('input', (e) => {
++    if (!e.target.matches('[data-ow-key-input]')) return;
++    const key = e.target.value.trim();
++    const hit = KEY_PREFIXES.find(([re]) => re.test(key));
++    const sel = root.querySelector('[data-ow-key-provider]');
++    if (hit && sel && sel.value !== hit[1] && Array.from(sel.options).some((o) => o.value === hit[1])) {
++      sel.value = hit[1];
++      syncKeyLink(root);
++    }
++  });
++  root.addEventListener('click', (e) => {
++    const btn = e.target.closest('[data-ow-act]');
++    if (!btn || !root.contains(btn)) return;
++    const act = btn.dataset.owAct;
++    if (act === 'local-scan') scanLocal(root, onAdded);
++    else if (act === 'openrouter') connectOpenRouter(root);
++    else if (act === 'openrouter-finish') finishOpenRouter(root, onAdded);
++    else if (act === 'key-test') testKey(root);
++    else if (act === 'key-add') addKey(root, onAdded);
++    else if (act === 'claude-agent') openClaudeAgentSetup();
++    else if (act === 'toggle') {
++      const panel = root.querySelector(`[data-ow-panel="${btn.dataset.owTarget}"]`);
++      const open = !!(panel && panel.hidden);
++      if (panel) panel.hidden = !open;
++      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
++      if (btn.dataset.owTarget === 'key') btn.textContent = open ? 'Hide' : 'Paste a key';
++      if (open && panel) {
++        const first = panel.querySelector('input, select');
++        if (first && btn.dataset.owTarget === 'key') first.focus();
++        setTimeout(() => panel.scrollIntoView({ block: 'nearest' }), 0);
++      }
++      refit();
++    }
++  });
++}
++
++// ------------------------------------------------------------ first run
++
++// The welcome card is placed by the current look (centred, or anchored above
++// the message box). Keep it between the top bar and the message box by
++// letting the panel scroll inside instead of the card running off screen.
++function fitWelcome() {
++  const ws = document.getElementById('welcome-screen');
++  const setup = document.getElementById('welcome-setup');
++  if (!ws || !setup || !ws.classList.contains('ow-has-setup') || ws.classList.contains('hidden')) return;
++  setup.style.maxHeight = 'none';
++  const bar = document.querySelector('.chat-input-bar');
++  const topBar = document.querySelector('.chat-top-bar');
++  for (let i = 0; i < 4; i++) {
++    const r = ws.getBoundingClientRect();
++    const limitTop = (topBar ? topBar.getBoundingClientRect().bottom : 0) + 6;
++    const barTop = bar ? bar.getBoundingClientRect().top : window.innerHeight;
++    const limitBottom = (barTop > r.top + 40 ? barTop : window.innerHeight) - 6;
++    const over = Math.max(0, limitTop - r.top) + Math.max(0, r.bottom - limitBottom);
++    if (over <= 1) break;
++    const cur = setup.getBoundingClientRect().height;
++    setup.style.maxHeight = Math.max(150, Math.floor(cur - over)) + 'px';
++  }
++}
++let _fitQueued = false;
++function refit() {
++  if (_fitQueued) return;
++  _fitQueued = true;
++  requestAnimationFrame(() => { _fitQueued = false; fitWelcome(); });
++}
++
++async function renderWelcome() {
++  const box = document.getElementById('welcome-setup');
++  const screen = document.getElementById('welcome-screen');
++  if (!box || !screen) return;
++  const st = await fetchStatus();
++  if (!st.admin || st.model_endpoints !== 0) {
++    box.style.display = 'none';
++    screen.classList.remove('ow-has-setup');
++    return;
++  }
++  box.innerHTML = `<div class="ow-welcome-head">Connect your AI</div>${aiPanelHtml('welcome')}`;
++  box.style.display = '';
++  screen.classList.add('ow-has-setup');
++  const root = box.querySelector('.ow-connect');
++  const done = () => {
++    setTimeout(() => window.location.reload(), 1400);
++  };
++  wireAiPanel(root, done);
++  window.addEventListener('resize', refit);
++  new MutationObserver(refit).observe(screen, { attributes: true, attributeFilter: ['class', 'style'] });
++  refit();
++  setTimeout(refit, 600);
++  scanLocal(root, done);
++}
++
++// ------------------------------------------------------------ Settings cards
++
++async function renderSettingsAiCard() {
++  const panel = document.querySelector('[data-settings-panel="services"]');
++  if (!panel || document.getElementById('ow-connect-ai-card')) return;
++  const st = await fetchStatus();
++  if (!st.admin) return;
++  const card = document.createElement('div');
++  card.className = 'admin-card';
++  card.id = 'ow-connect-ai-card';
++  card.innerHTML = `<h2>${AI_ICON}Connect your AI</h2>${aiPanelHtml('settings')}`;
++  panel.insertBefore(card, panel.firstChild);
++  const root = card.querySelector('.ow-connect');
++  wireAiPanel(root, () => {
++    try { settingsModule.refreshAiModelEndpoints && settingsModule.refreshAiModelEndpoints(); } catch (_) {}
++  });
++}
++
++function appState(app, servers) {
++  const norm = (u) => String(u || '').replace(/\/+$/, '');
++  const srv = servers.find((s) => norm(s.url) === norm(app.url));
++  if (!srv) return { srv: null, label: 'Not connected', dot: '' };
++  if (srv.status === 'connected') return { srv, label: `Connected · ${srv.enabled_tool_count ?? srv.tool_count ?? 0} tools`, dot: 'on' };
++  if (srv.status === 'needs_auth') return { srv, label: 'Waiting for sign-in', dot: 'warn' };
++  if (srv.status === 'connecting') return { srv, label: 'Connecting…', dot: 'warn' };
++  if (srv.status === 'error') return { srv, label: 'Needs a new sign-in', dot: 'warn' };
++  return { srv, label: srv.is_enabled === false ? 'Turned off' : 'Not connected right now', dot: 'warn' };
++}
++
++async function loadServers() {
++  try {
++    const r = await fetch('/api/mcp/servers', { credentials: 'same-origin' });
++    const d = r.ok ? await r.json() : [];
++    return Array.isArray(d) ? d : (d.servers || []);
++  } catch (_) { return []; }
++}
++
++const AI_ICON = '<svg class="ow-card-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
++const APP_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
++
++async function renderAppsGrid(card) {
++  const st = await fetchStatus();
++  const grid = card.querySelector('.ow-apps-grid');
++  if (!grid) return;
++  const servers = await loadServers();
++  grid.innerHTML = (st.apps || []).map((app) => {
++    const s = appState(app, servers);
++    const connected = s.dot === 'on';
++    const buttons = [];
++    const finishUrl = s.srv && s.srv.status === 'needs_auth' ? safeAuthUrl(s.srv.auth_url) : null;
++    if (!s.srv) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Connect</button>`);
++    else {
++      if (finishUrl) {
++        buttons.push(`<a class="admin-btn-add" style="text-decoration:none;" href="${esc(finishUrl)}" target="_blank" rel="noopener noreferrer">Finish sign-in</a>`);
++        buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-connect="${esc(app.slug)}">Start over</button>`);
++      } else if (!connected) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Reconnect</button>`);
++      buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-disconnect="${esc(s.srv.id)}" data-ow-app-name="${esc(app.name)}">Disconnect</button>`);
++    }
++    return `<div class="intg-card" data-ow-app="${esc(app.slug)}">
++      <div class="ow-app-head"><span style="color:var(--accent, var(--red));display:inline-flex;">${APP_ICON}</span>${esc(app.name)}</div>
++      <div class="ow-app-about">${esc(app.about)}</div>
++      <div class="ow-app-state"><span class="ow-app-dot ${s.dot}"></span><span data-ow-app-label>${esc(s.label)}</span></div>
++      <div class="ow-app-actions">${buttons.join('')}</div>
++      <div class="adm-ep-inline-msg" data-ow-app-msg></div>
++      ${app.note ? `<div class="ow-app-note">${esc(app.note)}</div>` : ''}
++    </div>`;
++  }).join('');
++}
++
++function safeAuthUrl(u) {
++  try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; }
++}
++
++async function connectApp(card, slug) {
++  const appCard = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"]`);
++  const msg = appCard && appCard.querySelector('[data-ow-app-msg]');
++  // Open the tab now, while the click still counts, then point it at the
++  // sign-in page once the server has it (discovery and registration first).
++  let tab = null;
++  try {
++    tab = window.open('', '_blank');
++    if (tab) {
++      try { tab.opener = null; } catch (_) {}
++      try { tab.document.title = 'Opening sign-in…'; tab.document.body.textContent = 'Opening the sign-in page…'; } catch (_) {}
++    }
++  } catch (_) { tab = null; }
++  setMsg(msg, 'Opening the sign-in page…');
++  appCard?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
++  let serverId = null;
++  try {
++    const r = await fetch(`/api/wings/connect/apps/${encodeURIComponent(slug)}`, { method: 'POST', credentials: 'same-origin' });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
++    serverId = d.id;
++    if (d.status === 'error') throw new Error(d.error || 'the app did not answer');
++    if (d.connected || d.status === 'connected') {
++      if (tab) tab.close();
++      setMsg(msg, 'Connected.', 'ok');
++      return renderAppsGrid(card);
++    }
++    let authUrl = safeAuthUrl(d.auth_url);
++    for (let i = 0; !authUrl && i < 20; i++) {
++      await new Promise((res) => setTimeout(res, 1500));
++      const s = (await loadServers()).find((x) => x.id === serverId);
++      if (s && s.status === 'error') throw new Error(s.error || 'the app did not answer');
++      if (s && s.status === 'connected') { if (tab) tab.close(); return renderAppsGrid(card); }
++      authUrl = safeAuthUrl(s && s.auth_url);
++    }
++    if (!authUrl) throw new Error('the sign-in page did not come up');
++    if (tab && !tab.closed) tab.location.href = authUrl;
++    msg.innerHTML = `Sign in on the page that opened (<a href="${esc(authUrl)}" target="_blank" rel="noopener noreferrer">open it again</a>). This card updates when you are done.`;
++    msg.className = 'adm-ep-inline-msg';
++    // When the sign-in returns to a different address than this browser is
++    // using (an address this install does not list), offer paste-back.
++    let backHost = '';
++    try { backHost = new URL(new URL(authUrl).searchParams.get('redirect_uri') || '').host; } catch (_) {}
++    if (backHost && backHost !== window.location.host) {
++      const wrap = document.createElement('div');
++      wrap.className = 'ow-row';
++      wrap.innerHTML = '<input type="text" class="settings-input" placeholder="Sign-in did not come back? Paste the address it ended on" aria-label="Address the sign-in ended on"><button type="button" class="admin-btn-sm">Send</button>';
++      msg.appendChild(wrap);
++      wrap.querySelector('button').addEventListener('click', async () => {
++        const v = wrap.querySelector('input').value.trim();
++        if (!v) return;
++        const f = new FormData();
++        f.append('callback_url', v);
++        try { await fetch(`/api/mcp/oauth/exchange/${encodeURIComponent(serverId)}`, { method: 'POST', body: f, credentials: 'same-origin' }); } catch (_) {}
++      });
++    }
++    for (let i = 0; i < 150; i++) {
++      await new Promise((res) => setTimeout(res, 2000));
++      const s = (await loadServers()).find((x) => x.id === serverId);
++      if (!s) break;
++      if (s.status === 'connected') { await renderAppsGrid(card); return; }
++      if (s.status === 'error') throw new Error(s.error || 'sign-in failed');
++    }
++    await renderAppsGrid(card);
++  } catch (e) {
++    if (tab && !tab.closed) { try { tab.close(); } catch (_) {} }
++    await renderAppsGrid(card);
++    const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
++    setMsg(m, 'Could not connect: ' + (e.message || 'request failed'), 'err');
++  }
++}
++
++async function disconnectApp(card, serverId, name) {
++  const ok = window.styledConfirm
++    ? await window.styledConfirm(`Disconnect ${name}? OpenWings forgets its sign-in; you can connect again any time.`, { confirmText: 'Disconnect', danger: true })
++    : window.confirm(`Disconnect ${name}?`);
++  if (!ok) return;
++  try { await fetch(`/api/mcp/servers/${encodeURIComponent(serverId)}`, { method: 'DELETE', credentials: 'same-origin' }); } catch (_) {}
++  await renderAppsGrid(card);
++}
++
++async function renderSettingsAppsCard() {
++  const panel = document.querySelector('[data-settings-panel="integrations"]');
++  if (!panel || document.getElementById('ow-connect-apps-card')) return;
++  const st = await fetchStatus();
++  if (!st.admin || !(st.apps || []).length) return;
++  const card = document.createElement('div');
++  card.className = 'admin-card';
++  card.id = 'ow-connect-apps-card';
++  card.innerHTML = `<h2>${APP_ICON.replace('aria-hidden="true"', 'class="ow-card-ico" aria-hidden="true"')}Connect your apps</h2>
++    <div class="admin-toggle-sub" style="margin-bottom:8px">One click: you sign in on the app's own page, OpenWings never sees your password, and your assistant can then use the app.</div>
++    <div class="ow-apps-grid"></div>`;
++  panel.insertBefore(card, panel.firstChild);
++  card.addEventListener('click', (e) => {
++    const c = e.target.closest('[data-ow-app-connect]');
++    if (c) return connectApp(card, c.dataset.owAppConnect);
++    const d = e.target.closest('[data-ow-app-disconnect]');
++    if (d) return disconnectApp(card, d.dataset.owAppDisconnect, d.dataset.owAppName || 'this app');
++    return undefined;
++  });
++  await renderAppsGrid(card);
++  // Refresh whenever the Integrations panel is shown again.
++  new MutationObserver(() => {
++    if (!panel.classList.contains('hidden')) renderAppsGrid(card);
++  }).observe(panel, { attributes: true, attributeFilter: ['class'] });
++}
++
++// ------------------------------------------------------------ return notes
++
++function handleReturn() {
++  const sp = new URLSearchParams(window.location.search);
++  if (!sp.has('ow_connect') && !sp.has('ow_connect_error')) return;
++  const ok = sp.get('ow_connect');
++  const err = sp.get('ow_connect_error');
++  sp.delete('ow_connect');
++  sp.delete('ow_connect_error');
++  const rest = sp.toString();
++  window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
++  setTimeout(() => {
++    if (ok === 'openrouter') uiModule.showToast('OpenRouter is connected. Pick a model and say hello.', { duration: 6000 });
++    else if (err) uiModule.showError(OPENROUTER_ERRORS[err] || 'OpenRouter could not be connected.');
++  }, 600);
++}
++
++async function init() {
++  injectStyle();
++  handleReturn();
++  await fetchStatus();
++  renderWelcome();
++  renderSettingsAiCard();
++  renderSettingsAppsCard();
++}
++
++if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
++else init();
++
++export { fetchStatus };
+diff --git a/website/configuration-reference.md b/website/configuration-reference.md
+index b7d4bad..6814f7d 100644
+--- a/website/configuration-reference.md
++++ b/website/configuration-reference.md
+@@ -59,7 +59,7 @@ The source tree reads **118** `ODYSSEUS_*` variables: 82 an operator may want to
+ | Variable | Default | Read in | What it does |
+ |---|---|---|---|
+ | `ODYSSEUS_COPILOT_API_VERSION` | `'2026-06-01'` | `src/copilot.py` | Dated API-version header the Copilot models and chat endpoints require. |
+-| `ODYSSEUS_COPILOT_CLIENT_ID` | `'01ab8ac9400c4e429b23'` | `src/copilot.py` | GitHub OAuth client id for the Copilot device flow. The default is the public VS Code client id; override it only with your own allow-listed app. |
++| `ODYSSEUS_COPILOT_CLIENT_ID` | `'01ab8ac9400c4e429b23'` | `src/copilot.py` | GitHub OAuth client id for the Copilot device flow. The default is the public VS Code client id; override it only with your own allow-listed app. OpenWings: the Copilot and ChatGPT Subscription sign-ins (which pose as VS Code and OpenAI's Codex app) and Kimi Code's borrowed User-Agent are off unless the deployment sets `WINGS_ALLOW_UNOFFICIAL_SIGNIN=1`. |
+ | `ODYSSEUS_DEEPSEEK_REASONING_EFFORT` | `'high'` | `src/llm_core.py` | Reasoning effort for DeepSeek. Only `high` and `max` are accepted; any other value falls back to the default. |
+ | `ODYSSEUS_FIRST_TOKEN_TIMEOUT` | `''` | `src/llm_core.py` | Seconds to wait for the first streamed token from a local endpoint before failing. Unset keeps the generous read timeout, which makes a stalled backend look like a hung agent. |
+ | `ODYSSEUS_LOCAL_MODEL_GATE` | `'true'` | `src/llm_core.py` | On by default. Set 0, false, no or off to drop the gate that checks a local endpoint before routing a request to it. |

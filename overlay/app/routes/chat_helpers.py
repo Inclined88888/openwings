@@ -864,8 +864,8 @@ def resolve_session_auth(sess, session_id: str, owner: Optional[str] = None):
     """Ensure session has auth headers — resolve from endpoint DB if missing."""
     owner = owner or getattr(sess, "owner", None)
     try:
-        from src.chatgpt_subscription import is_chatgpt_subscription_base
-        is_chatgpt_subscription = is_chatgpt_subscription_base(getattr(sess, "endpoint_url", "") or "")
+        from src.chatgpt_subscription import uses_session_token
+        is_chatgpt_subscription = uses_session_token(getattr(sess, "endpoint_url", "") or "")
     except Exception:
         is_chatgpt_subscription = False
     has_auth = _has_auth_keys(sess.headers)

@@ -699,6 +699,10 @@ def _delete_orphaned_provider_auth(db, auth_id: Optional[str], exclude_ep_id: Op
     auth_row = db.query(ProviderAuthSession).filter(ProviderAuthSession.id == auth_id).first()
     if auth_row is None:
         return False
+    # Wings (patch 0022): removing a ChatGPT plan endpoint signs it out
+    # (revoke at OpenAI, keep only the client id link).
+    from wings.chatgpt_plan import on_auth_deleted as _wings_plan_auth_deleted
+    _wings_plan_auth_deleted(db, auth_row)
     db.delete(auth_row)
     try:
         from src.chatgpt_subscription import USAGE_CACHE
@@ -738,7 +742,20 @@ def _safe_build_headers(api_key: Optional[str], base_url: str) -> dict:
 
 
 def _is_discovery_only_provider(provider: str) -> bool:
-    return provider == "chatgpt-subscription"
+    # Wings (patch 0022): probing ChatGPT plan models would spend the
+    # person's plan; its list comes from OpenAI's model catalog instead.
+    return provider in ("chatgpt-subscription", "chatgpt-plan")
+
+
+def _wings_switched_off(base_url: str) -> Optional[str]:
+    """Wings: the reason when base_url is a sign-in that poses as another
+    company's app and is switched off (wings/unofficial.py); then no request
+    of any kind may go to it."""
+    try:
+        from wings.unofficial import url_blocked
+        return url_blocked(base_url)
+    except Exception:
+        return None
 
 
 def _resolve_probe_key(ep) -> Optional[str]:
@@ -757,6 +774,9 @@ def _probe_single_model(base: str, api_key: str, model_id: str, timeout: int = 1
     provider = _safe_detect_provider(base)
     if _is_discovery_only_provider(provider):
         return {"status": "ok", "latency_ms": 0, "skipped": True}
+    _wings_off = _wings_switched_off(base)
+    if _wings_off:
+        return {"status": "skipped", "latency_ms": 0, "skipped": True, "error": _wings_off}
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Say OK"},
@@ -1017,11 +1037,19 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
     from src.llm_core import httpx_get_kimi_aware
     base = resolve_url(_normalize_base(base_url))
     provider = _safe_detect_provider(base)
+    if _wings_switched_off(base):
+        return []
     if provider == "chatgpt-subscription":
         from src.chatgpt_subscription import fetch_available_models
         if api_key:
             return fetch_available_models(api_key, timeout=timeout)
         return []
+    if provider == "chatgpt-plan":
+        from wings.chatgpt_plan import PlanError, fetch_models
+        try:
+            return [slug for slug, _name in fetch_models(api_key or "")]
+        except PlanError:
+            return []
     if provider == "featherless" or _host_match(base, "featherless.ai"):
         return []
     if _is_google_api_base(base):
@@ -1127,6 +1155,9 @@ def _ping_endpoint(base_url: str, api_key: str = None, timeout: float = 1.5) -> 
     """Reachability probe that does not require installed/listed models."""
     from src.endpoint_resolver import resolve_url
     base = resolve_url(_normalize_base(base_url))
+    _wings_off = _wings_switched_off(base)
+    if _wings_off:
+        return {"reachable": False, "error": _wings_off, "switched_off": True}
     headers = _safe_build_headers(api_key, base)
 
     # Ollama exposes /v1/models (OpenAI-compatible) AND native /api/version,
@@ -1451,7 +1482,9 @@ def _picker_models_for_endpoint(ep, base_url: str, kind: str):
 
 def _chatgpt_endpoint_visible(ep: Any, request: Request) -> bool:
     from src.chatgpt_subscription import is_chatgpt_subscription_base
-    if not is_chatgpt_subscription_base(getattr(ep, "base_url", "") or ""):
+    from wings.chatgpt_plan import is_plan_url
+    _base = getattr(ep, "base_url", "") or ""
+    if not (is_chatgpt_subscription_base(_base) or is_plan_url(_base)):
         return True
     try:
         user = effective_user(request)
@@ -1473,6 +1506,9 @@ def _provider_account_metadata(ep: Any) -> Dict[str, Any]:
         if is_chatgpt_subscription_base(base):
             provider = "chatgpt-subscription"
             account_label = account_label_from_name(getattr(ep, "name", None)) or None
+        from wings.chatgpt_plan import is_plan_url
+        if is_plan_url(base):
+            provider = "chatgpt-plan"
     except Exception:
         provider = None
     return {"provider_auth_id": auth_id, "provider": provider, "account_label": account_label}
@@ -1503,6 +1539,11 @@ def setup_model_routes(model_discovery):
         affects the visible endpoint list (CRUD on ModelEndpoint, prefs
         flip)."""
         _models_cache.clear()
+
+    # Wings (patch 0022): Continue with ChatGPT changes endpoints outside
+    # these routes and clears the picker cache through this hook.
+    import wings.chatgpt_plan as _wings_plan
+    _wings_plan.invalidate_models_cache = _invalidate_models_cache
 
     # Track model-list refreshes by URL+key. This prevents repeated picker/API
     # opens from starting duplicate /models probes, and gives slow/offline
@@ -1552,6 +1593,9 @@ def setup_model_routes(model_discovery):
         if not base:
             return False, info
         if _host_match(base, "featherless.ai") or _safe_detect_provider(base) == "featherless":
+            return False, info
+        # Wings: never refresh a switched-off sign-in (wings/unofficial.py).
+        if _wings_switched_off(base):
             return False, info
         if state.get("inflight"):
             return False, info
@@ -1683,8 +1727,9 @@ def setup_model_routes(model_discovery):
             db.close()
 
         for ep in endpoints:
-            from src.chatgpt_subscription import is_chatgpt_subscription_base
-            if is_chatgpt_subscription_base(ep.base_url or "") and (ep.owner or None) != (owner or None):
+            from src.chatgpt_subscription import uses_session_token
+            # One person's sign-in: only its owner sees it, admins included.
+            if uses_session_token(ep.base_url or "") and (ep.owner or None) != (owner or None):
                 continue
             base = _normalize_base(ep.base_url)
             provider = _safe_detect_provider(base)
@@ -1696,7 +1741,7 @@ def setup_model_routes(model_discovery):
             model_ids, pinned = _picker_models_for_endpoint(ep, base, kind)
 
             if model_ids:
-                curated_key = _match_provider_curated(base, None)
+                curated_key = None if provider == "chatgpt-plan" else _match_provider_curated(base, None)
                 curated, extra = _curate_models(model_ids, curated_key)
                 # Pinned models are admin-selected — they always belong in the
                 # primary curated list, not buried in extras.
@@ -1704,6 +1749,11 @@ def setup_model_routes(model_discovery):
                     if m not in curated:
                         curated.append(m)
                 models_metadata = {}
+                # Wings (patch 0022): ChatGPT plan models show OpenAI's names.
+                _wings_names = {}
+                if provider == "chatgpt-plan":
+                    from wings.chatgpt_plan import display_names as _wings_display_names
+                    _wings_names = _wings_display_names(getattr(ep, "provider_auth_id", None))
                 from src.chatgpt_subscription import get_chatgpt_model_metadata
                 for mid in list(curated) + list(extra):
                     meta = get_chatgpt_model_metadata(mid)
@@ -1714,9 +1764,9 @@ def setup_model_routes(model_discovery):
                     "port": 0,
                     "url": chat_url,
                     "models": curated,
-                    "models_display": [_model_display_name(mid) for mid in curated],
+                    "models_display": [_wings_names.get(mid) or _model_display_name(mid) for mid in curated],
                     "models_extra": extra,
-                    "models_extra_display": [_model_display_name(mid) for mid in extra],
+                    "models_extra_display": [_wings_names.get(mid) or _model_display_name(mid) for mid in extra],
                     "endpoint_id": ep.id,
                     "endpoint_name": ep.name,
                     "category": category,
@@ -1915,6 +1965,11 @@ def setup_model_routes(model_discovery):
                 "category": _classify_endpoint(base, kind),
                 "endpoint_kind": kind,
             }
+            _wings_off = _wings_switched_off(base)
+            if _wings_off:
+                entry.update({"latency_ms": None, "status": "offline", "error": _wings_off, "model_count": cached_count})
+                results.append(entry)
+                continue
             try:
                 t0 = _time.time()
                 ping = _ping_endpoint(base, ep.api_key, timeout=1.5)
@@ -2156,6 +2211,10 @@ def setup_model_routes(model_discovery):
         base_url = _normalize_base(base_url)
         if not base_url:
             raise HTTPException(400, "Base URL is required")
+        # Wings: no new endpoints for a switched-off sign-in (wings/unofficial.py).
+        _wings_off = _wings_switched_off(base_url)
+        if _wings_off:
+            raise HTTPException(403, _wings_off)
         # Resolve hostname via Tailscale if DNS fails
         from src.endpoint_resolver import resolve_url
         base_url = resolve_url(base_url)
@@ -2318,8 +2377,8 @@ def setup_model_routes(model_discovery):
         try:
             _st_raw = (supports_tools or "").strip().lower()
             _st = True if _st_raw in ("true", "1", "yes") else (False if _st_raw in ("false", "0", "no") else None)
-            from src.chatgpt_subscription import is_chatgpt_subscription_base
-            if is_chatgpt_subscription_base(base_url):
+            from src.chatgpt_subscription import uses_session_token
+            if uses_session_token(base_url):
                 _st = False
             _pinned = _normalize_model_ids(pinned_models)
             # Stamp owner so the picker only shows this endpoint to the admin
@@ -2410,6 +2469,9 @@ def setup_model_routes(model_discovery):
         base_url = _normalize_base(base_url)
         if not base_url:
             raise HTTPException(400, "Base URL is required")
+        _wings_off = _wings_switched_off(base_url)
+        if _wings_off:
+            raise HTTPException(403, _wings_off)
         from src.endpoint_resolver import resolve_url
         base_url = resolve_url(base_url)
         base_url = _rewrite_loopback_for_docker(base_url)
@@ -2453,6 +2515,9 @@ def setup_model_routes(model_discovery):
             ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
             if not ep or not _chatgpt_endpoint_visible(ep, request):
                 raise HTTPException(404, "Endpoint not found")
+            _wings_off = _wings_switched_off(ep.base_url or "")
+            if _wings_off:
+                raise HTTPException(403, _wings_off)
             ep_data = {"id": ep.id, "name": ep.name, "base_url": ep.base_url, "api_key": _resolve_probe_key(ep)}
         finally:
             db.close()
@@ -2926,8 +2991,8 @@ def setup_model_routes(model_discovery):
                         ep.base_url = _new_base
             else:
                 ep.is_enabled = not ep.is_enabled
-            from src.chatgpt_subscription import is_chatgpt_subscription_base
-            if is_chatgpt_subscription_base(ep.base_url or ""):
+            from src.chatgpt_subscription import uses_session_token
+            if uses_session_token(ep.base_url or ""):
                 ep.supports_tools = False
             db.commit()
             _invalidate_models_cache()

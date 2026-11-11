@@ -1,9 +1,12 @@
 /* OpenWings looks (patch 0020). Each look lives in looks/<name>.css and
    applies only under html[data-ow-skin="ow-<name>"] (or ow-<name>-night),
    so upstream's themes are untouched. Fonts are self hosted open licence
-   files in fonts/, with their licences beside them. */
+   files in fonts/, with their licences beside them. tokens.css holds the
+   design tokens (scoped to the looks that use them, so nothing leaks). */
+@import url("tokens.css");
 @import url("looks/duet.css");
 @import url("looks/hush.css");
+@import url("looks/sage.css");
 
 /* First paint with nothing saved yet: each look's base colours, the same as
    its entry in static/js/theme.js THEMES (tests/unit/test_wings_looks.py

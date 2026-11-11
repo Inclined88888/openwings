@@ -333,6 +333,12 @@ def setup_webhook_routes(
                     "Pass api_key + model, or configure an endpoint in Admin.")
 
             base_url = normalize_base(ep.base_url)
+            # Wings: a switched-off sign-in (wings/unofficial.py) answers
+            # with the reason; no request goes to it.
+            from wings.unofficial import url_blocked as _wings_url_blocked
+            _wings_off = _wings_url_blocked(base_url)
+            if _wings_off:
+                raise HTTPException(403, _wings_off)
             endpoint_url = build_chat_url(base_url)
             model = body.model or "auto"
             api_key = ep.api_key

@@ -5,6 +5,8 @@
   GET  /api/wings/connect/openrouter/callback   OpenRouter sends the browser here
   POST /api/wings/connect/openrouter/code       finish by pasting the code
   POST /api/wings/connect/apps/{slug}           Connect Notion / Linear / Jira
+  /api/wings/connect/chatgpt/...                Continue with ChatGPT (patch
+                                                0022, wings/chatgpt_routes.py)
 
 OpenRouter: its documented OAuth PKCE flow
 (https://openrouter.ai/docs/guides/overview/auth/oauth). The browser goes to
@@ -45,7 +47,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from wings.origin import is_loopback_or_https, redirect_base_for
+from wings.origin import is_loopback_or_https, redirect_base_for, request_origin
 
 logger = logging.getLogger(__name__)
 
@@ -262,27 +264,113 @@ def _model_endpoint_count() -> int:
         return -1
 
 
+def _has_models(ep) -> bool:
+    import json
+    for column in ("cached_models", "pinned_models"):
+        try:
+            ids = json.loads(getattr(ep, column, None) or "[]")
+        except Exception:
+            ids = []
+        if isinstance(ids, list) and any(ids):
+            return True
+    return False
+
+
+def _usable_endpoint_count(owner: Optional[str] = None, admin: bool = True) -> int:
+    """Turned-on model endpoints that have at least one model. An endpoint
+    added with a key the provider refused has none, so the first-run panel
+    stays up until something actually works. For a member, only the
+    endpoints they can use (shared ones and their own). A switched-off
+    sign-in (wings/unofficial.py) does not count."""
+    try:
+        from core.database import ModelEndpoint, SessionLocal
+        db = SessionLocal()
+        try:
+            q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)  # noqa: E712
+            if not admin:
+                q = q.filter((ModelEndpoint.owner.is_(None)) | (ModelEndpoint.owner == (owner or "")))
+            from wings.unofficial import url_blocked
+            return sum(1 for ep in q.all() if _has_models(ep) and not url_blocked(ep.base_url))
+        finally:
+            db.close()
+    except Exception:
+        return -1
+
+
+def openrouter_callback_base(request: Request) -> Optional[str]:
+    """The origin OpenRouter may send this browser back to, or None.
+
+    OpenRouter calls back only to https or localhost addresses, and the
+    callback must reach the browser that started the sign-in: a trusted
+    origin on the same host the browser is using. Otherwise (a LAN address
+    over plain http, or an address this install does not list) the sign-in
+    uses OpenRouter's code-on-screen mode instead."""
+    from urllib.parse import urlsplit
+    base = redirect_base_for(request)
+    here = request_origin(request)
+    if not here or urlsplit(base).netloc != urlsplit(here).netloc:
+        return None
+    return base if is_loopback_or_https(base) else None
+
+
 def _back(params: dict) -> RedirectResponse:
     # Fixed path of this app only: never a URL taken from the request.
     return RedirectResponse("/?" + urlencode(params), status_code=303)
 
 
+# ---------------------------------------------------------------- access log
+
+# Sign-in callbacks carry a one-time authorization code and state in the
+# query string; the access log keeps only the path (patch 0022).
+CALLBACK_PATHS = (
+    "/api/wings/connect/chatgpt/callback",
+    OPENROUTER_CALLBACK_PATH,
+    "/api/mcp/oauth/callback",
+)
+
+
+class CallbackQueryFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        # uvicorn.access: (client, method, path with query, http version, status)
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            for path in CALLBACK_PATHS:
+                if args[2].startswith(path + "?"):
+                    record.args = args[:2] + (path + "?[redacted]",) + args[3:]
+                    break
+        return True
+
+
+def install_access_log_filter() -> None:
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, CallbackQueryFilter) for f in access.filters):
+        access.addFilter(CallbackQueryFilter())
+
+
 # ---------------------------------------------------------------- routes
 
 def setup_connect_routes(mcp_manager=None) -> APIRouter:
+    install_access_log_filter()
     router = APIRouter(tags=["wings-connect"])
+    from wings.chatgpt_routes import setup_chatgpt_routes
+    router.include_router(setup_chatgpt_routes())
 
     @router.get("/api/wings/connect/status")
     def connect_status(request: Request):
         if not _is_person_admin(request):
-            return {"admin": False}
+            # A member sees no Connect panel; the welcome screen only says
+            # whom to ask while there is no AI they can use.
+            user = getattr(request.state, "current_user", None)
+            return {"admin": False, "ai_ready": _usable_endpoint_count(user, admin=False) != 0}
         from wings.unofficial import allowed as unofficial_allowed
-        origin = redirect_base_for(request)
+        from wings.chatgpt_routes import status_payload as chatgpt_status
         return {
             "admin": True,
+            "chatgpt": chatgpt_status(request, getattr(request.state, "current_user", "") or ""),
             "model_endpoints": _model_endpoint_count(),
+            "usable_endpoints": _usable_endpoint_count(),
             "unofficial_signin": unofficial_allowed(),
-            "openrouter_mode": "callback" if is_loopback_or_https(origin) else "paste",
+            "openrouter_mode": "callback" if openrouter_callback_base(request) else "paste",
             "apps": [
                 {"slug": slug, "name": a["name"], "url": a["url"], "about": a["about"], "note": a["note"]}
                 for slug, a in APPS.items()
@@ -292,8 +380,8 @@ def setup_connect_routes(mcp_manager=None) -> APIRouter:
     @router.post("/api/wings/connect/openrouter/start")
     def openrouter_start(request: Request):
         user = _person_admin(request)
-        origin = redirect_base_for(request)
-        if is_loopback_or_https(origin):
+        origin = openrouter_callback_base(request)
+        if origin:
             state, flow = start_flow(user, "callback")
             url = openrouter_authorize_url(
                 s256_challenge(flow.verifier),
@@ -301,8 +389,8 @@ def setup_connect_routes(mcp_manager=None) -> APIRouter:
                 state=state,
             )
             return {"mode": "callback", "authorize_url": url}
-        # OpenRouter only calls back to https or localhost; elsewhere its page
-        # shows the code for the person to paste here (PKCE still applies).
+        # No callback that would reach this browser: OpenRouter's page shows
+        # the code for the person to paste here (PKCE still applies).
         state, flow = start_flow(user, "paste")
         url = openrouter_authorize_url(s256_challenge(flow.verifier), callback_url=None, state=None)
         return {"mode": "paste", "authorize_url": url, "flow": state}

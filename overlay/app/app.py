@@ -884,6 +884,9 @@ from routes.mcp.mcp_routes import setup_mcp_routes
 mcp_manager = McpManager()
 set_mcp_manager(mcp_manager)
 app.include_router(setup_mcp_routes(mcp_manager))
+# Wings: one-click Connect for AI providers and apps (wings/connect_routes.py).
+from wings.connect_routes import setup_connect_routes as _wings_connect_routes
+app.include_router(_wings_connect_routes(mcp_manager))
 logger.info("MCP routes initialized")
 
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)

@@ -1,0 +1,1737 @@
+/* OpenWings look: Lichen (theme key ow-sage).
+   Lichen on field stone: a mid-tone sage page, moss ink, one deep ochre.
+   One mode for everyone: no white page, no dark mode, no gradients, glows
+   or blur.
+
+   The answer is set like a field ledger: who spoke sits in a narrow left
+   column in small caps, what was said runs in the reading column to its
+   right, and thin rules mark each turn. Focal titles use Sofia Sans Extra
+   Condensed (bold, uppercase, leading 0.9); everything you read or press
+   uses Sofia Sans. Ochre is only for the primary action, the current
+   selection, focus and state.
+
+   Every value comes from ../tokens.css (imported first by skins.css).
+   Upstream carries about 1,900 !important rules, so this layer uses
+   !important throughout. Fonts: Sofia Sans and Sofia Sans Extra Condensed
+   (OFL-1.1), Red Hat Mono for code (OFL-1.1), self hosted in ../fonts/.
+
+   Motion that needs JavaScript (the page-load entrance gate, new turns
+   rising in, count up, line drawing, view crossfades and morphs) lives in
+   ../motion.js, which does nothing unless this look is active. Without it
+   every element below is already in its final state and nothing replays.
+
+   Tool windows are not modal upstream (clicks pass around them and several
+   can sit side by side), so they float on a shadow and a 1px rule, never
+   on a backdrop. Only blocking layers (search, confirm, phone sheets) dim
+   the page. */
+
+/* ================= fonts ================= */
+@font-face {
+  font-family: 'OW sage Sans';
+  src: url('../fonts/sofia-sans-latin-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/sofia-sans-latin-wght-normal.woff2') format('woff2');
+  font-weight: 1 1000; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW sage Sans';
+  src: url('../fonts/sofia-sans-latin-ext-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/sofia-sans-latin-ext-wght-normal.woff2') format('woff2');
+  font-weight: 1 1000; font-style: normal; font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'OW sage Sans';
+  src: url('../fonts/sofia-sans-latin-wght-italic.woff2') format('woff2-variations'),
+       url('../fonts/sofia-sans-latin-wght-italic.woff2') format('woff2');
+  font-weight: 1 1000; font-style: italic; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW sage Sans';
+  src: url('../fonts/sofia-sans-latin-ext-wght-italic.woff2') format('woff2-variations'),
+       url('../fonts/sofia-sans-latin-ext-wght-italic.woff2') format('woff2');
+  font-weight: 1 1000; font-style: italic; font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'OW sage Display';
+  src: url('../fonts/sofia-sans-extra-condensed-latin-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/sofia-sans-extra-condensed-latin-wght-normal.woff2') format('woff2');
+  font-weight: 1 1000; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'OW sage Display';
+  src: url('../fonts/sofia-sans-extra-condensed-latin-ext-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/sofia-sans-extra-condensed-latin-ext-wght-normal.woff2') format('woff2');
+  font-weight: 1 1000; font-style: normal; font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'OW sage Mono';
+  src: url('../fonts/red-hat-mono-latin-wght-normal.woff2') format('woff2-variations'),
+       url('../fonts/red-hat-mono-latin-wght-normal.woff2') format('woff2');
+  font-weight: 300 700; font-style: normal; font-display: swap;
+}
+
+/* ================= upstream variables, remapped ================= */
+:root[data-ow-skin="ow-sage"] {
+  --sg-wings: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22%3E%3Cg transform=%22translate(256 256) scale(0.84) translate(-256 -256)%22%3E%3Cpath fill=%22%231B281C%22 d=%22M250.8 403.1C239 401.6 228.2 398.9 217.8 392.7C185 373 172.6 330 189.9 295.8C192.9 289.7 196.8 284.1 201.5 279.1C205.1 275.1 209 271.5 211.8 266.8C221.1 251.7 220 234.5 212.4 219C195.9 185 165.4 161.6 135 140.6C120.6 130.6 106 120.9 90.8 112.1C80.1 105.8 69.3 99.7 58.1 94.3C56.3 93.4 48.7 89.2 47 91.5C46.1 95.2 52.1 108 53.5 111.5C61.5 131.3 69.8 150.4 84.6 166.1C110 193.1 133.9 220.7 151.7 253.4C160.8 270.1 168.7 286.3 169 305.7C168.7 287.3 159.8 272.7 149.4 258.2C132.3 234.7 111.7 213.9 91.9 192.7C84.2 184.4 76.5 176 68.1 168.2C66.7 166.9 61.7 161.2 59.5 163.5C57.7 166.9 58.7 172.7 58.9 176.3C59.6 187 61 197.7 63.2 208.2C68.1 231 77 245.5 87.8 265.7C93.8 276.8 99.5 288 105.6 299C113.8 313.6 122.3 327.9 130 342.7C122.1 327.8 112.1 314.6 102 301.2C92.4 288.5 83 275.8 73 263.4C68.3 257.6 63.8 251.7 58.6 246.4C56.9 244.7 54.1 241.5 51.7 243.7C45.7 251.9 44.1 282.2 44 292C43.9 303.1 44.8 314.5 48.6 325C54.5 341.5 71.1 359.7 83.9 371.3C126 410 182.8 427.1 239.3 425C245.5 424.2 250.5 422.9 251.4 416Z%22/%3E%3Cpath fill=%22%231B281C%22 transform=%22matrix(-1 0 0 1 512 0)%22 d=%22M250.8 403.1C239 401.6 228.2 398.9 217.8 392.7C185 373 172.6 330 189.9 295.8C192.9 289.7 196.8 284.1 201.5 279.1C205.1 275.1 209 271.5 211.8 266.8C221.1 251.7 220 234.5 212.4 219C195.9 185 165.4 161.6 135 140.6C120.6 130.6 106 120.9 90.8 112.1C80.1 105.8 69.3 99.7 58.1 94.3C56.3 93.4 48.7 89.2 47 91.5C46.1 95.2 52.1 108 53.5 111.5C61.5 131.3 69.8 150.4 84.6 166.1C110 193.1 133.9 220.7 151.7 253.4C160.8 270.1 168.7 286.3 169 305.7C168.7 287.3 159.8 272.7 149.4 258.2C132.3 234.7 111.7 213.9 91.9 192.7C84.2 184.4 76.5 176 68.1 168.2C66.7 166.9 61.7 161.2 59.5 163.5C57.7 166.9 58.7 172.7 58.9 176.3C59.6 187 61 197.7 63.2 208.2C68.1 231 77 245.5 87.8 265.7C93.8 276.8 99.5 288 105.6 299C113.8 313.6 122.3 327.9 130 342.7C122.1 327.8 112.1 314.6 102 301.2C92.4 288.5 83 275.8 73 263.4C68.3 257.6 63.8 251.7 58.6 246.4C56.9 244.7 54.1 241.5 51.7 243.7C45.7 251.9 44.1 282.2 44 292C43.9 303.1 44.8 314.5 48.6 325C54.5 341.5 71.1 359.7 83.9 371.3C126 410 182.8 427.1 239.3 425C245.5 424.2 250.5 422.9 251.4 416Z%22/%3E%3C/g%3E%3C/svg%3E%0A");
+  --bg: var(--color-canvas) !important;
+  --fg: var(--color-text) !important;
+  --panel: var(--color-surface-raised) !important;
+  --border: var(--color-rule) !important;
+  --red: var(--color-accent) !important;
+  --green: var(--color-success) !important;
+  --accent: var(--color-accent) !important;
+  --accent-primary: var(--color-accent) !important;
+  --brand-color: var(--color-text) !important;
+  --brand-mix-to: var(--color-text) !important;
+  --sidebar-bg: var(--color-surface-side) !important;
+  --hamburger-color: var(--color-text-muted) !important;
+  --input-bg: var(--color-surface-raised) !important;
+  --input-border: var(--color-rule-strong) !important;
+  --user-bubble-bg: var(--color-surface-raised) !important;
+  --ai-bubble-bg: transparent !important;
+  --bubble-border: var(--color-rule) !important;
+  --code-bg: var(--color-surface-raised) !important;
+  --code-fg: var(--color-text) !important;
+  --send-btn-bg: var(--color-accent) !important;
+  --send-btn-hover: var(--color-accent-hover) !important;
+  --toggle-active: var(--color-accent) !important;
+  --fg-muted: var(--color-text-muted) !important;
+  --color-muted: var(--color-text-muted) !important;
+  --color-muted-alt: var(--color-text-muted) !important;
+  --select-option-active-bg: var(--color-selection) !important;
+  --color-danger: var(--color-error) !important;
+  --color-error-light: var(--color-error) !important;
+  /* syntax on the paper code block, every colour >= 5.2:1 */
+  --hl-bg: var(--color-surface-raised) !important;
+  --hl-fg: var(--sg-sage-950) !important;
+  --hl-keyword: var(--sg-oxblood-500) !important;  /* 5.67 */
+  --hl-string: var(--sg-ochre-500) !important;     /* 5.22 */
+  --hl-number: var(--sg-moss-600) !important;      /* 5.90 */
+  --hl-comment: #4E5648 !important;                /* 5.46, italic */
+  --hl-function: var(--sg-sage-950) !important;
+  --hl-builtin: var(--sg-slate-600) !important;    /* 6.51 */
+  --hl-variable: var(--sg-sage-950) !important;
+  --hl-params: var(--sg-sage-950) !important;
+  color-scheme: light !important;
+  accent-color: var(--color-accent) !important;
+  scrollbar-color: var(--color-rule) transparent;
+}
+
+/* ================= base and browser surfaces ================= */
+:root[data-ow-skin="ow-sage"] body {
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-body) !important;
+  color: var(--color-text) !important;
+  background: var(--color-canvas) !important;
+  background-image: none !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+  font-optical-sizing: auto !important;
+}
+:root[data-ow-skin="ow-sage"] body, :root[data-ow-skin="ow-sage"] button, :root[data-ow-skin="ow-sage"] input, :root[data-ow-skin="ow-sage"] select, :root[data-ow-skin="ow-sage"] textarea, :root[data-ow-skin="ow-sage"] #message,
+:root[data-ow-skin="ow-sage"] .modal-content, :root[data-ow-skin="ow-sage"] .toast { font-family: var(--font-sans) !important; letter-spacing: 0; }
+:root[data-ow-skin="ow-sage"] ::selection { background: var(--color-selection) !important; color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] input, :root[data-ow-skin="ow-sage"] textarea, :root[data-ow-skin="ow-sage"] [contenteditable="true"] { caret-color: var(--color-accent) !important; }
+:root[data-ow-skin="ow-sage"] :focus-visible { outline: var(--focus-ring) !important; outline-offset: var(--focus-offset) !important; }
+:root[data-ow-skin="ow-sage"] a { text-underline-offset: 3px; }
+:root[data-ow-skin="ow-sage"] * { scrollbar-color: var(--color-rule) transparent; scrollbar-width: thin; }
+:root[data-ow-skin="ow-sage"] *::-webkit-scrollbar { width: 10px; height: 10px; }
+:root[data-ow-skin="ow-sage"] *::-webkit-scrollbar-thumb { background: var(--color-rule) !important; border-radius: 0 !important; border: 3px solid transparent !important; background-clip: padding-box !important; }
+:root[data-ow-skin="ow-sage"] *::-webkit-scrollbar-thumb:hover { background: var(--color-rule-strong) !important; background-clip: padding-box !important; }
+:root[data-ow-skin="ow-sage"] *::-webkit-scrollbar-track { background: transparent !important; }
+/* Background effects (sparkles, petals, starfield, synapse and the rest)
+   stay off in this look: the brief asks for no sparkle or glow. Functional
+   canvases use classes, not these ids, so they are untouched. */
+:root[data-ow-skin="ow-sage"] canvas[id$="-canvas"], :root[data-ow-skin="ow-sage"] #ascii-fireflies-background { display: none !important; }
+
+/* ================= sidebar: a deeper sage strip, ruled, not boxed ================= */
+:root[data-ow-skin="ow-sage"] .sidebar {
+  background: var(--color-surface-side) !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-right: var(--border-hairline) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar-header, :root[data-ow-skin="ow-sage"] .sidebar-inner, :root[data-ow-skin="ow-sage"] .sidebar-user-bar { background: transparent !important; }
+:root[data-ow-skin="ow-sage"] .sidebar-header { justify-content: flex-start !important; padding: 14px 16px 10px 52px !important; min-height: 60px !important; }
+:root[data-ow-skin="ow-sage"] .sidebar-brand { gap: 8px !important; align-items: center !important; }
+:root[data-ow-skin="ow-sage"] .sidebar-brand::before {
+  content: '' !important; display: block !important; flex: 0 0 26px !important; width: 26px !important; height: 26px !important;
+  background: var(--sg-wings) center / 100% 100% no-repeat !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar-brand-title {
+  font-family: var(--font-display) !important;
+  font-weight: var(--font-weight-display) !important;
+  font-size: 26px !important;
+  line-height: var(--leading-display) !important;
+  letter-spacing: -0.01em !important;
+  text-transform: uppercase !important;
+  color: var(--color-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  left: 0 !important;
+  padding-top: 2px !important;
+}
+:root[data-ow-skin="ow-sage"] .hamburger-btn {
+  color: var(--color-text-muted) !important; opacity: 1 !important;
+  width: 36px !important; height: 36px !important; border-radius: var(--radius-2) !important;
+  top: calc(12px + var(--safe-top, 0px)) !important; left: calc(8px + var(--safe-left, 0px)) !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar-inner { padding: 4px 12px 12px !important; gap: 1px !important; }
+
+/* rows */
+:root[data-ow-skin="ow-sage"] .sidebar .list-item,
+:root[data-ow-skin="ow-sage"] .sidebar .section-header-flex {
+  min-height: var(--nav-row-height) !important;
+  padding: 0 8px 0 10px !important;
+  gap: 12px !important;
+  border: 0 !important;
+  border-radius: var(--radius-1) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-ui) !important;
+  font-weight: var(--font-weight-ui) !important;
+  line-height: var(--leading-ui) !important;
+  color: var(--color-text) !important;
+  background: transparent !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar .list-item .grow,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item > span,
+:root[data-ow-skin="ow-sage"] .sidebar .section-title,
+:root[data-ow-skin="ow-sage"] .sidebar .section-title > span,
+:root[data-ow-skin="ow-sage"] .sidebar .section-title-label {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-ui) !important; font-weight: var(--font-weight-ui) !important;
+  letter-spacing: 0 !important; text-transform: none !important; color: var(--color-text) !important; opacity: 1 !important; left: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar .list-item svg,
+:root[data-ow-skin="ow-sage"] .sidebar .section-title svg {
+  width: 18px !important; height: 18px !important; flex: 0 0 18px !important;
+  color: var(--color-text-muted) !important; stroke-width: 1.75 !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar .list-item svg.sidebar-action-icon,
+:root[data-ow-skin="ow-sage"] .sidebar .section-title svg { stroke: currentColor !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active-session { background: var(--color-surface-raised) !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active .grow,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active-session .grow,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active > span,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active-session > span { font-weight: var(--font-weight-label) !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active svg,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item.active-session svg { color: var(--color-accent) !important; }
+/* a tool window held open: the dot stays, it no longer pulses */
+:root[data-ow-skin="ow-sage"] .rail-minimized::after { animation: none !important; background: var(--color-accent) !important; box-shadow: 0 0 0 2px var(--color-surface-side) !important; }
+
+/* Tools: a small-caps label on a thin rule, not a heading block */
+:root[data-ow-skin="ow-sage"] .sidebar #tools-section { margin-top: 14px !important; padding-top: 10px !important; border-top: var(--border-hairline) !important; border-radius: 0 !important; }
+:root[data-ow-skin="ow-sage"] .sidebar #tools-section > .section-header-flex { min-height: 28px !important; }
+:root[data-ow-skin="ow-sage"] .sidebar #tools-section > .section-header-flex .section-title,
+:root[data-ow-skin="ow-sage"] .sidebar #tools-section > .section-header-flex .section-title > span,
+:root[data-ow-skin="ow-sage"] .sidebar .date-section-header,
+:root[data-ow-skin="ow-sage"] .sidebar-group-label {
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-label) !important;
+  font-weight: var(--font-weight-label) !important;
+  letter-spacing: var(--tracking-label) !important;
+  text-transform: uppercase !important;
+  color: var(--color-text-muted) !important;
+  background: transparent !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar #tools-section > .section-header-flex .section-title > svg { display: none !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .section-header-btn,
+:root[data-ow-skin="ow-sage"] .sidebar .section-collapse-btn,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item-plus-btn { color: var(--color-text-muted) !important; border-radius: var(--radius-1) !important; background: transparent !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .list-item-plus-btn svg,
+:root[data-ow-skin="ow-sage"] .sidebar .section-collapse-btn svg { color: var(--color-text-muted) !important; width: 14px !important; height: 14px !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .list-item-plus-label { color: var(--color-text-muted) !important; font-family: var(--font-sans) !important; font-size: 12px !important; }
+/* the recent list fits its ten rows plus Show all; when it scrolls, Show
+   all stays pinned at its foot on the strip's own colour */
+:root[data-ow-skin="ow-sage"] .sidebar #session-list { max-height: calc(10 * (var(--nav-row-height) + 1px) + 52px) !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .session-show-more-btn {
+  position: sticky !important; bottom: 0 !important; z-index: 1 !important;
+  background: var(--color-surface-side) !important; box-shadow: 0 -1px 0 var(--color-rule) !important;
+  font-size: var(--font-size-label) !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar #email-section { margin-top: var(--space-4) !important; }
+:root[data-ow-skin="ow-sage"] .sidebar .session-item .session-time,
+:root[data-ow-skin="ow-sage"] .sidebar .session-item [class*="time"] { color: var(--color-text-muted) !important; opacity: 1 !important; font-variant-numeric: tabular-nums !important; }
+
+/* New Chat: the sidebar's one strong control, set in ink, not ochre */
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn {
+  min-height: 40px !important;
+  margin: 2px 0 10px !important;
+  padding: 0 12px !important;
+  background: var(--color-surface-raised) !important;
+  border: var(--border-control) !important;
+  border-radius: var(--radius-2) !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn .grow,
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn > span { font-weight: var(--font-weight-label) !important; }
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn svg { color: var(--color-text) !important; stroke: currentColor !important; stroke-width: 2.25 !important; }
+
+/* the person, at the foot */
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar { border-top: var(--border-hairline) !important; padding: 10px 14px !important; }
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-avatar {
+  width: 28px !important; height: 28px !important; border-radius: var(--radius-1) !important;
+  background: var(--color-surface-sunk) !important; color: var(--color-text) !important; border: var(--border-hairline) !important;
+  font-family: var(--font-sans) !important; font-weight: var(--font-weight-strong) !important; font-size: 13px !important;
+}
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-avatar,
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-left { opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-name { font-size: var(--font-size-sm) !important; font-weight: 500 !important; color: var(--color-text) !important; overflow-wrap: anywhere; }
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn { color: var(--color-text-muted) !important; background: transparent !important; border-radius: var(--radius-2) !important; width: 36px !important; height: 36px !important; }
+
+/* ================= main column and top bar ================= */
+:root[data-ow-skin="ow-sage"] .chat-container { background: var(--color-canvas) !important; background-image: none !important; }
+:root[data-ow-skin="ow-sage"] .chat-top-bar { background: transparent !important; border: 0 !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] .chat-meta-overlay { background: transparent !important; box-shadow: none !important; border: 0 !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+:root[data-ow-skin="ow-sage"] #current-meta {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-ui) !important; font-weight: var(--font-weight-heading) !important;
+  letter-spacing: 0 !important; color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] .chat-meta-count,
+:root[data-ow-skin="ow-sage"] .session-cost-display,
+:root[data-ow-skin="ow-sage"] .chat-context-pill,
+:root[data-ow-skin="ow-sage"] .chat-context-pill span {
+  font-family: var(--font-sans) !important; font-size: 13px !important; color: var(--color-text-muted) !important; opacity: 1 !important;
+  font-variant-numeric: tabular-nums !important; background: transparent !important; border-color: var(--color-rule) !important;
+}
+:root[data-ow-skin="ow-sage"] .chat-context-dot { background: var(--color-rule-strong) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] .export-dl-btn { color: var(--color-text-muted) !important; }
+/* the context ring reads ok, near the limit or full in moss, ochre, oxblood */
+:root[data-ow-skin="ow-sage"] .ctx-ring, :root[data-ow-skin="ow-sage"] .chat-context-pill { opacity: 1 !important; --ctx-stroke: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .ctx-ring[style*="ff9900"], :root[data-ow-skin="ow-sage"] .chat-context-pill[style*="ff9900"] { --ctx-color: var(--color-warning) !important; }
+:root[data-ow-skin="ow-sage"] .ctx-ring .ctx-ring-pct { color: var(--color-text-muted) !important; font-variant-numeric: tabular-nums !important; }
+
+/* ================= welcome: one focal headline ================= */
+/* The supporting lines below set `opacity: 1` WITHOUT !important on
+   purpose: an !important declaration beats a CSS animation of the same
+   property, which would switch off their entrance fade. Upstream fades
+   them with plain declarations of lower specificity, so 1 still wins. */
+:root[data-ow-skin="ow-sage"] #welcome-screen { gap: 0 !important; width: min(var(--grid-max), calc(100% - 2 * var(--space-6))) !important; }
+:root[data-ow-skin="ow-sage"] #welcome-screen .welcome-name {
+  display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: center !important; gap: 18px !important;
+  font-family: var(--font-display) !important;
+  font-weight: var(--font-weight-display) !important;
+  font-size: var(--font-size-display-4) !important;
+  line-height: var(--leading-display) !important;
+  letter-spacing: var(--tracking-display) !important;
+  text-transform: uppercase !important;
+  color: var(--color-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+  margin: 0 !important;
+  padding: 0 0 26px !important;
+}
+:root[data-ow-skin="ow-sage"] #welcome-screen .welcome-name img.welcome-boat {
+  width: 0.78em !important; height: 0.78em !important; margin: 0 0 0.04em !important;
+  border-radius: 0 !important; box-shadow: none !important;
+  object-position: -9999px 0 !important;
+  background: var(--sg-wings) center / 118% 118% no-repeat !important;
+}
+:root[data-ow-skin="ow-sage"] #welcome-screen .welcome-sub {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-lead) !important; font-weight: var(--font-weight-body) !important;
+  line-height: 1.45 !important; letter-spacing: 0 !important; color: var(--color-text-muted) !important; opacity: 1;
+  margin: 0 !important; padding: 20px 0 0 !important; border: 0 !important; position: relative !important;
+  width: 100% !important; min-width: 0 !important; max-width: none !important;
+  height: auto !important; max-height: none !important; overflow: visible !important; white-space: normal !important;
+  text-align: center !important; text-wrap: balance !important;
+}
+/* the thin rule under the title spans the composer's column and draws in once (transform only) */
+:root[data-ow-skin="ow-sage"] #welcome-screen .welcome-sub::before {
+  content: '' !important; position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important; height: 1px !important;
+  background: var(--color-rule-strong) !important; transform-origin: 50% 50% !important;
+}
+:root[data-ow-skin="ow-sage"] #welcome-screen .welcome-tip {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-sm) !important; line-height: 1.45 !important; color: var(--color-text-muted) !important;
+  opacity: 1; margin: 14px auto 0 !important; padding: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; max-width: 52ch !important; text-wrap: pretty !important;
+  transition-property: opacity, transform !important;
+}
+/* On phones upstream hides the whole welcome as soon as the composer has
+   focus, and the app focuses it on load, which left an empty page. Here
+   the welcome stays until the person types; when the soft keyboard really
+   opens the page gets short and upstream's short-screen rules take over. */
+@media (max-width: 768px) and (min-height: 560px) {
+  :root[data-ow-skin="ow-sage"] .chat-container.welcome-active:has(.chat-input-bar:focus-within):not(:has(textarea#message:not(:placeholder-shown))) #welcome-screen { opacity: 1; pointer-events: auto; }
+}
+/* upstream hides the tip on short screens; so does this look */
+@media (max-height: 650px) { :root[data-ow-skin="ow-sage"] #welcome-screen .welcome-tip { opacity: 0; } }
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn {
+  margin-top: 18px !important; min-height: 32px !important; padding: 0 12px !important; gap: 6px !important;
+  border-radius: var(--radius-2) !important; border: var(--border-control) !important; background: transparent !important;
+  color: var(--color-text) !important; font-size: 13.5px !important; font-weight: 550 !important; opacity: 1;
+}
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn span,
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn svg { color: inherit !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn .incognito-label { font-size: 13.5px !important; }
+
+/* ================= messages: the ledger ================= */
+/* one column for answers, prompts and the composer: --grid-max wide,
+   centred, with symmetric gutters so a scrollbar never shifts it */
+:root[data-ow-skin="ow-sage"] body:not(.fullwidth-chat) .chat-history {
+  --chat-max: var(--grid-max) !important;
+  padding-left: max(6px, calc((100% - var(--grid-max)) / 2 - 10px)) !important;
+  padding-right: max(6px, calc((100% - var(--grid-max)) / 2 - 10px)) !important;
+  scrollbar-gutter: stable both-edges;
+}
+:root[data-ow-skin="ow-sage"] #chat-history { container-type: inline-size; container-name: sg-ledger; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg {
+  display: grid !important;
+  grid-template-columns: var(--grid-label) minmax(0, 1fr) !important;
+  column-gap: var(--grid-gutter) !important;
+  align-items: start !important;
+  width: 100% !important;
+  max-width: var(--grid-max) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-top: var(--border-hairline) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 18px 0 6px !important;
+  margin: 0 auto 6px !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg > * { grid-column: 2 !important; min-width: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg > .role { grid-column: 1 !important; grid-row: 1 / span 8 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .role {
+  display: flex !important; flex-direction: column !important; align-items: flex-start !important; gap: 4px !important;
+  margin: 3px 0 0 !important; padding: 0 !important;
+  font-family: var(--font-sans) !important; font-size: var(--font-size-label) !important; font-weight: var(--font-weight-label) !important;
+  letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important; line-height: 1.25 !important;
+  color: var(--color-text) !important; overflow-wrap: anywhere !important; opacity: 1 !important;
+  white-space: normal !important; overflow: visible !important; text-overflow: clip !important; min-width: 0 !important; max-width: 100% !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .role::before { display: none !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .role .role-timestamp {
+  margin: 0 !important; font-size: var(--font-size-label) !important; font-weight: var(--font-weight-ui) !important; letter-spacing: 0.01em !important;
+  text-transform: none !important; color: var(--color-text-muted) !important; opacity: 1 !important; font-variant-numeric: tabular-nums !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .role .role-timestamp::before { display: none !important; content: none !important; }
+/* your words: a paper slip that hugs the text */
+:root[data-ow-skin="ow-sage"] #chat-history .msg-user .body {
+  justify-self: start !important;
+  width: fit-content !important;
+  background: var(--color-surface-raised) !important;
+  border: var(--border-hairline) !important;
+  border-radius: var(--radius-1) !important;
+  padding: 10px 16px !important;
+  max-width: var(--measure) !important;
+}
+/* the answer sits on the page */
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body {
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-body) !important;
+  line-height: var(--leading-body) !important;
+  color: var(--color-text) !important;
+  letter-spacing: 0.003em !important;
+  font-weight: var(--font-weight-body) !important;
+  overflow-wrap: break-word;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg-ai .body { background: transparent !important; border: 0 !important; box-shadow: none !important; padding-left: 0 !important; padding-right: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > p,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > ul,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > ol,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > blockquote { max-width: var(--measure) !important; text-wrap: pretty !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body p { margin: 0 0 12px !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > *:last-child { margin-bottom: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body p:empty { display: none !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body strong,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body b { font-weight: var(--font-weight-strong) !important; color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body em { font-style: italic !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h1,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h2,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h3,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h4,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h5,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h6 {
+  font-family: var(--font-sans) !important; font-weight: var(--font-weight-heading) !important; line-height: var(--leading-heading) !important;
+  letter-spacing: var(--tracking-heading) !important; color: var(--color-text) !important; margin: 24px 0 8px !important; text-wrap: balance !important;
+  text-transform: none !important; border: 0 !important; padding: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > h1:first-child,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > h2:first-child,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body > h3:first-child { margin-top: 2px !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h1 { font-size: var(--font-size-h2) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h2 { font-size: var(--font-size-h3) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h3,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h4 { font-size: var(--font-size-lead) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h5,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body h6 { font-size: var(--font-size-body) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body a {
+  color: var(--color-accent) !important; text-decoration: underline !important; text-decoration-thickness: 1px !important;
+  text-underline-offset: 3px !important; text-decoration-color: currentColor !important; overflow-wrap: anywhere;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body ul,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body ol { padding-left: 1.4em !important; margin: 0 0 14px !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body li { margin: 0 0 6px !important; padding-left: 4px !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body li > ul,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body li > ol { margin: 6px 0 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body ol li::marker { color: var(--color-text-muted) !important; font-weight: var(--font-weight-label) !important; font-variant-numeric: tabular-nums !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body ul li::marker { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body blockquote {
+  border-left: 1px solid var(--color-rule-strong) !important; margin: 0 0 14px !important; padding: 2px 0 2px 16px !important;
+  color: var(--color-text-muted) !important; background: none !important; border-radius: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body hr { border: 0 !important; border-top: var(--border-hairline) !important; margin: 20px 0 !important; background: none !important; height: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body img { border-radius: var(--radius-1) !important; }
+
+/* tables: rules, not boxes; small-caps header; tabular figures */
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body table {
+  width: 100% !important; border-collapse: collapse !important; margin: 6px 0 18px !important;
+  border: 0 !important; border-top: var(--border-ink) !important; border-bottom: var(--border-ink) !important;
+  border-radius: 0 !important; background: transparent !important; box-shadow: none !important;
+  font-variant-numeric: tabular-nums lining-nums !important; font-size: 15px !important; line-height: 1.45 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body th {
+  padding: 9px 16px 8px 0 !important; text-align: left !important;
+  background: transparent !important; border: 0 !important; border-bottom: var(--border-control) !important;
+  font-family: var(--font-sans) !important; font-size: var(--font-size-label) !important; font-weight: var(--font-weight-label) !important;
+  letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important; color: var(--color-text-muted) !important;
+  vertical-align: bottom !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body td {
+  padding: 10px 16px 10px 0 !important; border: 0 !important; border-bottom: var(--border-hairline) !important;
+  color: var(--color-text) !important; background: transparent !important; vertical-align: top !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body tr:last-child td { border-bottom: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body tr { background: transparent !important; }
+
+/* code: a paper slab with a ruled small-caps strip for the language and actions */
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre {
+  direction: ltr !important; text-align: left !important;
+  position: relative !important; background: var(--code-bg) !important; color: var(--color-text) !important;
+  border: var(--border-hairline) !important; border-radius: var(--radius-1) !important; box-shadow: none !important;
+  padding: 0 !important; margin: 8px 0 18px !important; overflow: hidden !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre code {
+  display: block !important; padding: 14px 18px 16px !important; overflow-x: auto !important; background: transparent !important;
+  color: var(--color-text) !important; font-family: var(--font-mono) !important; font-size: 14px !important; font-weight: 450 !important;
+  line-height: 1.6 !important; white-space: pre !important; border: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre code::before {
+  content: attr(data-lang) !important; display: block !important; margin: -14px -18px 14px !important; padding: 0 18px !important;
+  height: 34px !important; line-height: 34px !important; background: var(--code-head-bg) !important; border-bottom: var(--border-hairline) !important;
+  color: var(--color-text-muted) !important; font-family: var(--font-sans) !important; font-size: var(--font-size-label) !important;
+  font-weight: var(--font-weight-label) !important; letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre code * { font-family: var(--font-mono) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre [class*="comment"] { font-style: italic !important; }
+/* The Run, Edit and Copy buttons write their words in ::before and ::after
+   upstream ("Run", "Edit"/"Save", "Copy"). Never put the hover ring on these
+   pseudo-elements: it would erase the labels. Their hover is a colour and
+   background change only. */
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .copy-code,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .edit-code,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .run-code,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .use-code {
+  top: 4px !important; bottom: auto !important; height: 26px !important; min-width: 26px !important; line-height: 26px !important;
+  font-family: var(--font-sans) !important; font-size: 13px !important; font-weight: 550 !important; letter-spacing: 0 !important;
+  border: 0 !important; border-radius: var(--radius-1) !important; background: transparent !important; color: var(--color-text) !important;
+  box-shadow: none !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .copy-code svg,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .edit-code svg,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .run-code svg { color: currentColor !important; stroke: currentColor !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body :not(pre) > code {
+  font-family: var(--font-mono) !important; font-size: 0.86em !important; padding: 1px 5px !important;
+  background: var(--color-surface-sunk) !important; color: var(--color-text) !important; border: 0 !important; border-radius: var(--radius-1) !important;
+  overflow-wrap: anywhere;
+}
+
+/* message actions: quiet, full contrast, 32px targets */
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer { margin-top: 6px !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer button,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer .msg-action-btn,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer .footer-copy-btn {
+  color: var(--color-text-muted) !important; background: transparent !important; border: 0 !important; border-radius: var(--radius-1) !important;
+  min-width: 32px !important; height: 32px !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer .response-metrics,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer .response-metrics * { color: var(--color-text-muted) !important; font-size: 12.5px !important; font-variant-numeric: tabular-nums !important; opacity: 1 !important; }
+/* Edit is the text glyph upstream, thinner than the drawn icons beside it:
+   redrawn as a stroked pencil in the same weight. */
+:root[data-ow-skin="ow-sage"] #chat-history .msg-action-btn[data-action="edit"] { font-size: 0 !important; letter-spacing: 0 !important; line-height: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .msg-action-btn[data-action="edit"]::before {
+  content: '' !important; display: block !important; width: 15px !important; height: 15px !important; background: currentColor !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
+}
+
+/* the agent's work: tool steps, output and reasoning sit in the reading
+   column as ruled, quiet insets (never coloured boxes) */
+:root[data-ow-skin="ow-sage"] #chat-history .tool-output,
+:root[data-ow-skin="ow-sage"] #chat-history [class*="tool-call"],
+:root[data-ow-skin="ow-sage"] #chat-history [class*="tool-step"],
+:root[data-ow-skin="ow-sage"] #chat-history .supervisor-step,
+:root[data-ow-skin="ow-sage"] #chat-history .thinking-block,
+:root[data-ow-skin="ow-sage"] #chat-history [class*="thinking-container"],
+:root[data-ow-skin="ow-sage"] #chat-history .ask-user-card,
+:root[data-ow-skin="ow-sage"] #chat-history .chat-research-card {
+  background: transparent !important; border: var(--border-hairline) !important; border-radius: var(--radius-1) !important;
+  box-shadow: none !important; color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .thinking-header,
+:root[data-ow-skin="ow-sage"] #chat-history [class*="tool-call"] summary,
+:root[data-ow-skin="ow-sage"] #chat-history [class*="tool-step"] summary {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-sm) !important; color: var(--color-text-muted) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .tool-output pre,
+:root[data-ow-skin="ow-sage"] #chat-history .tool-output code { background: var(--color-surface-raised) !important; color: var(--color-text) !important; font-family: var(--font-mono) !important; }
+
+/* the agent's steps sit on the reading column's edge: a 1px rule runs down,
+   each step is one small-caps line. State is the only colour: running is
+   ochre, done is moss, failed is oxblood. No pulse, no glow. */
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread {
+  margin: 2px 0 2px calc(var(--grid-label) + var(--grid-gutter)) !important; max-width: none !important; width: auto !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread::before { background: var(--color-rule) !important; width: 1px !important; left: 5.5px !important; border-radius: 0 !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-dot { background: var(--color-text-muted) !important; border-color: var(--color-canvas) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-node.running .agent-thread-dot { background: var(--color-accent) !important; box-shadow: none !important; animation: none !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-node.error .agent-thread-dot { background: var(--color-error) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread:not(.has-bottom) .agent-thread-node.open:last-child::after { background: var(--color-text-muted) !important; box-shadow: none !important; animation: none !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-header { font-family: var(--font-sans) !important; font-size: 13.5px !important; color: var(--color-text-muted) !important; gap: 8px !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-header:hover { color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-icon { color: var(--color-success) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-node.running .agent-thread-icon { color: var(--color-accent) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-node.error .agent-thread-icon { color: var(--color-error) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-tool {
+  font-family: var(--font-sans) !important; color: var(--color-text) !important; font-size: var(--font-size-label) !important;
+  font-weight: var(--font-weight-label) !important; letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-status,
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-chevron,
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-tool-icon { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-header-link { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #chat-history .agent-thread-cmd,
+:root[data-ow-skin="ow-sage"] #chat-history .agent-tool-output pre {
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: var(--border-hairline) !important;
+  border-radius: var(--radius-1) !important; font-family: var(--font-mono) !important; font-size: 13px !important; line-height: 1.55 !important;
+}
+:root[data-ow-skin="ow-sage"] #chat-history .agent-tool-output summary { font-size: var(--font-size-label) !important; color: var(--color-text-muted) !important; letter-spacing: 0.02em !important; }
+
+/* ================= composer: a paper field ================= */
+:root[data-ow-skin="ow-sage"] .chat-input-bar {
+  background: var(--color-surface-raised) !important;
+  border: var(--border-control) !important;
+  border-radius: var(--composer-radius) !important;
+  box-shadow: none !important;
+  padding: 14px 12px 10px 18px !important;
+  max-width: var(--grid-max) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:root[data-ow-skin="ow-sage"] body:not(.fullwidth-chat) .chat-container .chat-input-bar { width: calc(100% - 32px) !important; margin-left: auto !important; margin-right: auto !important; }
+:root[data-ow-skin="ow-sage"] .chat-container:not(.welcome-active) .chat-input-bar { margin-bottom: calc(16px + var(--safe-bottom, 0px)) !important; }
+/* the field is focused nearly all day, so focus is an ink edge, not ochre */
+:root[data-ow-skin="ow-sage"] .chat-input-bar:focus-within { border-color: var(--color-text) !important; box-shadow: inset 0 0 0 1px var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] #message,
+:root[data-ow-skin="ow-sage"] #message:focus,
+:root[data-ow-skin="ow-sage"] #message:focus-visible {
+  font-size: var(--font-size-body) !important; line-height: 1.5 !important; color: var(--color-text) !important; background: transparent !important; outline: none !important;
+}
+:root[data-ow-skin="ow-sage"] #message::placeholder { color: var(--color-text-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .model-picker-btn,
+:root[data-ow-skin="ow-sage"] .model-picker-btn span {
+  font-family: var(--font-sans) !important; font-size: 13.5px !important; font-weight: 500 !important; color: var(--color-text-muted) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .model-picker-btn { background: transparent !important; border: 0 !important; border-radius: var(--radius-1) !important; max-width: 32ch !important; }
+:root[data-ow-skin="ow-sage"] .model-picker-btn span { max-width: none !important; }
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn {
+  width: 36px !important; height: 36px !important; border-radius: var(--radius-2) !important; border: 0 !important;
+  background: transparent !important; color: var(--color-text-muted) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn svg { width: 18px !important; height: 18px !important; }
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn[aria-pressed="true"],
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn.active {
+  background: var(--color-surface-sunk) !important; color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn.tool-indicator {
+  width: auto !important; padding: 0 10px !important; border: var(--border-hairline) !important; color: var(--color-text) !important;
+}
+/* the three tools wear their names where the composer is wide (labels
+   from their own aria-label, so no words change); icons only below that.
+   ::before carries the word, ::after keeps the hover ring. */
+@media (min-width: 1180px) {
+  :root[data-ow-skin="ow-sage"] body:not(.right-dock-active):not(.left-dock-active) .chat-input-bottom .input-icon-btn:not(.tool-indicator)[aria-label] {
+    width: auto !important; padding: 0 10px 0 8px !important; gap: 6px !important; display: inline-flex !important; align-items: center !important;
+  }
+  :root[data-ow-skin="ow-sage"] body:not(.right-dock-active):not(.left-dock-active) .chat-input-bottom .input-icon-btn:not(.tool-indicator)[aria-label]::before {
+    content: attr(aria-label) !important; order: 2 !important; display: inline !important; position: static !important;
+    font-family: var(--font-sans) !important; font-size: var(--font-size-sm) !important; font-weight: 500 !important;
+    line-height: 1 !important; white-space: nowrap !important; color: inherit !important; background: none !important;
+    width: auto !important; height: auto !important; opacity: 1 !important; transform: none !important;
+  }
+}
+:root[data-ow-skin="ow-sage"] .plus-active-dot { background: var(--color-accent) !important; box-shadow: 0 0 0 2px var(--color-surface-raised) !important; }
+
+/* Agent / Chat: a ruled track; the current mode is a raised paper thumb in ink */
+:root[data-ow-skin="ow-sage"] .mode-toggle {
+  height: 36px !important; padding: 2px !important; border: var(--border-hairline) !important; border-radius: var(--radius-2) !important;
+  background: var(--color-canvas) !important; overflow: hidden !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .mode-toggle::before {
+  top: 2px !important; left: 2px !important; width: calc((100% - 4px) / 2) !important; height: calc(100% - 4px) !important;
+  border-radius: var(--radius-1) !important; background: var(--color-surface-raised) !important;
+  box-shadow: inset 0 0 0 1px var(--color-rule-strong), var(--shadow-sm) !important;
+  transition: transform var(--duration-normal) var(--ease-in-out) !important;
+}
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-sm) !important; font-weight: 500 !important; height: 30px !important; min-width: 58px !important;
+  padding: 0 12px !important; border: 0 !important; border-radius: var(--radius-1) !important; background: transparent !important;
+  color: var(--color-text-muted) !important; opacity: 1 !important; transition: none !important; position: relative !important; z-index: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn.active,
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn.active:hover,
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn.active:focus { background: transparent !important; color: var(--color-text) !important; font-weight: var(--font-weight-strong) !important; }
+
+/* send: the ochre block, the one primary action on the screen */
+:root[data-ow-skin="ow-sage"] .send-btn {
+  width: 40px !important; min-width: 40px !important; height: 40px !important; border-radius: var(--radius-2) !important;
+  background: var(--color-accent) !important; color: var(--color-on-accent) !important; border: 0 !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .send-btn svg { color: var(--color-on-accent) !important; stroke: currentColor !important; }
+:root[data-ow-skin="ow-sage"] .send-btn:disabled { opacity: 0.45 !important; cursor: not-allowed !important; }
+:root[data-ow-skin="ow-sage"] .send-btn.stop-mode,
+:root[data-ow-skin="ow-sage"] .send-btn.streaming { background: var(--color-text) !important; }
+
+/* ================= popovers and menus: paper, one soft shadow, no border ================= */
+:root[data-ow-skin="ow-sage"] .export-dropdown-menu,
+:root[data-ow-skin="ow-sage"] .model-picker-menu,
+:root[data-ow-skin="ow-sage"] .overflow-menu,
+:root[data-ow-skin="ow-sage"] .sidebar .dropdown,
+:root[data-ow-skin="ow-sage"] .dropdown.session-dropdown,
+:root[data-ow-skin="ow-sage"] .dropdown.session-folder-submenu,
+:root[data-ow-skin="ow-sage"] .chat-context-popup,
+:root[data-ow-skin="ow-sage"] .ctx-detail-popup,
+:root[data-ow-skin="ow-sage"] .reasoning-effort-menu,
+:root[data-ow-skin="ow-sage"] .search-overlay > *:first-child {
+  background: var(--color-surface-raised) !important; border: 0 !important; border-radius: var(--radius-2) !important;
+  box-shadow: var(--shadow-md) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] .export-dropdown-item,
+:root[data-ow-skin="ow-sage"] .overflow-menu-item,
+:root[data-ow-skin="ow-sage"] .dropdown-item,
+:root[data-ow-skin="ow-sage"] .dropdown-item-compact,
+:root[data-ow-skin="ow-sage"] .reasoning-effort-option {
+  font-family: var(--font-sans) !important; font-size: 14.5px !important; color: var(--color-text) !important; border-radius: var(--radius-1) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .export-dropdown-item:hover,
+:root[data-ow-skin="ow-sage"] .overflow-menu-item:hover,
+:root[data-ow-skin="ow-sage"] .dropdown-item:hover,
+:root[data-ow-skin="ow-sage"] .dropdown-item-compact:hover,
+:root[data-ow-skin="ow-sage"] .reasoning-effort-option:hover { background: var(--color-surface-sunk) !important; }
+:root[data-ow-skin="ow-sage"] .overflow-menu-item svg,
+:root[data-ow-skin="ow-sage"] .export-dropdown-item svg,
+:root[data-ow-skin="ow-sage"] .dropdown-item svg { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .export-dropdown-item.dropdown-item-danger,
+:root[data-ow-skin="ow-sage"] .dropdown-item.danger,
+:root[data-ow-skin="ow-sage"] .dropdown-item-danger,
+:root[data-ow-skin="ow-sage"] .dropdown-item-danger svg,
+:root[data-ow-skin="ow-sage"] .export-dropdown-item.dropdown-item-danger svg { color: var(--color-error) !important; }
+:root[data-ow-skin="ow-sage"] .dropdown-item-danger:hover,
+:root[data-ow-skin="ow-sage"] .export-dropdown-item.dropdown-item-danger:hover { background: var(--color-error-wash) !important; }
+/* the chat actions menu: upstream sets its words at 11px on an inner span
+   and its shortcuts at 9.5px and opacity .35 (2:1). Here every line is
+   14.5px and the shortcuts are muted ink at 12.5px, full strength. */
+:root[data-ow-skin="ow-sage"] .dropdown.session-dropdown :is(.dropdown-item, .dropdown-item-compact) span,
+:root[data-ow-skin="ow-sage"] .dropdown.session-folder-submenu :is(.dropdown-item, .dropdown-item-compact) span { font-size: 14.5px !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .dropdown .dropdown-shortcut,
+:root[data-ow-skin="ow-sage"] .dropdown.session-dropdown :is(.dropdown-item, .dropdown-item-compact) .dropdown-shortcut {
+  opacity: 1 !important; color: var(--color-text-muted) !important; font-size: 12.5px !important;
+  font-variant-numeric: tabular-nums !important; letter-spacing: 0.01em !important; margin-left: auto !important; padding-left: 16px !important;
+}
+:root[data-ow-skin="ow-sage"] .dropdown [class*="dropdown-item"][class*="danger"] span { color: var(--color-error) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .dropdown [class*="dropdown-item"][class*="danger"] .dropdown-shortcut { color: var(--color-error) !important; }
+:root[data-ow-skin="ow-sage"] .search-overlay { background: var(--color-scrim) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* toasts: paper, ruled, a short ochre or oxblood mark only for state */
+:root[data-ow-skin="ow-sage"] .toast {
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: 0 !important;
+  border-radius: var(--radius-2) !important; box-shadow: var(--shadow-md) !important; font-size: var(--font-size-sm) !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+}
+:root[data-ow-skin="ow-sage"] .toast.error, :root[data-ow-skin="ow-sage"] .toast.toast-error { color: var(--color-error) !important; box-shadow: inset 0 0 0 1px var(--color-error), var(--shadow-md) !important; }
+:root[data-ow-skin="ow-sage"] .toast .toast-message { color: inherit !important; }
+:root[data-ow-skin="ow-sage"] .scroll-nav-btn {
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: var(--border-control) !important;
+  border-radius: var(--radius-2) !important; box-shadow: var(--shadow-sm) !important;
+}
+:root[data-ow-skin="ow-sage"] .tour-hint {
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: 0 !important;
+  border-radius: var(--radius-2) !important; box-shadow: var(--shadow-md) !important;
+}
+
+/* ================= windows: every tool window shares one chrome ================= */
+/* Tool windows are not modal: upstream lets clicks pass around them and
+   several can be tiled side by side. A backdrop would make a usable page
+   look disabled (and stacked backdrops darken it step by step), so they
+   float on the large shadow and a 1px rule instead. Only blocking layers
+   dim the page: the confirm dialog, search, and full-screen sheets on
+   phones. */
+:root[data-ow-skin="ow-sage"] .modal { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+:root[data-ow-skin="ow-sage"] #styled-confirm-overlay { background: var(--color-scrim) !important; }
+@media (max-width: 768px) {
+  :root[data-ow-skin="ow-sage"] .modal { background: var(--color-scrim) !important; }
+}
+:root[data-ow-skin="ow-sage"] .modal-content,
+:root[data-ow-skin="ow-sage"] .memory-modal-content,
+:root[data-ow-skin="ow-sage"] .tasks-modal-content,
+:root[data-ow-skin="ow-sage"] .preset-modal-content,
+:root[data-ow-skin="ow-sage"] .settings-modal-content,
+:root[data-ow-skin="ow-sage"] .doclib-modal-content,
+:root[data-ow-skin="ow-sage"] .gallery-modal-content,
+:root[data-ow-skin="ow-sage"] #theme-popup {
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: 0 !important;
+  border-radius: var(--radius-2) !important; box-shadow: 0 0 0 1px var(--color-rule), var(--shadow-xl) !important;
+  font-family: var(--font-sans) !important; letter-spacing: 0 !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+}
+:root[data-ow-skin="ow-sage"] .modal-header {
+  padding: 16px 20px 12px 28px !important; border-bottom: var(--border-hairline) !important; background: transparent !important; align-items: flex-end !important;
+}
+/* the window title is the window's one focal point */
+:root[data-ow-skin="ow-sage"] .modal-header h4,
+:root[data-ow-skin="ow-sage"] .modal-header h4 span[id],
+:root[data-ow-skin="ow-sage"] .modal-header h3 {
+  font-family: var(--font-display) !important; font-weight: var(--font-weight-display) !important; font-size: var(--font-size-display-panel) !important;
+  line-height: var(--leading-display) !important; letter-spacing: var(--tracking-display) !important; text-transform: uppercase !important;
+  color: var(--color-text) !important; text-wrap: balance;
+}
+:root[data-ow-skin="ow-sage"] .modal-header h4 > svg,
+:root[data-ow-skin="ow-sage"] .modal-header h4 > span[style*="margin-right"],
+:root[data-ow-skin="ow-sage"] .modal-header h4 [class*="title-icon"] { display: none !important; }
+/* the research window's spinning conic edge is decoration (a glow tell) */
+:root[data-ow-skin="ow-sage"] .research-pane::after { display: none !important; }
+:root[data-ow-skin="ow-sage"] .modal-header .close-btn,
+:root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn,
+:root[data-ow-skin="ow-sage"] .modal-close {
+  color: var(--color-text-muted) !important; background: transparent !important; border: 0 !important; border-radius: var(--radius-2) !important;
+  min-width: 36px !important; height: 36px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; opacity: 1 !important;
+}
+
+/* tabs inside windows: muted words; the current one in ink on a 2px ochre underline */
+:root[data-ow-skin="ow-sage"] .memory-tab, :root[data-ow-skin="ow-sage"] .gallery-tab, :root[data-ow-skin="ow-sage"] .cookbook-tab, :root[data-ow-skin="ow-sage"] .lib-tab, :root[data-ow-skin="ow-sage"] .admin-tab, :root[data-ow-skin="ow-sage"] .preset-tab,
+:root[data-ow-skin="ow-sage"] .compare-mode-tab, :root[data-ow-skin="ow-sage"] .theme-tab, :root[data-ow-skin="ow-sage"] [class*="theme-tab-btn"], :root[data-ow-skin="ow-sage"] .research-tab {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-sm) !important; font-weight: 500 !important;
+  color: var(--color-text-muted) !important; background: transparent !important; border-radius: 0 !important; opacity: 1 !important;
+  letter-spacing: 0 !important; text-transform: none !important; box-shadow: none !important;
+  transition: none !important;
+}
+:root[data-ow-skin="ow-sage"] .memory-tab.active, :root[data-ow-skin="ow-sage"] .gallery-tab.active, :root[data-ow-skin="ow-sage"] .cookbook-tab.active, :root[data-ow-skin="ow-sage"] .lib-tab.active, :root[data-ow-skin="ow-sage"] .admin-tab.active,
+:root[data-ow-skin="ow-sage"] .preset-tab.active, :root[data-ow-skin="ow-sage"] .compare-mode-tab.active, :root[data-ow-skin="ow-sage"] .theme-tab.active, :root[data-ow-skin="ow-sage"] [class*="theme-tab-btn"].active, :root[data-ow-skin="ow-sage"] .research-tab.active {
+  color: var(--color-text) !important; font-weight: var(--font-weight-strong) !important; border-bottom-color: var(--color-accent) !important;
+}
+:root[data-ow-skin="ow-sage"] .memory-tab svg, :root[data-ow-skin="ow-sage"] .gallery-tab svg, :root[data-ow-skin="ow-sage"] .cookbook-tab svg, :root[data-ow-skin="ow-sage"] .lib-tab svg, :root[data-ow-skin="ow-sage"] .preset-tab svg, :root[data-ow-skin="ow-sage"] [class*="theme-tab-btn"] svg { color: currentColor !important; }
+
+/* fields inside windows: the page colour, a control edge, 2px corners */
+:root[data-ow-skin="ow-sage"] .modal-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root[data-ow-skin="ow-sage"] .modal-content select,
+:root[data-ow-skin="ow-sage"] .modal-content textarea {
+  background-color: var(--color-canvas) !important; color: var(--color-text) !important;
+  border: var(--border-control) !important; border-radius: var(--radius-1) !important; box-shadow: none !important;
+  font-family: var(--font-sans) !important;
+}
+:root[data-ow-skin="ow-sage"] .modal-content input::placeholder,
+:root[data-ow-skin="ow-sage"] .modal-content textarea::placeholder { color: var(--color-text-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .modal-content input:focus,
+:root[data-ow-skin="ow-sage"] .modal-content select:focus,
+:root[data-ow-skin="ow-sage"] .modal-content textarea:focus { border-color: var(--color-text) !important; outline: none !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] .modal-content input:focus-visible,
+:root[data-ow-skin="ow-sage"] .modal-content select:focus-visible,
+:root[data-ow-skin="ow-sage"] .modal-content textarea:focus-visible { outline: var(--focus-ring) !important; outline-offset: 1px !important; }
+
+/* cards inside windows: ruled, 4px corners, no shadow (no generic rounded cards) */
+:root[data-ow-skin="ow-sage"] .doclib-card, :root[data-ow-skin="ow-sage"] .note-card, :root[data-ow-skin="ow-sage"] .skill-card, :root[data-ow-skin="ow-sage"] .task-card, :root[data-ow-skin="ow-sage"] .research-job-card, :root[data-ow-skin="ow-sage"] .gallery-card,
+:root[data-ow-skin="ow-sage"] .email-card-expanded, :root[data-ow-skin="ow-sage"] .gallery-editor-draft-card, :root[data-ow-skin="ow-sage"] .settings-email-default-card, :root[data-ow-skin="ow-sage"] .settings-email-preferences-card,
+:root[data-ow-skin="ow-sage"] .email-unsub-card, :root[data-ow-skin="ow-sage"] .styled-confirm-box {
+  border-radius: var(--radius-2) !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .doclib-card, :root[data-ow-skin="ow-sage"] .skill-card, :root[data-ow-skin="ow-sage"] .research-job-card {
+  border: var(--border-hairline) !important; background: var(--color-surface-raised) !important;
+}
+/* scheduled tasks are a list, not a deck: ruled rows, no box in the box */
+:root[data-ow-skin="ow-sage"] .memory-item.task-card {
+  border: 0 !important; border-bottom: var(--border-hairline) !important; border-radius: 0 !important;
+  background: transparent !important; box-shadow: none !important; margin: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] .memory-item.task-card:first-child { border-top: var(--border-hairline) !important; }
+/* chips: small controls, 2px corners, ruled */
+:root[data-ow-skin="ow-sage"] .doclib-chip, :root[data-ow-skin="ow-sage"] .memory-cat-chip, :root[data-ow-skin="ow-sage"] .gallery-chip, :root[data-ow-skin="ow-sage"] .notes-label-chip, :root[data-ow-skin="ow-sage"] .email-lib-filter-pill,
+:root[data-ow-skin="ow-sage"] .skills-summary-chip, :root[data-ow-skin="ow-sage"] .gallery-album-chips > *, :root[data-ow-skin="ow-sage"] .gallery-tag-chips > *, :root[data-ow-skin="ow-sage"] .note-form-type-pill, :root[data-ow-skin="ow-sage"] .notes-quick-type-pill {
+  border-radius: var(--radius-1) !important; box-shadow: none !important; font-family: var(--font-sans) !important;
+}
+
+/* buttons inside windows: one shape. Primary is ochre, the rest are ruled. */
+:root[data-ow-skin="ow-sage"] .confirm-btn, :root[data-ow-skin="ow-sage"] .confirm-btn-secondary {
+  border-radius: var(--radius-2) !important; border: var(--border-control) !important; background: transparent !important;
+  color: var(--color-text) !important; font-family: var(--font-sans) !important; font-weight: 600 !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .confirm-btn-primary { background: var(--color-accent) !important; color: var(--color-on-accent) !important; border-color: transparent !important; }
+:root[data-ow-skin="ow-sage"] .confirm-btn-danger { background: var(--color-error) !important; color: var(--color-on-error) !important; border-color: transparent !important; }
+
+/* window details. Upstream dims secondary text with opacity (0.3 to 0.7)
+   and sets labels at 9 to 10px; here it is muted ink at full strength and
+   labels are 12px or more, so every line passes AA on paper. */
+:root[data-ow-skin="ow-sage"] .memory-count,
+:root[data-ow-skin="ow-sage"] .tasks-clock,
+:root[data-ow-skin="ow-sage"] .memory-item-meta,
+:root[data-ow-skin="ow-sage"] .cal-empty,
+:root[data-ow-skin="ow-sage"] .cal-event-more,
+:root[data-ow-skin="ow-sage"] .notes-empty-msg,
+:root[data-ow-skin="ow-sage"] .gallery-search-enter-hint {
+  font-size: var(--font-size-label) !important; color: var(--color-text-muted) !important; opacity: 1 !important;
+  font-variant-numeric: tabular-nums !important; font-family: var(--font-sans) !important;
+}
+:root[data-ow-skin="ow-sage"] .memory-item-meta span { opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .compare-section-label,
+:root[data-ow-skin="ow-sage"] .research-setting-label,
+:root[data-ow-skin="ow-sage"] .cal-weekday {
+  font-family: var(--font-sans) !important; font-size: 12px !important; font-weight: var(--font-weight-label) !important;
+  letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important;
+  color: var(--color-text-muted) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .cal-weekday { background: transparent !important; }
+:root[data-ow-skin="ow-sage"] .compare-toggle-label { font-size: 11.5px !important; }
+:root[data-ow-skin="ow-sage"] .cal-day-num { font-size: 12px !important; opacity: 1 !important; font-variant-numeric: tabular-nums !important; }
+:root[data-ow-skin="ow-sage"] .cal-day.cal-other { opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .cal-day.cal-other .cal-day-num,
+:root[data-ow-skin="ow-sage"] .cal-day.cal-other .cal-event-row { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .cal-day.cal-today { border-radius: var(--radius-1) !important; }
+:root[data-ow-skin="ow-sage"] .cal-day.cal-today .cal-day-num { color: var(--color-on-accent) !important; border-radius: var(--radius-1) !important; }
+:root[data-ow-skin="ow-sage"] .cal-event-row-time { font-size: 11.5px !important; opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .cal-event-row-name { font-size: 12px !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] button.cal-view-btn { opacity: 1 !important; color: var(--color-text-muted) !important; font-size: 12.5px !important; }
+:root[data-ow-skin="ow-sage"] button.cal-view-btn.active { color: var(--color-text) !important; font-weight: var(--font-weight-strong) !important; background: var(--color-surface-sunk) !important; }
+:root[data-ow-skin="ow-sage"] button.cal-today-btn { opacity: 1 !important; font-size: 12px !important; color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] .cal-toolbar-clock,
+:root[data-ow-skin="ow-sage"] .qa-hint-accent { color: var(--color-text-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .cal-quickadd-row,
+:root[data-ow-skin="ow-sage"] .cal-add-btn,
+:root[data-ow-skin="ow-sage"] .notes-quick-type-seg,
+:root[data-ow-skin="ow-sage"] .wings-tool-access { border-radius: var(--radius-2) !important; }
+:root[data-ow-skin="ow-sage"] .cal-filters.chip-scroll-strip { border-radius: 0 !important; }
+:root[data-ow-skin="ow-sage"] .notes-label-toggle,
+:root[data-ow-skin="ow-sage"] .cal-filter-toggle,
+:root[data-ow-skin="ow-sage"] .cmp-rm-btn,
+:root[data-ow-skin="ow-sage"] .doclib-chip-scroll-arrow,
+:root[data-ow-skin="ow-sage"] .gallery-card-upload-label { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .gallery-chip,
+:root[data-ow-skin="ow-sage"] .memory-cat-chip,
+:root[data-ow-skin="ow-sage"] .hwfit-usecase-btn-label,
+:root[data-ow-skin="ow-sage"] .hwfit-gpu-btn { font-size: 12px !important; }
+:root[data-ow-skin="ow-sage"] .research-start-btn { color: var(--color-on-accent) !important; }
+:root[data-ow-skin="ow-sage"] .research-start-btn svg { color: currentColor !important; fill: currentColor !important; }
+/* badges: ruled, never an ochre wash (ochre is for actions and selection) */
+:root[data-ow-skin="ow-sage"] .task-builtin-badge,
+:root[data-ow-skin="ow-sage"] .doclib-card .memory-item-title + span {
+  font-size: 11px !important; font-weight: var(--font-weight-label) !important; letter-spacing: 0.04em !important;
+  color: var(--color-text-muted) !important; background: transparent !important;
+  border: var(--border-hairline) !important; border-radius: var(--radius-1) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .task-state-label { font-size: 11px !important; }
+:root[data-ow-skin="ow-sage"] .task-status-badge,
+:root[data-ow-skin="ow-sage"] .task-state-badge { border-radius: var(--radius-1) !important; }
+:root[data-ow-skin="ow-sage"] .tour-hint b,
+:root[data-ow-skin="ow-sage"] .tour-hint strong,
+:root[data-ow-skin="ow-sage"] .tour-hint [class*="accent"] { color: var(--color-text) !important; font-weight: var(--font-weight-strong) !important; }
+:root[data-ow-skin="ow-sage"] .scroll-nav-caret { font-family: var(--font-sans) !important; }
+/* more of the same: inactive toggles and hints stay readable (state is
+   carried by the ochre edge of the active one, not by fading the rest) */
+:root[data-ow-skin="ow-sage"] .compare-dice-toggle,
+:root[data-ow-skin="ow-sage"] .compare-save-toggle,
+:root[data-ow-skin="ow-sage"] .compare-reset-toggle,
+:root[data-ow-skin="ow-sage"] #compare-model-overlay button[style*="dashed"],
+:root[data-ow-skin="ow-sage"] .gallery-select-btn,
+:root[data-ow-skin="ow-sage"] .gallery-toolbar-action,
+:root[data-ow-skin="ow-sage"] .gallery-card-upload,
+:root[data-ow-skin="ow-sage"] .session-show-more-btn,
+:root[data-ow-skin="ow-sage"] .cal-quickadd-hint,
+:root[data-ow-skin="ow-sage"] .email-loading,
+:root[data-ow-skin="ow-sage"] .hwfit-loading > div,
+:root[data-ow-skin="ow-sage"] .modal [class*="empty"] [style*="opacity"] { opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .compare-dice-toggle:not(.active),
+:root[data-ow-skin="ow-sage"] .compare-save-toggle:not(.active),
+:root[data-ow-skin="ow-sage"] .compare-reset-toggle:not(.active),
+:root[data-ow-skin="ow-sage"] #compare-model-overlay button[style*="dashed"],
+:root[data-ow-skin="ow-sage"] .session-show-more-btn,
+:root[data-ow-skin="ow-sage"] .cal-quickadd-hint,
+:root[data-ow-skin="ow-sage"] .cal-quickadd-hint *,
+:root[data-ow-skin="ow-sage"] .email-loading,
+:root[data-ow-skin="ow-sage"] .hwfit-loading > div { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #compare-model-overlay button[style*="dashed"] { border-radius: var(--radius-2) !important; border-color: var(--color-rule-strong) !important; }
+:root[data-ow-skin="ow-sage"] #compare-model-overlay button[style*="dashed"] * { color: inherit !important; }
+:root[data-ow-skin="ow-sage"] .mp-provider-count { opacity: 1 !important; color: var(--color-text-muted) !important; font-size: 12px !important; font-variant-numeric: tabular-nums !important; }
+:root[data-ow-skin="ow-sage"] .settings-label-sub { opacity: 1 !important; color: var(--color-text-muted) !important; font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] .cal-filter-item,
+:root[data-ow-skin="ow-sage"] .doclib-chip,
+:root[data-ow-skin="ow-sage"] .doclib-chip *,
+:root[data-ow-skin="ow-sage"] .cookbook-official-filter span { font-size: 12px !important; }
+:root[data-ow-skin="ow-sage"] .cal-day.cal-empty-day,
+:root[data-ow-skin="ow-sage"] .cal-day.cal-other,
+:root[data-ow-skin="ow-sage"] .cal-filters.chip-scroll-strip { background-image: none !important; }
+:root[data-ow-skin="ow-sage"] .admin-badge {
+  font-size: 11px !important; font-weight: var(--font-weight-label) !important; letter-spacing: 0.04em !important;
+  color: var(--color-text-muted) !important; background: transparent !important;
+  border: var(--border-hairline) !important; border-radius: var(--radius-1) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .admin-user-row { border-radius: var(--radius-1) !important; }
+:root[data-ow-skin="ow-sage"] .admin-user-info > div[style*="border-radius:50%"] { background: var(--color-surface-sunk) !important; color: var(--color-text) !important; border-radius: var(--radius-1) !important; }
+:root[data-ow-skin="ow-sage"] .email-loading > div { opacity: 1 !important; color: var(--color-text-muted) !important; font-size: var(--font-size-label) !important; }
+/* upstream pins these chips at 10px with id-level rules; :is(#id, .modal)
+   lifts this rule to the same weight */
+:root[data-ow-skin="ow-sage"] :is(#calendar-modal, #gallery-modal, #tasks-modal, #doclib-modal, #memory-modal, .modal) :is(.cal-filter-item, .gallery-chip, .memory-cat-chip, .doclib-chip),
+:root[data-ow-skin="ow-sage"] :is(#calendar-modal, #gallery-modal, #tasks-modal, #doclib-modal, #memory-modal, .modal) .doclib-chip *,
+:root[data-ow-skin="ow-sage"] :is(#calendar-modal, #gallery-modal, #tasks-modal, #doclib-modal, #memory-modal, .modal) .skills-summary-chip,
+:root[data-ow-skin="ow-sage"] :is(#calendar-modal, #gallery-modal, #tasks-modal, #doclib-modal, #memory-modal, .modal) .skills-summary-chip * { font-size: 12px !important; }
+:root[data-ow-skin="ow-sage"] .settings-system-logs-tab { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .settings-system-logs-tab.active { color: var(--color-text) !important; font-weight: var(--font-weight-strong) !important; }
+
+/* Nothing in a window is set under 12px. Upstream pins toolbar words,
+   badges and fields at 9 to 11.5px, often with id-level rules; the
+   :is(#id, ...) prefix lifts these rules to the same weight.
+   toolbar words, sort labels, badges and chips: 12.5px */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-toolbar-btn, .memory-sort-label, .email-filter-label, .notes-header-btn-label, .notes-header-text-btn,
+  .notes-label-toggle, .notes-select-trigger, .cal-add-label, .cal-filter-toggle, .cal-filter-toggle span, .cal-toolbar-clock,
+  .research-settings-toggle, .research-add-plus, .cookbook-dl-btn, .compare-toggle-label, .task-builtin-badge, .task-state-label,
+  .cal-event-row-time, .doclib-document-header span) { font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] #compare-model-overlay .modal-body button,
+:root[data-ow-skin="ow-sage"] #compare-model-overlay .modal-body button span,
+:root[data-ow-skin="ow-sage"] #compare-model-overlay .modal-body > div > span { font-size: var(--font-size-label) !important; }
+/* a window's description and its empty states: 14px muted ink, upright */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-desc, .doclib-desc),
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-desc, .doclib-desc) span,
+:root[data-ow-skin="ow-sage"] #compare-model-overlay .modal-body > p,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .memory-empty,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .memory-empty *,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .hwfit-loading > div {
+  font-size: var(--font-size-sm) !important; line-height: 1.5 !important; color: var(--color-text-muted) !important;
+  font-style: normal !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-desc, .doclib-desc) a,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .memory-empty a { color: var(--color-text) !important; text-decoration: underline !important; text-underline-offset: 3px !important; }
+/* search fields and selects inside windows: 14px; the magnifier is drawn in
+   muted ink (upstream hardcodes the pink of its dark theme in the SVG) */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-search-input, #serve-search, #hwfit-search, .cal-search-input, .research-native-select, .gallery-model-filter,
+  .gallery-sort, .hwfit-server-select, .cmp-form-control, .cookbook-field-input),
+:root[data-ow-skin="ow-sage"] #compare-model-overlay .modal-body input { font-size: var(--font-size-sm) !important; }
+:root[data-ow-skin="ow-sage"] .memory-search-input,
+:root[data-ow-skin="ow-sage"] #serve-search,
+:root[data-ow-skin="ow-sage"] #hwfit-search {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23454D40' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>") !important;
+  background-repeat: no-repeat !important; background-position: 9px center !important;
+}
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .cal-search-icon { color: var(--color-text-muted) !important; }
+/* tiny marks become readable marks */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .cal-event-source {
+  font-size: 12px !important; min-width: 16px !important; height: 16px !important; line-height: 16px !important;
+  display: inline-flex !important; align-items: center !important; justify-content: center !important;
+}
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .hwfit-help-chip { font-size: 12px !important; min-width: 16px !important; height: 16px !important; line-height: 16px !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .tour-hint button,
+:root[data-ow-skin="ow-sage"] .tour-hint [class*="btn"] { font-size: var(--font-size-label) !important; }
+
+/* The long tail. Upstream sets meta text, tags, pills, notes, counts and
+   small buttons at 9 to 11.5px across many windows (often inline), and
+   fades secondary words with opacity. One floor for all of them: the
+   12.5px label step at full strength in muted ink; fields 14px; inline
+   code never under 12px. Settings keeps its own scale. */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) :is(small, [class*="-tag"], [class*="-pill"], [class*="-badge"], [class*="-note"], [class*="-time"], [class*="-repeat"], [class*="-count"], [class*="-hint"], [class*="load-more"], [class*="toggle-sub"], [class*="-reason"], [class*="-label"], [class*="action-btn"], [class*="expand-btn"], [class*="save-btn"], [class*="select-btn"], [class*="-edit"]):not(input):not(select):not(textarea):not(label):not(h1):not(h2):not(h3),
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) :is(small, [class*="-tag"], [class*="-pill"], [class*="-badge"], [class*="-note"], [class*="-time"], [class*="-repeat"], [class*="-count"], [class*="-hint"], [class*="load-more"], [class*="toggle-sub"], [class*="-reason"], [class*="-label"], [class*="action-btn"], [class*="expand-btn"], [class*="save-btn"], [class*="select-btn"], [class*="-edit"]):not(input):not(select):not(textarea):not(label):not(h1):not(h2):not(h3) > span:not([class]),
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) :is([style*="font-size:9px"], [style*="font-size:10px"], [style*="font-size:11px"], [style*="font-size: 9px"], [style*="font-size: 10px"], [style*="font-size: 11px"], [style*="font-size:0.6"], [style*="font-size:0.7"], [style*="font-size:.6"], [style*="font-size:.7"]):not(.modal-header *) { font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) :is(div, span, p, small):is([style*="opacity:0.3"], [style*="opacity:0.4"], [style*="opacity:0.5"], [style*="opacity:0.6"], [style*="opacity: 0.3"], [style*="opacity: 0.4"], [style*="opacity: 0.5"], [style*="opacity: 0.6"], [style*="opacity:.3"], [style*="opacity:.4"], [style*="opacity:.5"], [style*="opacity:.6"]) { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"])) { font-size: var(--font-size-sm) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) code { font-size: max(12px, 0.9em) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) :is(.gallery-editor-template-picker h4, .gallery-editor-drafts-title, .gallery-editor-template-option span, .skills-section-label, .cookbook-dep-section-title, .memory-item-title > span) { font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #custom-preset-modal, #notes-pane, .modal:not(#settings-modal), .notes-pane) .task-log-name { font-size: var(--font-size-sm) !important; color: var(--color-text) !important; }
+/* task runs: the state dot carries meaning in the state pigments, with no glow or pulse */
+:root[data-ow-skin="ow-sage"] .task-log-status { box-shadow: none !important; animation: none !important; }
+:root[data-ow-skin="ow-sage"] .task-log-status-ok { background: var(--color-success) !important; }
+:root[data-ow-skin="ow-sage"] .task-log-status-error { background: var(--color-error) !important; }
+:root[data-ow-skin="ow-sage"] .task-log-status-queued,
+:root[data-ow-skin="ow-sage"] .task-log-status-running { background: var(--color-accent) !important; }
+:root[data-ow-skin="ow-sage"] .task-log-status-info,
+:root[data-ow-skin="ow-sage"] .task-log-status-skipped,
+:root[data-ow-skin="ow-sage"] .task-log-status-aborted { background: var(--color-rule-strong) !important; }
+:root[data-ow-skin="ow-sage"] .task-log-row.task-log-row-error .task-log-name { color: var(--color-error) !important; }
+/* Compare's Parallel / Sequential switch: Sequential is a state, in ochre, not amber */
+:root[data-ow-skin="ow-sage"] .compare-parallel-toggle { color: var(--color-warning) !important; border-color: var(--color-warning) !important; background: transparent !important; }
+:root[data-ow-skin="ow-sage"] .compare-parallel-toggle .compare-toggle-label { color: inherit !important; }
+
+/* Ochre is for actions, the current selection, focus and state only. The
+   decorative icons upstream paints with the accent (section bulbs and
+   calendars, sort marks, the Tidy sparkle) are muted ink here, and the
+   four-point sparkle beside built-in task names is decoration, so it goes. */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .admin-card h2 svg,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .doclib-section-title-icon,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) [style*="--accent"] > svg,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) svg[style*="--accent"],
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-sort-icon-cur, .email-filter-icon, .research-picker-icon, .hwfit-usecase-btn-icon) svg,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .hwfit-hw-manual-btn svg { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .task-ai-mark { display: none !important; }
+/* the same icons when the accent comes in as an SVG stroke or fill attribute */
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(svg[stroke*="accent"], svg[stroke*="--red"]):not(.active *):not([aria-pressed="true"] *) { stroke: currentColor !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(svg[fill*="accent"], svg[fill*="--red"]):not(.active *):not([aria-pressed="true"] *) { fill: currentColor !important; color: var(--color-text-muted) !important; }
+/* mode tabs: only the current one's icon carries ochre */
+:root[data-ow-skin="ow-sage"] .compare-mode-tab:not(.active) svg { color: var(--color-text-muted) !important; }
+
+/* window type: one display title, then a clear step to section titles
+   (19px), tabs and descriptions (14px) and meta (12.5px) */
+:root[data-ow-skin="ow-sage"] .modal:not(#settings-modal) .admin-card h2,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .memory-section-title {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-lead) !important; font-weight: var(--font-weight-heading) !important;
+  line-height: var(--leading-heading) !important; letter-spacing: var(--tracking-heading) !important; text-transform: none !important;
+  color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) :is(.memory-tab, .gallery-tab, .cookbook-tab, .lib-tab, .research-tab, .compare-mode-tab) { font-size: var(--font-size-sm) !important; }
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .memory-item-meta,
+:root[data-ow-skin="ow-sage"] :is(#memory-modal, #tasks-modal, #calendar-modal, #doclib-modal, #cookbook-modal, #gallery-modal, #compare-model-overlay, #research-overlay, #notes-pane, .modal, .notes-pane) .memory-item-meta * { font-size: var(--font-size-label) !important; }
+
+/* boxes inside boxes: the calendar's quick add keeps only its field's edge */
+:root[data-ow-skin="ow-sage"] .cal-quickadd-row { border: 0 !important; box-shadow: none !important; background: transparent !important; }
+
+/* Notes: the quick-add hint stops pulsing and its fake caret stops
+   blinking (still there, in muted ink); the tour hints play once */
+:root[data-ow-skin="ow-sage"] .notes-quick-add,
+:root[data-ow-skin="ow-sage"] .notes-quick-add * { animation: none !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] .notes-quick-add::before { animation: none !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .th-cursor, :root[data-ow-skin="ow-sage"] .th-modal-group, :root[data-ow-skin="ow-sage"] .th-zone { animation-iteration-count: 1 !important; }
+/* status dots are state, not a heartbeat: no breathing glow */
+:root[data-ow-skin="ow-sage"] .cookbook-notif-dot,
+:root[data-ow-skin="ow-sage"] .cookbook-tab-error-dot,
+:root[data-ow-skin="ow-sage"] .research-sb-dot,
+:root[data-ow-skin="ow-sage"] [style*="cookbook-notif-pulse"] { animation: none !important; box-shadow: none !important; }
+
+/* a section inside a tool window is not a card in a card: no box, the
+   window's own padding and a rule do the grouping */
+:root[data-ow-skin="ow-sage"] .modal:not(#settings-modal) .admin-card {
+  background: transparent !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+  padding-left: 4px !important; padding-right: 4px !important;
+}
+:root[data-ow-skin="ow-sage"] .modal:not(#settings-modal) .admin-card + .admin-card { border-top: var(--border-hairline) !important; }
+/* the Notes side panel: its title is the panel's focal point */
+:root[data-ow-skin="ow-sage"] .notes-pane-title {
+  font-family: var(--font-display) !important; font-weight: var(--font-weight-display) !important; font-size: 30px !important;
+  line-height: var(--leading-display) !important; letter-spacing: var(--tracking-display) !important; text-transform: uppercase !important;
+  color: var(--color-text) !important;
+}
+:root[data-ow-skin="ow-sage"] .notes-pane-title svg { display: none !important; }
+:root[data-ow-skin="ow-sage"] .notes-pane, :root[data-ow-skin="ow-sage"] #notes-pane {
+  background: var(--color-surface-raised) !important; border-left: var(--border-hairline) !important; box-shadow: var(--shadow-xl) !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+}
+/* the search palette */
+:root[data-ow-skin="ow-sage"] .search-overlay input {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-body) !important; color: var(--color-text) !important;
+  background: var(--color-surface-raised) !important; border: var(--border-control) !important; border-radius: var(--radius-2) !important;
+}
+:root[data-ow-skin="ow-sage"] .search-overlay input::placeholder { color: var(--color-text-muted) !important; opacity: 1 !important; }
+
+/* ================= Settings ================= */
+:root[data-ow-skin="ow-sage"] .settings-sidebar { background: var(--color-surface-side) !important; border-right: var(--border-hairline) !important; }
+:root[data-ow-skin="ow-sage"] .settings-sidebar-content { padding: 14px 12px !important; }
+:root[data-ow-skin="ow-sage"] .settings-nav-search {
+  height: 36px !important; background: var(--color-surface-raised) !important; border: var(--border-control) !important; border-radius: var(--radius-1) !important;
+  color: var(--color-text) !important; font-size: var(--font-size-sm) !important;
+}
+:root[data-ow-skin="ow-sage"] .settings-nav-search::placeholder { color: var(--color-text-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .settings-nav-item {
+  min-height: 34px !important; border-radius: var(--radius-1) !important; background: transparent !important; color: var(--color-text) !important;
+  font-family: var(--font-sans) !important; font-size: 14.5px !important; font-weight: var(--font-weight-ui) !important; border: 0 !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .settings-nav-item svg { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] .settings-nav-item.active { background: var(--color-surface-raised) !important; color: var(--color-text) !important; font-weight: var(--font-weight-heading) !important; }
+:root[data-ow-skin="ow-sage"] .settings-nav-item.active svg { color: var(--color-accent) !important; }
+:root[data-ow-skin="ow-sage"] .settings-sidebar-divider { background: var(--color-rule) !important; border-color: var(--color-rule) !important; height: 1px !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .settings-sidebar-label,
+:root[data-ow-skin="ow-sage"] .settings-sidebar-build,
+:root[data-ow-skin="ow-sage"] .settings-sidebar-build span {
+  font-family: var(--font-sans) !important; font-size: 12px !important; font-weight: var(--font-weight-label) !important;
+  letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important; color: var(--color-text-muted) !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .settings-sidebar-build { border-top: var(--border-hairline) !important; font-variant-numeric: tabular-nums !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels { background: var(--color-surface-raised) !important; padding: 8px 32px 32px !important; }
+
+/* sections: separated by thin rules, never boxed. They are not numbered:
+   in Settings they are alternatives or separate topics, not steps, and a
+   01 / 02 would suggest an order to follow. */
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-card {
+  background: transparent !important; border: 0 !important; border-top: var(--border-hairline) !important; border-radius: 0 !important;
+  box-shadow: none !important; padding: 22px 0 26px !important; margin: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-card:first-of-type { border-top: 0 !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-card h2 {
+  font-family: var(--font-sans) !important; font-size: var(--font-size-h3) !important; font-weight: var(--font-weight-heading) !important;
+  line-height: var(--leading-heading) !important; letter-spacing: var(--tracking-heading) !important; color: var(--color-text) !important; text-wrap: balance;
+}
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-card h2 > svg { display: none !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-card h2 span { color: var(--color-text-muted) !important; font-size: var(--font-size-ui) !important; font-weight: var(--font-weight-ui) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-toggle-sub,
+:root[data-ow-skin="ow-sage"] .settings-panels p { color: var(--color-text-muted) !important; font-size: 14.5px !important; line-height: 1.5 !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root[data-ow-skin="ow-sage"] .settings-panels select,
+:root[data-ow-skin="ow-sage"] .settings-panels textarea,
+:root[data-ow-skin="ow-sage"] .settings-panels .adm-provider-btn {
+  min-height: 40px !important; background: var(--color-canvas) !important; color: var(--color-text) !important;
+  border: var(--border-control) !important; border-radius: var(--radius-1) !important; font-size: 15px !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .settings-panels input::placeholder { color: var(--color-text-muted) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels .adm-fused-group { border: 0 !important; background: transparent !important; gap: 0 !important; }
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary {
+  min-height: 40px !important; padding: 0 16px !important; background: var(--color-accent) !important; color: var(--color-on-accent) !important;
+  border: 0 !important; border-radius: var(--radius-2) !important; font-weight: var(--font-weight-heading) !important; font-size: 14.5px !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm {
+  min-height: 34px !important; padding: 0 12px !important; background: transparent !important; color: var(--color-text) !important;
+  border: var(--border-control) !important; border-radius: var(--radius-2) !important; font-size: var(--font-size-sm) !important; font-weight: 550 !important;
+}
+/* label | field rows: every field starts on the same line (the label
+   column), labels at the label step */
+:root[data-ow-skin="ow-sage"] .settings-panels .settings-row > .settings-label {
+  flex: 0 0 var(--grid-label) !important; width: var(--grid-label) !important; min-width: 0 !important; max-width: var(--grid-label) !important;
+  font-size: var(--font-size-label) !important; line-height: 1.3 !important; color: var(--color-text) !important; opacity: 1 !important;
+}
+/* one button vocabulary: a secondary action is ruled, never dashed; one
+   ochre primary per section (Export stays primary, Import is ruled) */
+:root[data-ow-skin="ow-sage"] .settings-panels .settings-fallback-add,
+:root[data-ow-skin="ow-sage"] .settings-panels #adm-importDataBtn {
+  min-height: 34px !important; padding: 0 12px !important; background: transparent !important; color: var(--color-text) !important;
+  border: var(--border-control) !important; border-style: solid !important; border-radius: var(--radius-2) !important;
+  font-family: var(--font-sans) !important; font-size: var(--font-size-sm) !important; font-weight: 550 !important; opacity: 1 !important;
+}
+:root[data-ow-skin="ow-sage"] .admin-switch .admin-slider { background: var(--color-rule-strong) !important; }
+/* switches: a control-edge track (3:1 on paper), a paper knob, ochre when on */
+:root[data-ow-skin="ow-sage"] .vis-switch { background: var(--color-rule-strong) !important; }
+:root[data-ow-skin="ow-sage"] .vis-row input:checked + .vis-switch { background: var(--color-accent) !important; }
+:root[data-ow-skin="ow-sage"] .vis-switch::after { background: var(--color-surface-raised) !important; box-shadow: none !important; }
+:root[data-ow-skin="ow-sage"] .vis-label { font-size: 13.5px !important; color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] .admin-switch input:checked + .admin-slider { background: var(--color-accent) !important; }
+
+/* Settings has the same long tail: hints, section heads, badges, state
+   words, keyboard keys and inline-styled notes at 9 to 11px, several faded
+   with opacity. Same floor (12.5px). Opacity stays only where it marks a
+   section that is switched off (an inactive part, exempt from contrast). */
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(small, [class*="-tag"], [class*="-pill"], [class*="-badge"], [class*="-note"], [class*="-time"], [class*="-repeat"], [class*="-count"], [class*="-hint"], [class*="load-more"], [class*="toggle-sub"], [class*="-reason"], [class*="-detail"], [class*="-desc"], [class*="-num"], [class*="-head"], [class*="-category"], [class*="-state"], [class*="-scope"], [class*="inline-link"]):not(input):not(select):not(textarea):not(label):not(h1):not(h2):not(h3):not(.modal-header *),
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(small, [class*="-tag"], [class*="-pill"], [class*="-badge"], [class*="-note"], [class*="-time"], [class*="-repeat"], [class*="-count"], [class*="-hint"], [class*="load-more"], [class*="toggle-sub"], [class*="-reason"], [class*="-detail"], [class*="-desc"], [class*="-num"], [class*="-head"], [class*="-category"], [class*="-state"], [class*="-scope"], [class*="inline-link"]):not(input):not(select):not(textarea):not(label):not(h1):not(h2):not(h3):not(.modal-header *) > span:not([class]),
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is([style*="font-size:9px"], [style*="font-size:10px"], [style*="font-size:11px"], [style*="font-size: 9px"], [style*="font-size: 10px"], [style*="font-size: 11px"], [style*="font-size:0.6"], [style*="font-size:0.7"], [style*="font-size:.6"], [style*="font-size:.7"]),
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(#set-researchMsg, #set-searchMsg, #set-reminder-channel-hint, #set-reminders-open-integrations, .email-settings-field > span, .admin-user-info > span, .admin-btn-delete) { font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(kbd, code) { font-size: max(12px, 0.9em) !important; }
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(.adm-ep-section-head, .settings-fallback-num, .shortcut-category, #set-reminder-channel-hint, #set-reminder-channel-hint ~ div, #set-reminders-open-integrations),
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels .admin-user-info > span[style*="opacity"],
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels #unified-integrations-list [style*="opacity"]:not(button) { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels .settings-system-logs-tab { font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(.settings-system-logs-autopoll-container span, .admin-switch-inline, .shortcut-unset, .vis-icon, .email-style-extract-help, .email-settings-field span, label > span:not([class])) { font-size: var(--font-size-label) !important; }
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels :is(div, span, p):is([style*="opacity:0.6"], [style*="opacity: 0.6"], [style*="opacity:.6"], [style*="opacity:0.7"], [style*="opacity: 0.7"], [style*="opacity:.7"]) { opacity: 1 !important; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line { font-size: 12px !important; line-height: 1.55 !important; }
+:root[data-ow-skin="ow-sage"] #settings-account-avatar { opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] #settings-modal .settings-panels #adm-importDataBtn { min-height: 40px !important; }
+
+/* the system log: no black terminal box on a mid-tone page. It is a paper
+   slab like the code blocks; levels keep their meaning in the state colours */
+:root[data-ow-skin="ow-sage"] #log-console-container {
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: var(--border-hairline) !important;
+  border-radius: var(--radius-1) !important; box-shadow: none !important; font-family: var(--font-mono) !important;
+}
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line { font-family: var(--font-mono) !important; color: var(--color-text) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line-info,
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line-debug { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line-warn,
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line-warning { color: var(--color-warning) !important; }
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line-error,
+:root[data-ow-skin="ow-sage"] #log-console-container .log-line-critical { color: var(--color-error) !important; }
+/* the persona switch is an inline span upstream, so it never showed */
+:root[data-ow-skin="ow-sage"] label.vis-row { display: flex !important; align-items: center !important; gap: 12px !important; }
+:root[data-ow-skin="ow-sage"] label.vis-row .vis-switch { display: inline-block !important; flex: 0 0 auto !important; }
+
+/* ================= OpenWings' own pages: Live browser, Workspace files ================= */
+/* They draw with their own --bg, --panel, --text, --muted, --line, --accent
+   and state colours (white and electric blue by default). Once a page
+   carries data-ow-skin (see the integration patch), they take the look's
+   values: the mid-tone page, paper bars, moss ink, ochre for actions. */
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) {
+  --bg: var(--color-canvas); --panel: var(--color-surface-raised); --text: var(--color-text); --muted: var(--color-text-muted);
+  --line: var(--color-rule); --accent: var(--color-accent); --ok: var(--color-success); --warn: var(--color-warning); --bad: var(--color-error);
+  font-size: 15px !important; line-height: 1.5 !important;
+}
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) .bar { background: var(--color-surface-raised) !important; border-bottom: var(--border-hairline) !important; }
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) .bar .title {
+  font-family: var(--font-display) !important; font-weight: var(--font-weight-display) !important; font-size: 26px !important;
+  line-height: var(--leading-display) !important; letter-spacing: var(--tracking-display) !important; text-transform: uppercase !important;
+}
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) .back { color: var(--color-text) !important; text-decoration: underline !important; text-underline-offset: 3px !important; }
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) button {
+  background: var(--color-accent) !important; color: var(--color-on-accent) !important; border-radius: var(--radius-2) !important;
+  filter: none !important; font-weight: var(--font-weight-label) !important;
+}
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) button:hover { background: var(--color-accent-hover) !important; filter: none !important; }
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) :focus-visible { outline: var(--focus-ring) !important; outline-offset: 2px !important; }
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) input[type="password"],
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) input[type="text"] { border: var(--border-control) !important; border-radius: var(--radius-1) !important; background: var(--color-surface-raised) !important; }
+/* the remote screen's letterbox: the sunk band, not a black box */
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) #screen { background: var(--color-surface-sunk) !important; }
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) table.files th {
+  font-size: var(--font-size-label) !important; letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important;
+  border-bottom: var(--border-control) !important;
+}
+:root[data-ow-skin="ow-sage"] body:has(> header.bar > a.back) table.files td { font-variant-numeric: tabular-nums !important; }
+
+/* ================= login: cardless, the wordmark is the focal point ================= */
+:root[data-ow-skin="ow-sage"] body:has(main.card) { background: var(--color-canvas) !important; background-image: none !important; }
+:root[data-ow-skin="ow-sage"] body:has(main.card) canvas { display: none !important; }
+:root[data-ow-skin="ow-sage"] main.card {
+  width: min(400px, calc(100vw - 48px)) !important; padding: 0 !important;
+  background: transparent !important; border: 0 !important; border-radius: 0 !important;
+  box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  color: var(--color-text) !important; text-align: left !important; font-family: var(--font-sans) !important;
+}
+:root[data-ow-skin="ow-sage"] main.card h1.logo {
+  display: flex !important; flex-direction: column !important; align-items: flex-start !important; justify-content: flex-start !important; gap: 18px !important;
+  margin: 0 0 14px !important; padding: 0 0 18px !important; border: 0 !important; position: relative !important;
+}
+/* the full-column ink rule under the wordmark draws in once (transform only) */
+:root[data-ow-skin="ow-sage"] main.card h1.logo::after {
+  content: '' !important; position: absolute !important; left: 0 !important; right: 0 !important; bottom: 0 !important; height: 1px !important;
+  background: var(--color-text) !important; transform-origin: 0 50% !important;
+}
+:root[data-ow-skin="ow-sage"] main.card h1.logo img.logo-boat {
+  width: 44px !important; height: 44px !important; border-radius: 0 !important; box-shadow: none !important;
+  object-position: -9999px 0 !important; background: var(--sg-wings) center / 118% 118% no-repeat !important; margin: 0 !important;
+}
+:root[data-ow-skin="ow-sage"] main.card h1.logo span {
+  font-family: var(--font-display) !important; font-weight: var(--font-weight-display) !important; font-size: var(--font-size-display-3) !important;
+  line-height: var(--leading-display) !important; letter-spacing: var(--tracking-display) !important; text-transform: uppercase !important;
+  color: var(--color-text) !important; background: none !important; -webkit-text-fill-color: currentColor !important;
+}
+:root[data-ow-skin="ow-sage"] main.card .built-on { margin: 0 0 32px !important; font-size: var(--font-size-sm) !important; text-align: left !important; opacity: 1; color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] main.card .built-on a { color: var(--color-text-muted) !important; text-decoration: underline !important; text-underline-offset: 3px !important; text-decoration-thickness: 1px !important; }
+:root[data-ow-skin="ow-sage"] main.card label:not(.remember-toggle) {
+  display: block !important; margin: 0 0 8px !important; font-family: var(--font-sans) !important; font-size: var(--font-size-label) !important;
+  font-weight: var(--font-weight-label) !important; letter-spacing: var(--tracking-label) !important; text-transform: uppercase !important;
+  color: var(--color-text) !important; opacity: 1 !important; text-align: left !important;
+}
+:root[data-ow-skin="ow-sage"] main.card input[type="text"],
+:root[data-ow-skin="ow-sage"] main.card input[type="password"] {
+  height: var(--control-height) !important; padding: 0 44px 0 14px !important; font-size: var(--font-size-body) !important; font-family: var(--font-sans) !important;
+  background: var(--color-surface-raised) !important; color: var(--color-text) !important; border: var(--border-control) !important; border-radius: var(--radius-1) !important; box-shadow: none !important;
+}
+:root[data-ow-skin="ow-sage"] main.card input:focus { border-color: var(--color-text) !important; box-shadow: none !important; outline: none !important; }
+:root[data-ow-skin="ow-sage"] main.card input:focus-visible { outline: var(--focus-ring) !important; outline-offset: 1px !important; }
+:root[data-ow-skin="ow-sage"] main.card input:-webkit-autofill { -webkit-box-shadow: 0 0 0 40px var(--color-surface-raised) inset !important; -webkit-text-fill-color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] main.card .pw-wrapper { margin-bottom: 18px !important; }
+:root[data-ow-skin="ow-sage"] main.card .pw-toggle { color: var(--color-text-muted) !important; }
+:root[data-ow-skin="ow-sage"] main.card .remember-toggle,
+:root[data-ow-skin="ow-sage"] main.card .remember-toggle span { color: var(--color-text) !important; opacity: 1 !important; }
+:root[data-ow-skin="ow-sage"] main.card .remember-toggle .remember-dot { border-color: var(--color-rule-strong) !important; background: transparent !important; }
+:root[data-ow-skin="ow-sage"] main.card .remember-toggle .remember-check:checked + .remember-dot { background: var(--color-accent) !important; border-color: var(--color-accent) !important; }
+:root[data-ow-skin="ow-sage"] main.card #submitBtn {
+  width: 100% !important; height: var(--control-height) !important; margin-top: 10px !important; border: 0 !important; border-radius: var(--radius-2) !important;
+  background: var(--color-accent) !important; color: var(--color-on-accent) !important; font-family: var(--font-sans) !important;
+  font-size: var(--font-size-body) !important; font-weight: var(--font-weight-heading) !important; letter-spacing: 0.01em !important; box-shadow: none !important; text-transform: none !important;
+}
+:root[data-ow-skin="ow-sage"] main.card .error { background: transparent !important; border: 1px solid var(--color-error) !important; color: var(--color-error) !important; border-radius: var(--radius-1) !important; }
+:root[data-ow-skin="ow-sage"] main.card .toggle,
+:root[data-ow-skin="ow-sage"] main.card .toggle a { color: var(--color-text) !important; }
+:root[data-ow-skin="ow-sage"] .version-label { color: var(--color-text-muted) !important; font-family: var(--font-sans) !important; font-size: 12.5px !important; letter-spacing: 0.04em !important; font-variant-numeric: tabular-nums !important; opacity: 1 !important; }
+
+/* ================= hover and press ================= */
+/* Separate clickable things scale to 1.02 and their edge strengthens toward
+   ochre: a 1px ring on ::after whose opacity fades in. Only scale,
+   translate and opacity move; colour and background changes are instant
+   state changes, never transitions. Rows the cursor sweeps across (chats)
+   get the ring without the scale. Every hover sits behind a fine pointer.
+
+   The scale and the card lift use the individual `scale` and `translate`
+   properties, never `transform`, and the moving values carry no
+   !important: upstream never sets those two properties, and a transition
+   on a property with an !important declaration cannot run on the
+   compositor. Timing is asymmetric: press in 100ms, hover in 150ms,
+   release and hover out 200ms.
+
+   The ring is never put on ::after of a control that uses it upstream
+   (code-strip buttons, held-open tool dots). */
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item,
+:root[data-ow-skin="ow-sage"] .settings-nav-item,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary,
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn,
+:root[data-ow-skin="ow-sage"] main.card #submitBtn,
+:root[data-ow-skin="ow-sage"] .send-btn,
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn,
+:root[data-ow-skin="ow-sage"] .model-picker-btn,
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn,
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer button,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .copy-code,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .edit-code,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .run-code,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .use-code,
+:root[data-ow-skin="ow-sage"] .confirm-btn,
+:root[data-ow-skin="ow-sage"] .modal-header .close-btn,
+:root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn {
+  transition: scale var(--duration-release) var(--ease-out) !important;
+}
+/* every ring host is static or relative upstream (none is sticky), so
+   relative here only anchors the ring */
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item:not(.rail-minimized),
+:root[data-ow-skin="ow-sage"] .settings-nav-item,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary,
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn,
+:root[data-ow-skin="ow-sage"] main.card #submitBtn,
+:root[data-ow-skin="ow-sage"] .send-btn,
+:root[data-ow-skin="ow-sage"] .model-picker-btn,
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn,
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer button,
+:root[data-ow-skin="ow-sage"] .confirm-btn,
+:root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn { position: relative !important; }
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn::after,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item:not(.rail-minimized)::after,
+:root[data-ow-skin="ow-sage"] .settings-nav-item::after,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm::after,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add::after,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary::after,
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn::after,
+:root[data-ow-skin="ow-sage"] main.card #submitBtn::after,
+:root[data-ow-skin="ow-sage"] .send-btn::after,
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn:not(.tool-indicator)::after,
+:root[data-ow-skin="ow-sage"] .model-picker-btn::after,
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn::after,
+:root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn::after,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer button::after,
+:root[data-ow-skin="ow-sage"] .confirm-btn::after,
+:root[data-ow-skin="ow-sage"] .modal-header .close-btn::after,
+:root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn::after {
+  content: '' !important; position: absolute !important; inset: -1px !important; border-radius: inherit !important;
+  box-shadow: var(--accent-ring) !important; opacity: 0; pointer-events: none !important;
+  transition: opacity var(--duration-release) var(--ease-hover) !important; background: none !important; display: block !important;
+  width: auto !important; height: auto !important; transform: none !important; animation: none !important;
+}
+/* filled ochre controls get an outer ring so it reads against the fill */
+:root[data-ow-skin="ow-sage"] .send-btn::after,
+:root[data-ow-skin="ow-sage"] main.card #submitBtn::after,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add::after,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary::after,
+:root[data-ow-skin="ow-sage"] .confirm-btn-primary::after,
+:root[data-ow-skin="ow-sage"] .confirm-btn-danger::after { inset: -3px !important; box-shadow: var(--accent-ring-outer) !important; border-radius: 6px !important; }
+/* the Agent / Chat thumb is drawn on .mode-toggle::before; the ring sits
+   on each half */
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn::after { inset: 0 !important; }
+:root[data-ow-skin="ow-sage"] .doclib-card, :root[data-ow-skin="ow-sage"] .skill-card, :root[data-ow-skin="ow-sage"] .research-job-card, :root[data-ow-skin="ow-sage"] .gallery-card, :root[data-ow-skin="ow-sage"] .note-card { transition: translate var(--duration-release) var(--ease-out) !important; }
+@media (hover: hover) and (pointer: fine) {
+  :root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn:hover,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm:hover,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add:hover,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary:hover,
+  :root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn:hover,
+  :root[data-ow-skin="ow-sage"] main.card #submitBtn:hover,
+  :root[data-ow-skin="ow-sage"] .send-btn:not(:disabled):hover,
+  :root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn:hover,
+  :root[data-ow-skin="ow-sage"] .model-picker-btn:hover,
+  :root[data-ow-skin="ow-sage"] .mode-toggle-btn:hover,
+  :root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg-footer button:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .copy-code:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .edit-code:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .run-code:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .use-code:hover,
+  :root[data-ow-skin="ow-sage"] .confirm-btn:hover,
+  :root[data-ow-skin="ow-sage"] .modal-header .close-btn:hover,
+  :root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn:hover,
+  :root[data-ow-skin="ow-sage"] .sidebar .list-item:not(.session-item):not(#sidebar-new-chat-btn):hover,
+  :root[data-ow-skin="ow-sage"] .settings-nav-item:hover { scale: var(--hover-scale); transition-duration: var(--duration-fast) !important; }
+  /* navigation rows scale from their leading edge so the label does not drift */
+  :root[data-ow-skin="ow-sage"] .sidebar .list-item:not(.session-item),
+  :root[data-ow-skin="ow-sage"] .settings-nav-item { transform-origin: 0 50% !important; }
+  :root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] .sidebar .list-item:not(.rail-minimized):hover::after,
+  :root[data-ow-skin="ow-sage"] .settings-nav-item:hover::after,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm:hover::after,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add:hover::after,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary:hover::after,
+  :root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] main.card #submitBtn:hover::after,
+  :root[data-ow-skin="ow-sage"] .send-btn:not(:disabled):hover::after,
+  :root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn:not(.tool-indicator):hover::after,
+  :root[data-ow-skin="ow-sage"] .model-picker-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] .mode-toggle-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg-footer button:hover::after,
+  :root[data-ow-skin="ow-sage"] .confirm-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] .modal-header .close-btn:hover::after,
+  :root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn:hover::after { opacity: 1; transition-duration: var(--duration-fast) !important; }
+  :root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn:hover,
+  :root[data-ow-skin="ow-sage"] .model-picker-btn:hover span,
+  :root[data-ow-skin="ow-sage"] .sidebar-user-bar .user-bar-btn:hover,
+  :root[data-ow-skin="ow-sage"] .modal-header .close-btn:hover,
+  :root[data-ow-skin="ow-sage"] .modal-header .modal-minimize-btn:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg-footer button:hover { color: var(--color-text) !important; }
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .copy-code:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .edit-code:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .run-code:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .use-code:hover { background: var(--color-surface-raised) !important; color: var(--color-text) !important; }
+  :root[data-ow-skin="ow-sage"] .send-btn:not(:disabled):hover,
+  :root[data-ow-skin="ow-sage"] main.card #submitBtn:hover,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add:hover,
+  :root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary:hover,
+  :root[data-ow-skin="ow-sage"] .confirm-btn-primary:hover { background: var(--color-accent-hover) !important; }
+  :root[data-ow-skin="ow-sage"] .sidebar .list-item:not(.active):not(.active-session):hover,
+  :root[data-ow-skin="ow-sage"] .settings-nav-item:not(.active):hover { background: color-mix(in srgb, var(--color-surface-raised) 55%, transparent) !important; }
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body tr:hover td { background: color-mix(in srgb, var(--color-surface-raised) 60%, transparent) !important; }
+  :root[data-ow-skin="ow-sage"] .memory-item.task-card:hover { background: color-mix(in srgb, var(--color-surface-raised) 55%, transparent) !important; }
+  :root[data-ow-skin="ow-sage"] main.card .built-on a:hover,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body a:hover { color: var(--color-accent-hover) !important; }
+  :root[data-ow-skin="ow-sage"] main.card .built-on a:hover { color: var(--color-text) !important; }
+  /* cards lift by a hair (a token that reduced motion sets to 0), never
+     bounce; the edge strengthens at once. Upstream's own gallery lift and
+     red glow give way. */
+  :root[data-ow-skin="ow-sage"] .doclib-card:hover,
+  :root[data-ow-skin="ow-sage"] .skill-card:hover,
+  :root[data-ow-skin="ow-sage"] .research-job-card:hover,
+  :root[data-ow-skin="ow-sage"] .gallery-card:hover,
+  :root[data-ow-skin="ow-sage"] .note-card:hover {
+    translate: 0 var(--lift-card); border-color: var(--color-rule-strong) !important; box-shadow: none !important;
+    transition-duration: var(--duration-fast) !important;
+  }
+  :root[data-ow-skin="ow-sage"] .gallery-card:hover { transform: none !important; }
+}
+/* press: firmer than hover and the fastest step (100ms), no gating; the
+   release runs on the base rule's 200ms, so press is always quicker */
+:root[data-ow-skin="ow-sage"] .sidebar #sidebar-new-chat-btn:active,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-sm:active,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-add:active,
+:root[data-ow-skin="ow-sage"] .settings-panels .admin-btn-primary:active,
+:root[data-ow-skin="ow-sage"] #welcome-screen .incognito-btn:active,
+:root[data-ow-skin="ow-sage"] main.card #submitBtn:active,
+:root[data-ow-skin="ow-sage"] .send-btn:not(:disabled):active,
+:root[data-ow-skin="ow-sage"] .chat-input-bottom .input-icon-btn:active,
+:root[data-ow-skin="ow-sage"] .model-picker-btn:active,
+:root[data-ow-skin="ow-sage"] .mode-toggle-btn:active,
+:root[data-ow-skin="ow-sage"] #chat-history .msg-footer button:active,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .copy-code:active,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .edit-code:active,
+:root[data-ow-skin="ow-sage"] #chat-history .msg .body pre .run-code:active,
+:root[data-ow-skin="ow-sage"] .confirm-btn:active,
+:root[data-ow-skin="ow-sage"] .modal-header .close-btn:active {
+  scale: var(--press-scale);
+  transition-duration: var(--duration-press) !important;
+}
+
+/* upstream decoration that moves on its own: the New Chat plus no longer
+   spins on an overshooting curve, the send button no longer bounces after
+   a send, and layout properties (margins, widths) change at once instead
+   of animating */
+:root[data-ow-skin="ow-sage"] #sidebar-new-chat-btn svg,
+:root[data-ow-skin="ow-sage"] .rail-new-chat svg,
+:root[data-ow-skin="ow-sage"] .send-btn[data-mode="newchat"] svg { transition: none !important; }
+:root[data-ow-skin="ow-sage"] #sidebar-new-chat-btn:hover svg,
+:root[data-ow-skin="ow-sage"] .rail-new-chat:hover svg,
+:root[data-ow-skin="ow-sage"] .send-btn[data-mode="newchat"]:hover svg { transform: none !important; }
+/* Upstream springs about 45 things on overshooting curves (cubic-bezier
+   with a y above 1). In this look nothing overshoots: every transition
+   eases out (specific rules above and below keep their own curves), the
+   list cascades rise 8px on ease-out, and the little "pop" confirmations
+   (copied, checked, sent) become a short fade. Their animationend still
+   fires, so upstream's clean-up keeps working. */
+:root[data-ow-skin="ow-sage"] *, :root[data-ow-skin="ow-sage"] *::before, :root[data-ow-skin="ow-sage"] *::after { transition-timing-function: var(--ease-out) !important; }
+:root[data-ow-skin="ow-sage"] .section.section-just-expanded :is(.list-item, .models-row, .date-section-header),
+:root[data-ow-skin="ow-sage"] .mp-provider-group.mp-just-expanded .model-switch-item,
+:root[data-ow-skin="ow-sage"] [class*="just-opened"] > *,
+:root[data-ow-skin="ow-sage"] [class*="just-opened"] :is(.doclib-card, .date-section-header),
+:root[data-ow-skin="ow-sage"] [class*="just-loaded"] > * {
+  animation-name: sg-rise-support !important; animation-timing-function: var(--ease-out) !important; animation-duration: var(--duration-slow) !important;
+}
+:root[data-ow-skin="ow-sage"] .send-btn.anim-spin svg,
+:root[data-ow-skin="ow-sage"] .send-btn.anim-land svg,
+:root[data-ow-skin="ow-sage"] pre .copy-code.copied,
+:root[data-ow-skin="ow-sage"] pre .use-code.used,
+:root[data-ow-skin="ow-sage"] .md-view-toggle .md-view-opt.active,
+:root[data-ow-skin="ow-sage"] #email-lib-modal .email-lib-fab.fab-revealed,
+:root[data-ow-skin="ow-sage"] .note-checkbox.done .note-check-dot,
+:root[data-ow-skin="ow-sage"] .email-card-done.just-checked,
+:root[data-ow-skin="ow-sage"] .email-card-done.just-unchecked,
+:root[data-ow-skin="ow-sage"] .minimized-dock-chip {
+  animation-name: sg-fade !important; animation-timing-function: var(--ease-out) !important; animation-duration: var(--duration-fast) !important;
+}
+/* loading skeletons stand still on the sunk band: upstream's shimmer is a
+   looping gradient swept on background-position */
+:root[data-ow-skin="ow-sage"] [class*="skeleton"]:not(svg *),
+:root[data-ow-skin="ow-sage"] .email-inline-image-frame.is-loading { animation: none !important; background-image: none !important; }
+:root[data-ow-skin="ow-sage"] [class*="skeleton"]::before,
+:root[data-ow-skin="ow-sage"] [class*="skeleton"]::after,
+:root[data-ow-skin="ow-sage"] .email-inline-image-frame.is-loading::before,
+:root[data-ow-skin="ow-sage"] .email-inline-image-frame.is-loading::after { animation: none !important; background-image: none !important; }
+:root[data-ow-skin="ow-sage"] .gallery-card-skeleton,
+:root[data-ow-skin="ow-sage"] .session-skeleton-line { background-color: var(--color-surface-sunk) !important; }
+:root[data-ow-skin="ow-sage"] .chat-container,
+:root[data-ow-skin="ow-sage"] .sidebar .list-item-plus-label { transition-property: opacity, transform !important; }
+:root[data-ow-skin="ow-sage"] #chat-history [class*="agent-tool-output"] { transition: none !important; }
+
+/* ================= motion ================= */
+@keyframes sg-rise-lead { from { opacity: 0; transform: translateY(var(--rise-lead)); } }
+@keyframes sg-rise-support { from { opacity: 0; transform: translateY(var(--rise-support)); } }
+@keyframes sg-fade { from { opacity: 0; } }
+@keyframes sg-pop { from { opacity: 0; scale: var(--pop-scale); } }
+@keyframes sg-exit { to { opacity: 0; scale: var(--exit-scale); } }
+@keyframes sg-rule-draw { from { transform: scaleX(0); } }
+
+/* upstream's own welcome motion (a clip-path wipe and a bouncy slide on
+   `top`) gives way to the look's; the composer's margin transition gives way
+   to motion.js's transform slide */
+:root[data-ow-skin="ow-sage"] #welcome-screen { animation: none !important; transition: opacity var(--duration-fast) var(--ease-hover), transform var(--duration-fast) var(--ease-out) !important; }
+:root[data-ow-skin="ow-sage"] #welcome-screen .welcome-name { animation: none !important; clip-path: none !important; }
+:root[data-ow-skin="ow-sage"] .chat-container .chat-input-bar { transition: none !important; }
+
+/* Page load, rare tier only (welcome and login). The lead rises 16px on the
+   spring, supporting lines 8px on ease-out, decoration only fades; varied
+   steps, all in by about 700ms. Like upstream it waits for
+   body.welcome-ready (fonts and layout settled), and it starts
+   --delay-enter (150ms) late so it is not spent behind the loader's fade.
+
+   The welcome entrance needs .chat-container.ow-sg-first, which motion.js adds at
+   start-up and removes once the entrance has played: with no JavaScript
+   nothing plays, and New Chat (which shows the welcome again) never
+   replays it. Fill mode `backwards`: at rest every element is in its final
+   state and no transform is left pinned. */
+:root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-name { animation: sg-rise-lead var(--duration-enter) var(--ease-spring) var(--delay-enter) backwards !important; }
+:root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-sub { animation: sg-rise-support var(--duration-enter) var(--ease-out) calc(var(--delay-enter) + 70ms) backwards !important; }
+:root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-sub::before { animation: sg-rule-draw var(--duration-draw) var(--ease-draw) calc(var(--delay-enter) + 120ms) backwards !important; }
+:root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first .chat-input-bar { animation: sg-rise-support var(--duration-enter) var(--ease-out) calc(var(--delay-enter) + 110ms) backwards !important; }
+:root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-tip { animation: sg-fade var(--duration-enter) var(--ease-out) calc(var(--delay-enter) + 150ms) backwards !important; }
+:root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .incognito-btn { animation: sg-fade var(--duration-enter) var(--ease-out) calc(var(--delay-enter) + 160ms) backwards !important; }
+:root[data-ow-skin="ow-sage"] main.card h1.logo { animation: sg-rise-lead var(--duration-enter) var(--ease-spring) backwards !important; }
+:root[data-ow-skin="ow-sage"] main.card h1.logo::after { animation: sg-rule-draw var(--duration-draw) var(--ease-draw) 120ms backwards !important; }
+:root[data-ow-skin="ow-sage"] main.card .built-on { animation: sg-fade var(--duration-enter) var(--ease-out) 60ms backwards !important; }
+:root[data-ow-skin="ow-sage"] main.card form { animation: sg-rise-support var(--duration-enter) var(--ease-out) 100ms backwards !important; }
+:root[data-ow-skin="ow-sage"] main.card .toggle { animation: sg-fade var(--duration-enter) var(--ease-out) 150ms backwards !important; }
+
+/* Messages never animate in CSS: upstream's msg-enter would replay on every
+   message each time a chat is opened. motion.js rises only turns that are
+   really new (one or two at a time, never a history render). */
+:root[data-ow-skin="ow-sage"] #chat-history .msg { animation: none !important; }
+
+/* Windows: occasional tier, 250ms from .96 (opacity and the `scale`
+   property, so a snapped window's inline transform does not block it),
+   and a 140ms exit that upstream's close waits for (animationend). Phones
+   keep upstream's bottom-sheet slide, which its touch drag depends on. */
+@media (min-width: 769px) {
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .memory-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .settings-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .doclib-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .gallery-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .preset-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .tasks-modal-content:not(.modal-closing) { animation: sg-pop var(--duration-modal) var(--ease-out) backwards !important; }
+  :root[data-ow-skin="ow-sage"] .modal > .modal-content.modal-closing,
+  :root[data-ow-skin="ow-sage"] .modal > .memory-modal-content.modal-closing,
+  :root[data-ow-skin="ow-sage"] .modal > .settings-modal-content.modal-closing,
+  :root[data-ow-skin="ow-sage"] .modal > .doclib-modal-content.modal-closing,
+  :root[data-ow-skin="ow-sage"] .modal > .gallery-modal-content.modal-closing,
+  :root[data-ow-skin="ow-sage"] .modal > .preset-modal-content.modal-closing,
+  :root[data-ow-skin="ow-sage"] .modal > .tasks-modal-content.modal-closing { animation: sg-exit var(--duration-exit) var(--ease-out) both !important; }
+  /* a snapped window jumps to its tile (motion.js morphs it); upstream's
+     inline snap transition overshoots on left, top, width and height */
+  :root[data-ow-skin="ow-sage"] .modal > .modal-content,
+  :root[data-ow-skin="ow-sage"] .research-overlay > .research-pane { transition: none !important; }
+}
+/* menus grow from their trigger, 200ms from .96 */
+:root[data-ow-skin="ow-sage"] .model-picker-menu:not(.hidden),
+:root[data-ow-skin="ow-sage"] .overflow-menu:not(.hidden),
+:root[data-ow-skin="ow-sage"] .export-dropdown-menu:not(.hidden),
+:root[data-ow-skin="ow-sage"] .dropdown.session-dropdown { animation: sg-pop var(--duration-normal) var(--ease-out) backwards !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* fewer and gentler: movement goes (the tokens zero it), opacity and
+     colour stay, choreography collapses to one short fade with no delays.
+     Only the entrances that would play anyway are touched. */
+  :root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-name,
+  :root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-sub,
+  :root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first .chat-input-bar,
+  :root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-tip,
+  :root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .incognito-btn,
+  :root[data-ow-skin="ow-sage"] main.card h1.logo,
+  :root[data-ow-skin="ow-sage"] main.card .built-on,
+  :root[data-ow-skin="ow-sage"] main.card form,
+  :root[data-ow-skin="ow-sage"] main.card .toggle,
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .memory-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .settings-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .doclib-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .gallery-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .preset-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .modal:not(.hidden) > .tasks-modal-content:not(.modal-closing),
+  :root[data-ow-skin="ow-sage"] .model-picker-menu:not(.hidden),
+  :root[data-ow-skin="ow-sage"] .overflow-menu:not(.hidden),
+  :root[data-ow-skin="ow-sage"] .export-dropdown-menu:not(.hidden),
+  :root[data-ow-skin="ow-sage"] .dropdown.session-dropdown { animation-name: sg-fade !important; animation-delay: 0ms !important; animation-duration: var(--duration-fast) !important; }
+  :root[data-ow-skin="ow-sage"] body.welcome-ready .chat-container.welcome-active.ow-sg-first #welcome-screen .welcome-sub::before,
+  :root[data-ow-skin="ow-sage"] main.card h1.logo::after { animation: none !important; }
+  :root[data-ow-skin="ow-sage"] .mode-toggle::before { transition: none !important; }
+  /* upstream entrances that still move: a fade instead */
+  :root[data-ow-skin="ow-sage"] .task-card,
+  :root[data-ow-skin="ow-sage"] .cal-event-row,
+  :root[data-ow-skin="ow-sage"] .tour-hint { animation-name: sg-fade !important; }
+  :root[data-ow-skin="ow-sage"] .send-btn svg { animation: none !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-ow-skin="ow-sage"] #styled-confirm-overlay, :root[data-ow-skin="ow-sage"] .search-overlay { background: color-mix(in srgb, var(--color-text) 34%, var(--color-canvas)) !important; }
+}
+@media (prefers-contrast: more) {
+  :root[data-ow-skin="ow-sage"] { --color-rule: var(--sg-sage-600); --color-text-muted: var(--sg-sage-950); }
+}
+
+/* ================= narrow columns and phones ================= */
+/* the ledger drops to one column when its own column is narrow (a sidebar
+   open at 768-1100px), not only when the window is */
+@container sg-ledger (max-width: 700px) {
+  :root[data-ow-skin="ow-sage"] #chat-history .msg { grid-template-columns: minmax(0, 1fr) !important; padding-top: 14px !important; }
+  :root[data-ow-skin="ow-sage"] #chat-history .msg > * { grid-column: 1 !important; }
+  :root[data-ow-skin="ow-sage"] #chat-history .msg > .role { grid-row: auto !important; flex-direction: row !important; align-items: baseline !important; gap: 10px !important; margin-bottom: 8px !important; }
+  :root[data-ow-skin="ow-sage"] #chat-history .agent-thread { margin-left: 0 !important; }
+}
+@media (min-width: 721px) {
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body table { display: table !important; overflow: visible !important; }
+}
+@media (max-width: 720px) {
+  /* tables scroll sideways rather than squeeze; figures stay tabular */
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body table { display: block !important; overflow-x: auto !important; }
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body th,
+  :root[data-ow-skin="ow-sage"] #chat-history .msg .body td { white-space: nowrap !important; }
+  :root[data-ow-skin="ow-sage"] body:not(.fullwidth-chat) .chat-history { padding-left: 16px !important; padding-right: 16px !important; scrollbar-gutter: auto; }
+  :root[data-ow-skin="ow-sage"] #welcome-screen .welcome-name { font-size: clamp(var(--font-size-display-1), 15vw, var(--font-size-display-2)) !important; gap: 12px !important; }
+  :root[data-ow-skin="ow-sage"] main.card h1.logo span { font-size: var(--font-size-display-2) !important; }
+  :root[data-ow-skin="ow-sage"] .settings-panels { padding: 8px 18px 24px !important; }
+  :root[data-ow-skin="ow-sage"] .modal-header { padding: 18px 16px 12px 20px !important; }
+  :root[data-ow-skin="ow-sage"] .modal-header h4, :root[data-ow-skin="ow-sage"] .modal-header h4 span[id], :root[data-ow-skin="ow-sage"] .modal-header h3 { font-size: 32px !important; }
+}
+@media (max-width: 768px) {
+  /* the sidebar becomes a sheet over the page: it gets the floating shadow,
+     and the page behind it takes the moss scrim (never taps or swipes) */
+  :root[data-ow-skin="ow-sage"] .sidebar:not(.right-side) { box-shadow: var(--shadow-xl) !important; border-right: 0 !important; }
+  :root[data-ow-skin="ow-sage"] .sidebar.right-side { box-shadow: var(--shadow-xl) !important; border-left: 0 !important; }
+  :root[data-ow-skin="ow-sage"]:not(.ody-sidebar-off):not(.ody-mobile-startup-sidebar-hidden) body:not(.sidebar-collapsed):has(> .sidebar:not(.hidden)) .chat-container::after {
+    content: '' !important; position: fixed !important; inset: 0 !important; z-index: 60 !important;
+    background: var(--color-scrim) !important; pointer-events: none !important;
+    animation: sg-fade var(--duration-normal) var(--ease-out) backwards !important;
+  }
+}
+@media (max-width: 720px), (pointer: coarse) {
+  /* 16px fields so phones never zoom on focus */
+  :root[data-ow-skin="ow-sage"] .modal-content input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  :root[data-ow-skin="ow-sage"] .modal-content select,
+  :root[data-ow-skin="ow-sage"] .modal-content textarea,
+  :root[data-ow-skin="ow-sage"] .settings-panels input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  :root[data-ow-skin="ow-sage"] .settings-nav-search { font-size: var(--font-size-body) !important; }
+}

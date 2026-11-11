@@ -456,7 +456,10 @@ VARIABLE_NOTES: dict[str, tuple[str, str, str]] = {
     "ODYSSEUS_COPILOT_CLIENT_ID": (
         "Model routing and providers", USER,
         "GitHub OAuth client id for the Copilot device flow. The default is the "
-        "public VS Code client id; override it only with your own allow-listed app.",
+        "public VS Code client id; override it only with your own allow-listed app. "
+        "OpenWings: the Copilot and ChatGPT Subscription sign-ins (which pose as "
+        "VS Code and OpenAI's Codex app) and Kimi Code's borrowed User-Agent are "
+        "off unless the deployment sets `WINGS_ALLOW_UNOFFICIAL_SIGNIN=1`.",
     ),
     "ODYSSEUS_COPILOT_API_VERSION": (
         "Model routing and providers", USER,

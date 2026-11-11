@@ -138,6 +138,11 @@ def _resolve_model(spec: str, owner: Optional[str] = None, model_type: Optional[
                 base, api_key = resolve_endpoint_runtime(ep, owner=owner)
             except Exception:
                 continue
+            # Wings: skip a switched-off sign-in (wings/unofficial.py); no
+            # request goes to it.
+            from wings.unofficial import url_blocked as _wings_url_blocked
+            if _wings_url_blocked(base):
+                continue
             provider = _detect_provider(base)
             headers = build_headers(api_key, base)
 
