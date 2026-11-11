@@ -2455,7 +2455,7 @@ function initializeEventListeners() {
 	    function setComposerPlaceholder(width) {
 	      if (!textarea) return;
 	      if (_isMobile && _placeholderHintOn) {
-	        textarea.setAttribute('placeholder', 'Swipe to toggle plan');
+	        textarea.setAttribute('placeholder', 'Swipe sideways for plan mode');
 	        return;
 	      }
 	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message OpenWings...');
@@ -2654,7 +2654,7 @@ function initializeEventListeners() {
       chk.checked = !chk.checked;
       incognitoBtn.classList.toggle('active', chk.checked);
       const tipEl = el('welcome-tip');
-      incognitoBtn.title = chk.checked ? 'Disable Nobody mode' : 'Enable Nobody mode — no memory or skill injection, no history saved';
+      incognitoBtn.title = chk.checked ? 'Leave Incognito' : 'Incognito: this chat is not saved, and memory and skills are not used';
       const welcomeName = document.querySelector('.welcome-name');
       if (chk.checked) {
         try {
@@ -2662,10 +2662,10 @@ function initializeEventListeners() {
           const box = el('chat-history');
           if (box) box.innerHTML = '';
         } catch (_) {}
-        incognitoBtn.innerHTML = INCOGNITO_EYE_CLOSED + '<span class="incognito-label">Nobody</span>';
+        incognitoBtn.innerHTML = INCOGNITO_EYE_CLOSED + '<span class="incognito-label">Incognito</span>';
         if (welcomeName) {
           welcomeName.dataset.originalHtml = welcomeName.innerHTML;
-          welcomeName.innerHTML = '<svg class="welcome-boat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>Nobody';
+          welcomeName.innerHTML = '<svg class="welcome-boat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>Incognito';
           // Restart the L→R clip-wipe reveal on the new label
           welcomeName.style.animation = 'none';
           welcomeName.offsetHeight;
@@ -2675,13 +2675,13 @@ function initializeEventListeners() {
         const welcomeSub = el('welcome-sub');
         if (welcomeSub) {
           if (!welcomeSub.dataset.originalText) welcomeSub.dataset.originalText = welcomeSub.textContent;
-          welcomeSub.textContent = "Who am I? I'm nobody.";
+          welcomeSub.textContent = 'Nothing from this chat is kept.';
           welcomeSub.style.display = '';
         }
         if (tipEl) {
           tipEl.dataset.originalTip = tipEl.textContent;
           tipEl.classList.add('nobody-session-note');
-          tipEl.innerHTML = '<span>No memory or skill activation.</span><span>Temporary session \u2014 won\u2019t be saved.</span>';
+          tipEl.innerHTML = '<span>Memory and skills are off.</span><span>This chat disappears when you leave.</span>';
           tipEl.style.opacity = '0.5';
           tipEl.style.marginTop = '16px';
         }
@@ -2717,7 +2717,7 @@ function initializeEventListeners() {
         ts.research = false;
         Storage.setJSON(Storage.KEYS.TOGGLES, ts);
       } else {
-        incognitoBtn.innerHTML = INCOGNITO_EYE_OPEN + '<span class="incognito-label">Nobody</span>';
+        incognitoBtn.innerHTML = INCOGNITO_EYE_OPEN + '<span class="incognito-label">Incognito</span>';
         if (welcomeName && welcomeName.dataset.originalHtml) {
           welcomeName.innerHTML = welcomeName.dataset.originalHtml;
           // Restart the L→R clip-wipe reveal on the restored label

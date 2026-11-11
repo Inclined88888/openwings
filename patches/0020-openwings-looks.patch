@@ -15,8 +15,68 @@ before.
 Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
+diff --git a/static/app.js b/static/app.js
+index 3ce00e9..4af3650 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -2455,7 +2455,7 @@ function initializeEventListeners() {
+ 	    function setComposerPlaceholder(width) {
+ 	      if (!textarea) return;
+ 	      if (_isMobile && _placeholderHintOn) {
+-	        textarea.setAttribute('placeholder', 'Swipe to toggle plan');
++	        textarea.setAttribute('placeholder', 'Swipe sideways for plan mode');
+ 	        return;
+ 	      }
+ 	      textarea.setAttribute('placeholder', width < PLACEHOLDER_COMPACT_WIDTH ? 'Message...' : 'Message OpenWings...');
+@@ -2654,7 +2654,7 @@ function initializeEventListeners() {
+       chk.checked = !chk.checked;
+       incognitoBtn.classList.toggle('active', chk.checked);
+       const tipEl = el('welcome-tip');
+-      incognitoBtn.title = chk.checked ? 'Disable Nobody mode' : 'Enable Nobody mode — no memory or skill injection, no history saved';
++      incognitoBtn.title = chk.checked ? 'Leave Incognito' : 'Incognito: this chat is not saved, and memory and skills are not used';
+       const welcomeName = document.querySelector('.welcome-name');
+       if (chk.checked) {
+         try {
+@@ -2662,10 +2662,10 @@ function initializeEventListeners() {
+           const box = el('chat-history');
+           if (box) box.innerHTML = '';
+         } catch (_) {}
+-        incognitoBtn.innerHTML = INCOGNITO_EYE_CLOSED + '<span class="incognito-label">Nobody</span>';
++        incognitoBtn.innerHTML = INCOGNITO_EYE_CLOSED + '<span class="incognito-label">Incognito</span>';
+         if (welcomeName) {
+           welcomeName.dataset.originalHtml = welcomeName.innerHTML;
+-          welcomeName.innerHTML = '<svg class="welcome-boat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>Nobody';
++          welcomeName.innerHTML = '<svg class="welcome-boat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>Incognito';
+           // Restart the L→R clip-wipe reveal on the new label
+           welcomeName.style.animation = 'none';
+           welcomeName.offsetHeight;
+@@ -2675,13 +2675,13 @@ function initializeEventListeners() {
+         const welcomeSub = el('welcome-sub');
+         if (welcomeSub) {
+           if (!welcomeSub.dataset.originalText) welcomeSub.dataset.originalText = welcomeSub.textContent;
+-          welcomeSub.textContent = "Who am I? I'm nobody.";
++          welcomeSub.textContent = 'Nothing from this chat is kept.';
+           welcomeSub.style.display = '';
+         }
+         if (tipEl) {
+           tipEl.dataset.originalTip = tipEl.textContent;
+           tipEl.classList.add('nobody-session-note');
+-          tipEl.innerHTML = '<span>No memory or skill activation.</span><span>Temporary session \u2014 won\u2019t be saved.</span>';
++          tipEl.innerHTML = '<span>Memory and skills are off.</span><span>This chat disappears when you leave.</span>';
+           tipEl.style.opacity = '0.5';
+           tipEl.style.marginTop = '16px';
+         }
+@@ -2717,7 +2717,7 @@ function initializeEventListeners() {
+         ts.research = false;
+         Storage.setJSON(Storage.KEYS.TOGGLES, ts);
+       } else {
+-        incognitoBtn.innerHTML = INCOGNITO_EYE_OPEN + '<span class="incognito-label">Nobody</span>';
++        incognitoBtn.innerHTML = INCOGNITO_EYE_OPEN + '<span class="incognito-label">Incognito</span>';
+         if (welcomeName && welcomeName.dataset.originalHtml) {
+           welcomeName.innerHTML = welcomeName.dataset.originalHtml;
+           // Restart the L→R clip-wipe reveal on the restored label
 diff --git a/static/index.html b/static/index.html
-index a117b24..9d3c978 100644
+index a117b24..050e3c2 100644
 --- a/static/index.html
 +++ b/static/index.html
 @@ -26,6 +26,14 @@
@@ -34,11 +94,82 @@ index a117b24..9d3c978 100644
        if (t && t.colors) {
          var s = document.documentElement.style;
          var c = t.colors;
+@@ -1022,20 +1030,20 @@
+          mobile) so the page always exposes a single level-1 heading. -->
+     <h1 class="a11y-visually-hidden">OpenWings</h1>
+     <div class="chat-top-bar">
+-      <button type="button" class="incognito-indicator" id="incognito-indicator" title="Nobody mode active — click to deactivate" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg></button>
++      <button type="button" class="incognito-indicator" id="incognito-indicator" title="Incognito is on. Click to leave" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg></button>
+       <div class="chat-meta-overlay"><span id="current-meta">OpenWings</span><span id="current-meta-count" class="chat-meta-count" aria-hidden="true"></span><span id="session-cost-display" class="session-cost-display" style="display:none;"></span><button type="button" class="chat-context-pill" id="chat-context-pill" title="Chat context" hidden><span class="chat-context-dot"></span><span id="chat-context-pill-label">0%</span></button><span class="export-dropdown-wrap" id="export-dropdown-wrap"><button type="button" class="export-dl-btn" id="export-dl-btn" title="More"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button><div class="export-dropdown-menu" id="export-dropdown-menu"><div class="export-dropdown-item" id="export-rename-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span><span>Rename</span></div><div class="export-dropdown-item" id="export-compact-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg></span><span class="export-compact-pill">Compact</span></div><div class="export-dropdown-item" id="export-copy-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span>Copy Chat</span></div><div class="export-dropdown-item" id="export-pdf-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2h2a1.5 1.5 0 0 1 0 3H9z"/></svg></span><span>PDF</span></div><div class="export-dropdown-item dropdown-item-danger" id="export-delete-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span><span>Delete Chat</span></div></div></span></div>    </div>
+     <div id="welcome-screen">
+       <div class="welcome-name"><img class="welcome-boat" src="/static/openwings/openwings-tile.svg" alt="">OpenWings</div>
+-      <div class="welcome-sub" id="welcome-sub">A voyage begins.</div>
++      <div class="welcome-sub" id="welcome-sub">Your private workspace. Ready when you are.</div>
+       <div class="welcome-tip" id="welcome-tip" role="note"></div>
+-      <button type="button" class="incognito-btn" id="incognito-btn" title="Enable Nobody mode — no memory or skill injection, no history saved">
++      <button type="button" class="incognito-btn" id="incognito-btn" title="Incognito: this chat is not saved, and memory and skills are not used">
+         <svg class="eye-open" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+         </svg>
+         <svg class="eye-blinded" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/>
+         </svg>
+-        <span class="incognito-label">Nobody</span>
++        <span class="incognito-label">Incognito</span>
+       </button>
+       <div id="welcome-setup" style="display:none"></div>
+     </div>
+@@ -1051,7 +1059,7 @@
+       ];
+       var phone = [
+         'Tip: Long-press a chat for actions.',
+-        'Tip: Nobody mode saves no history.',
++        'Tip: Incognito chats are not saved.',
+         'Tip: Agent mode can use tools.',
+         'Tip: Compare tests models side by side.',
+         'Tip: Use + to attach files.',
+diff --git a/static/js/sessions.js b/static/js/sessions.js
+index 0a910ef..84f02fa 100644
+--- a/static/js/sessions.js
++++ b/static/js/sessions.js
+@@ -66,8 +66,8 @@ function _forceExitIncognitoUi() {
+   const btn = document.getElementById('incognito-btn');
+   if (btn) {
+     btn.classList.remove('active');
+-    btn.title = 'Enable Nobody mode — no memory or skill injection, no history saved';
+-    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="incognito-label">Nobody</span>';
++    btn.title = 'Incognito: this chat is not saved, and memory and skills are not used';
++    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="incognito-label">Incognito</span>';
+   }
+ 
+   const welcomeName = document.querySelector('.welcome-name');
+@@ -2511,7 +2511,7 @@ export async function materializePendingSession() {
+     const incognitoChk = document.getElementById('incognito-toggle');
+     const isIncognito = incognitoChk && incognitoChk.checked;
+     const base = (pending.modelId || 'model').split('/').pop();
+-    const name = isIncognito ? 'Nobody' : `${base} ${new Date().toLocaleTimeString()}`;
++    const name = isIncognito ? 'Incognito' : `${base} ${new Date().toLocaleTimeString()}`;
+ 
+     const fd = new FormData();
+     fd.append('name', name);
+diff --git a/static/js/slashCommands.js b/static/js/slashCommands.js
+index bab2bcb..b4b806b 100644
+--- a/static/js/slashCommands.js
++++ b/static/js/slashCommands.js
+@@ -1223,7 +1223,7 @@ async function _cmdToggleIncognito(args, ctx) {
+   const sessions = sessionModule.getSessions();
+   const sess = ctx.sid ? sessions.find(s => s.id === ctx.sid) : null;
+   if (sess && sess.message_count > 0) {
+-    slashReply(`Can't toggle Nobody mode mid-conversation — start a new session first`);
++    slashReply(`Incognito can only start in a new chat. Start a new chat first`);
+     return true;
+   }
+   const v = (args[0]||'').toLowerCase();
 diff --git a/static/js/theme.js b/static/js/theme.js
-index 1cb0ab2..e5c665b 100644
+index 1cb0ab2..0b2a66d 100644
 --- a/static/js/theme.js
 +++ b/static/js/theme.js
-@@ -9,6 +9,14 @@ import { makeWindowDraggable } from './windowDrag.js';
+@@ -9,6 +9,12 @@ import { makeWindowDraggable } from './windowDrag.js';
  import { snapModalToZone } from './tileManager.js?v=20260910responsivebounds1';
  
  export const THEMES = {
@@ -46,14 +177,12 @@ index 1cb0ab2..e5c665b 100644
 +  // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
 +  'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
 +  'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#8FC6CF' },
-+  'ow-fieldbook':       { bg:'#F6F1E7', fg:'#2B2A26', panel:'#FCF9F3', border:'#E2D9C8', red:'#33604A' },
-+  'ow-fieldbook-night': { bg:'#1C1E1A', fg:'#E8E3D7', panel:'#262A23', border:'#343A30', red:'#9CCBA9' },
 +  'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
 +  'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#E8919F' },
    dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
    light:      { bg:'#f3f5f7', fg:'#26313a', panel:'#ffffff', border:'#cbd3da', red:'#b34d5c' },
    midnight:   { bg:'#0d1117', fg:'#c9d1d9', panel:'#161b22', border:'#30363d', red:'#f85149' },
-@@ -34,11 +42,17 @@ export const THEMES = {
+@@ -34,11 +40,16 @@ export const THEMES = {
    yoyo:       { bg:'#211f23', fg:'#dfdbd7', panel:'#141415', border:'#3e5146', red:'#e09d6c' },
  };
  
@@ -70,13 +199,12 @@ index 1cb0ab2..e5c665b 100644
 +const THEME_DISPLAY_NAMES = {
 +  ocean: 'starfield',
 +  'ow-duet': 'Duet', 'ow-duet-night': 'Duet night',
-+  'ow-fieldbook': 'Fieldbook', 'ow-fieldbook-night': 'Fieldbook night',
 +  'ow-hush': 'Hush', 'ow-hush-night': 'Hush night',
 +};
  const LS_KEY = 'odysseus-theme';
  const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
  
-@@ -522,7 +536,17 @@ export function getSaved() {
+@@ -522,7 +533,17 @@ export function getSaved() {
    return obj;
  }
  
@@ -94,7 +222,7 @@ index 1cb0ab2..e5c665b 100644
    const obj = { name, colors };
    if (opts) {
      if (normalizeFont(opts.font) !== DEFAULT_FONT) obj.font = normalizeFont(opts.font);
-@@ -2304,6 +2328,7 @@ async function _initWithSync() {
+@@ -2304,6 +2325,7 @@ async function _initWithSync() {
        }
        Storage.setJSON(LS_KEY, serverTheme);
        applyColors(serverTheme.colors);
@@ -102,7 +230,7 @@ index 1cb0ab2..e5c665b 100644
      }
    }
    // Also sync custom themes from server
-@@ -2328,3 +2353,11 @@ if (document.readyState === 'loading') {
+@@ -2328,3 +2350,11 @@ if (document.readyState === 'loading') {
  } else {
    _initWithSync();
  }

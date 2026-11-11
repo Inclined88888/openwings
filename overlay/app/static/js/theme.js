@@ -13,8 +13,6 @@ export const THEMES = {
   // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
   'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
   'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#8FC6CF' },
-  'ow-fieldbook':       { bg:'#F6F1E7', fg:'#2B2A26', panel:'#FCF9F3', border:'#E2D9C8', red:'#33604A' },
-  'ow-fieldbook-night': { bg:'#1C1E1A', fg:'#E8E3D7', panel:'#262A23', border:'#343A30', red:'#9CCBA9' },
   'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
   'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#E8919F' },
   dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
@@ -50,7 +48,6 @@ const DEFAULT_THEME = OW_DEFAULT_LOOK + ((typeof window !== 'undefined' && windo
 const THEME_DISPLAY_NAMES = {
   ocean: 'starfield',
   'ow-duet': 'Duet', 'ow-duet-night': 'Duet night',
-  'ow-fieldbook': 'Fieldbook', 'ow-fieldbook-night': 'Fieldbook night',
   'ow-hush': 'Hush', 'ow-hush-night': 'Hush night',
 };
 const LS_KEY = 'odysseus-theme';
