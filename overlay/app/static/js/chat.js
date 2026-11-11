@@ -5248,7 +5248,9 @@ import { invalidateSettings } from './appConfig.js';
                 _removeThinkingSpinner();
                 const budgetDiv = document.createElement('div');
                 budgetDiv.style.cssText = 'font-size:11px;opacity:0.6;font-style:italic;padding:4px 8px;margin:4px 0;';
-                budgetDiv.textContent = `Tool budget reached (${json.used}/${json.limit} calls). Agent stopped.`;
+                budgetDiv.textContent = json.message
+                  ? String(json.message)
+                  : `Tool budget reached (${json.used}/${json.limit} calls). Agent stopped.`;
                 const chatBox = document.getElementById('chat-history');
                 chatBox.appendChild(budgetDiv);
 

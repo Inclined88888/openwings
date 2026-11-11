@@ -1,0 +1,105 @@
+Wings patch 0013: hard token and spend caps for agent runs
+
+Upstream caps an agent run by rounds and tool calls only; it tracks
+tokens and estimated cost for display but nothing stops on them.
+OpenManus can stop on a token count (input tokens only, off by default).
+Wings counts input and output tokens and estimated dollars, per run and
+per person per day, including scheduled tasks; see wings/budget.py.
+
+  * src/agent_loop.py: the run's usage_buckets list is a wings RunUsage,
+    which counts each round as upstream records it (all four sites). A
+    person whose daily cap is used up gets a message instead of a run.
+    Before any tool of a round runs, a run or daily cap that is reached
+    stops the run through upstream's budget_exceeded path.
+  * routes/chat_helpers.py: _enforce_chat_privileges refuses a new chat
+    or agent message with 429 when the daily cap is used up (admins
+    included); accumulate_token_usage counts plain chat turns.
+  * static/js/chat.js: budget_exceeded shows the message it carries.
+
+All caps are off unless set in .env (WINGS_RUN_MAX_TOKENS,
+WINGS_RUN_MAX_USD, WINGS_DAY_MAX_TOKENS, WINGS_DAY_MAX_USD).
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/routes/chat_helpers.py b/routes/chat_helpers.py
+index eb0bfc3..0eb45bf 100644
+--- a/routes/chat_helpers.py
++++ b/routes/chat_helpers.py
+@@ -485,6 +485,12 @@ def _enforce_chat_privileges(request, sess) -> None:
+         user = effective_user(request)
+     except Exception:
+         user = None
++    # Wings: daily token and spend caps apply to everyone, admins included
++    # (wings/budget.py; off unless set in .env).
++    from wings import budget as _wings_budget
++    _wings_stop = _wings_budget.day_exhausted(user or None)
++    if _wings_stop:
++        raise HTTPException(429, _wings_stop)
+     if not user:
+         return
+     auth_manager = getattr(getattr(request.app, "state", None), "auth_manager", None)
+@@ -1299,6 +1305,10 @@ async def build_chat_context(
+ 
+ def accumulate_token_usage(session_id: str, metrics: dict):
+     """Add input/output token counts (and USD cost) to the session's totals."""
++    # Wings: plain chat turns count toward the daily caps (agent runs are
++    # counted round by round in the agent loop).
++    from wings import budget as _wings_budget
++    _wings_budget.record_chat_turn(session_id, metrics)
+     in_t = metrics.get("input_tokens", 0)
+     out_t = metrics.get("output_tokens", 0)
+     cost = metrics.get("cost_usd")
+diff --git a/src/agent_loop.py b/src/agent_loop.py
+index aaca7bd..59d266e 100644
+--- a/src/agent_loop.py
++++ b/src/agent_loop.py
+@@ -24739,7 +24739,16 @@ async def stream_agent_loop(
+     actual_endpoint_id = requested_endpoint_id
+     actual_endpoint_label = requested_endpoint_label
+     actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
+-    usage_buckets = []
++    # Wings: the run's usage list counts tokens and estimated cost as each
++    # round is recorded, for the run and daily caps (wings/budget.py).
++    from wings import budget as _wings_budget
++    usage_buckets = _wings_budget.RunUsage(owner)
++    _wings_budget_stop = _wings_budget.day_exhausted(owner)
++    if _wings_budget_stop:
++        yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
++        yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
++        yield "data: [DONE]\n\n"
++        return
+     total_tool_calls = 0  # for budget enforcement
+     _ody_notes_tool_completed = False
+     _qwen_terminal_summary_completed = False
+@@ -32215,6 +32224,15 @@ async def stream_agent_loop(
+                 _workspace_mutation_epoch,
+                 _browser_state_epoch,
+             )
++            # --- Wings: token and spend caps (checked before any tool runs) ---
++            if _wings_budget_stop is None:
++                _wings_budget_stop = usage_buckets.exceeded()
++            if _wings_budget_stop:
++                if _runtime_action is not None:
++                    _runtime_action.finish({'blocked': True, 'exit_code': 1, 'error': 'token or spend limit reached'})
++                yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
++                budget_hit = True
++                break
+             # --- Tool budget check ---
+             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
+                 if _runtime_action is not None:
+diff --git a/static/js/chat.js b/static/js/chat.js
+index 299b16d..7802487 100644
+--- a/static/js/chat.js
++++ b/static/js/chat.js
+@@ -5248,7 +5248,9 @@ import { invalidateSettings } from './appConfig.js';
+                 _removeThinkingSpinner();
+                 const budgetDiv = document.createElement('div');
+                 budgetDiv.style.cssText = 'font-size:11px;opacity:0.6;font-style:italic;padding:4px 8px;margin:4px 0;';
+-                budgetDiv.textContent = `Tool budget reached (${json.used}/${json.limit} calls). Agent stopped.`;
++                budgetDiv.textContent = json.message
++                  ? String(json.message)
++                  : `Tool budget reached (${json.used}/${json.limit} calls). Agent stopped.`;
+                 const chatBox = document.getElementById('chat-history');
+                 chatBox.appendChild(budgetDiv);
+ 

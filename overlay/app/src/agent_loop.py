@@ -24739,7 +24739,16 @@ async def stream_agent_loop(
     actual_endpoint_id = requested_endpoint_id
     actual_endpoint_label = requested_endpoint_label
     actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
-    usage_buckets = []
+    # Wings: the run's usage list counts tokens and estimated cost as each
+    # round is recorded, for the run and daily caps (wings/budget.py).
+    from wings import budget as _wings_budget
+    usage_buckets = _wings_budget.RunUsage(owner)
+    _wings_budget_stop = _wings_budget.day_exhausted(owner)
+    if _wings_budget_stop:
+        yield f'data: {json.dumps({"delta": _wings_budget_stop})}\n\n'
+        yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
+        yield "data: [DONE]\n\n"
+        return
     total_tool_calls = 0  # for budget enforcement
     _ody_notes_tool_completed = False
     _qwen_terminal_summary_completed = False
@@ -32215,6 +32224,15 @@ async def stream_agent_loop(
                 _workspace_mutation_epoch,
                 _browser_state_epoch,
             )
+            # --- Wings: token and spend caps (checked before any tool runs) ---
+            if _wings_budget_stop is None:
+                _wings_budget_stop = usage_buckets.exceeded()
+            if _wings_budget_stop:
+                if _runtime_action is not None:
+                    _runtime_action.finish({'blocked': True, 'exit_code': 1, 'error': 'token or spend limit reached'})
+                yield f'data: {json.dumps({"type": "budget_exceeded", "kind": "spend", "message": _wings_budget_stop})}\n\n'
+                budget_hit = True
+                break
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 if _runtime_action is not None:

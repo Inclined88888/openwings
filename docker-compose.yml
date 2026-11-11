@@ -101,6 +101,11 @@ services:
       # Code runner (profile: runner, patch 0009): where python and bash run.
       - WINGS_RUNNER_TOKEN=${WINGS_RUNNER_TOKEN:-}
       - WINGS_RUNNER_MAX_TIMEOUT=${WINGS_RUNNER_MAX_TIMEOUT:-300}
+      # Token and spend caps (patch 0013, wings/budget.py); empty = off.
+      - WINGS_RUN_MAX_TOKENS=${WINGS_RUN_MAX_TOKENS:-}
+      - WINGS_RUN_MAX_USD=${WINGS_RUN_MAX_USD:-}
+      - WINGS_DAY_MAX_TOKENS=${WINGS_DAY_MAX_TOKENS:-}
+      - WINGS_DAY_MAX_USD=${WINGS_DAY_MAX_USD:-}
       # Default workspace for chats in the web UI (admins). Without one,
       # upstream refuses every file and code tool in an ordinary chat.
       - ODYSSEUS_WORKSPACE_DEFAULT=${ODYSSEUS_WORKSPACE_DEFAULT:-/workspaces/default}
