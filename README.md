@@ -112,7 +112,7 @@ All state lives in named Docker volumes (`odysseus-data`, `chromadb-data`, `radi
 <a id="first-run"></a>
 ## First run
 
-1. Sign in with the user and password `setup.sh` printed (also in `.env` as `ODYSSEUS_ADMIN_PASSWORD`).
+1. Sign in with the user and password the installer printed. Forgot them? `~/openwings/scripts/show-login.sh` prints the address, user and password again (from `.env`; if you changed the password in Settings, yours is the one that works).
 2. Add a model: **Settings → Add Models**. See [Models](#models). Typing `/setup` in the chat box starts upstream's guided setup instead.
 3. **Settings → Account**: turn on two factor authentication, then change the password. The env password is used only to create the admin on the very first start; later changes made in the app stick.
 4. Copy `.env` somewhere safe and offline (password manager or encrypted USB). It holds `ODYSSEUS_APP_KEY`, the only key that decrypts stored credentials. Backups deliberately do not contain it.
@@ -400,7 +400,7 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0016](patches/0016-model-retry-backoff.patch) | Model rate limits and overloads are retried with backoff before a reply starts |
 | [0017](patches/0017-mcp-server-instructions.patch) | The usage notes MCP servers send when they connect reach the model, labelled as the server's words, on turns where that server's tools are offered |
 | [0018](patches/0018-browser-batch-and-hover.patch) | Several browser actions in one call (per item or per page), each guarded as if alone; hover for menus |
-| [0019](patches/0019-openwings-branding.patch) | OpenWings name, logo and icons in the app, login page and installed app; a "built on Odysseus (AGPL 3.0)" line on the login page |
+| [0019](patches/0019-openwings-branding.patch) | OpenWings name, logo and icons in the app, login page and installed app; a "Source code" link on the login page (AGPL 3.0 section 13) |
 | [0020](patches/0020-openwings-looks.patch) | OpenWings looks (Duet and Hush, each with a night version) in the theme picker, with their own type and shapes; new users start in Duet; plain wording for Incognito chats and the welcome line; an empty message box no longer opens a new chat |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.

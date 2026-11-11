@@ -271,9 +271,9 @@ if [ -n "$DOMAIN" ]; then url="https://${DOMAIN}"; else
 fi
 admin_user="$(env_get ODYSSEUS_ADMIN_USER)"; admin_user="${admin_user:-admin}"
 if [ "$NEW_ADMIN_PASSWORD" -eq 1 ]; then
-  shown_password="$(env_get ODYSSEUS_ADMIN_PASSWORD)   (shown once; also in .env)"
+  shown_password="$(env_get ODYSSEUS_ADMIN_PASSWORD)   (saved in .env)"
 else
-  shown_password="unchanged (grep ^ODYSSEUS_ADMIN_PASSWORD= .env)"
+  shown_password="$(env_get ODYSSEUS_ADMIN_PASSWORD)   (set at install; if you changed it in Settings, use yours)"
 fi
 
 cat <<EOF

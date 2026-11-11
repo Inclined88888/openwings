@@ -436,7 +436,8 @@ openwings_install() {
   if [ "$USE_SG" -eq 1 ]; then
     say "Installed in $DIR. Log out and back in once so this user can use Docker directly."
   else
-    say "Installed in $DIR. Stop: cd \"$DIR\" && docker compose stop   Start again: cd \"$DIR\" && docker compose up -d"
+    say "Installed in $DIR. Your sign-in details any time: $DIR/scripts/show-login.sh"
+    say "Stop: cd \"$DIR\" && docker compose stop   Start again: cd \"$DIR\" && docker compose up -d"
   fi
 }
 

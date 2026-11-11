@@ -363,7 +363,7 @@ index 1b9dccd..1cb0ab2 100644
  
  // Cache of discovered custom fonts: { "Family Name": [ {file, url, format} ] }
 diff --git a/static/login.html b/static/login.html
-index e9dfdde..da086cf 100644
+index e9dfdde..5bf840c 100644
 --- a/static/login.html
 +++ b/static/login.html
 @@ -3,8 +3,8 @@
@@ -393,7 +393,7 @@ index e9dfdde..da086cf 100644
 -    <svg class="logo-boat" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 4L16 22L6 22Z" fill="currentColor"/><path d="M16 8L16 22L24 22Z" fill="currentColor" opacity="0.6"/><path d="M4 24Q10 20 16 24Q22 28 28 24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg><span>Odysseus</span>
 +    <img class="logo-boat" src="static/openwings/openwings-tile.svg" alt=""><span>OpenWings</span>
    </h1>
-+  <p class="built-on">built on <a href="https://github.com/odysseus-dev/odysseus" rel="noopener">Odysseus</a> (AGPL 3.0)</p>
++  <p class="built-on"><a href="https://github.com/Inclined88888/openwings" rel="noopener">Source code</a></p>
    <p class="setup-note" id="setupNote" style="display:none"></p>
  
    <div class="error" id="error" role="alert" aria-live="assertive"></div>
