@@ -242,16 +242,9 @@ class RequestAuthority:
             from src.browser_identity import intersect_browser
             browser_sessions, browser_pages = intersect_browser(self.browser_sessions, self.browser_pages,
                 child.browser_sessions, child.browser_pages)
-        # Wings: narrowing a request's authority by a restricted copy of the
-        # same request (tool_execution does this per call) is not a child
-        # authority. Marking it inherited made every exact-approved process
-        # launch (python, bash) fail admission. A different request stays
-        # inherited, and an already inherited side keeps the flag.
-        same_request = (self.request_id, self.owner, self.session_id) == (child.request_id, child.owner, child.session_id)
-        inherited = (self.inherited or child.inherited) if same_request else True
         return replace(self, grants=tuple(grants), denied=self.denied | child.denied,
                        block_all=self.block_all or child.block_all,
-                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=inherited,
+                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=True,
                        resource_roots=roots, backend_resources=backends, owned_scopes=owned,
                        launch_scopes=launches, process_resources=processes, job_resources=jobs,
                        browser_sessions=browser_sessions, browser_pages=browser_pages)
@@ -468,12 +461,37 @@ def request_authority_for_http(request, request_text, **context):
     return create_request_authority(request_text, **context)
 
 
+def _wings_only_restricts(authority, parent):
+    """Wings: True when `authority` is `parent` with only more tools denied
+    (what restrict() makes), every other field, the inherited flag included,
+    unchanged."""
+    from dataclasses import fields
+    narrowed = ("denied", "block_all", "disable_mcp")
+    return (isinstance(parent, RequestAuthority) and isinstance(authority, RequestAuthority)
+            and authority.denied >= parent.denied
+            and (authority.block_all or not parent.block_all)
+            and (authority.disable_mcp or not parent.disable_mcp)
+            and all(getattr(authority, f.name) == getattr(parent, f.name)
+                    for f in fields(RequestAuthority) if f.name not in narrowed))
+
+
 @contextmanager
-def bind_request_authority(authority):
+def bind_request_authority(authority, *, wings_same_request=False):
     if not isinstance(authority, RequestAuthority):
         raise TypeError("Authority must be server-owned RequestAuthority")
     parent = _ACTIVE.get()
+    # Wings: tool_execution rebinds the running request's own authority,
+    # restricted by the tool policy, around each tool call. intersect() marks
+    # every result inherited (a child), and an inherited authority can never
+    # use an exact approval, so every approved python or bash run failed
+    # process admission. Only that caller passes wings_same_request, and only
+    # a pure restriction of the active authority keeps the parent's flag; a
+    # child run, or any authority with other grants or resources, is still
+    # marked inherited exactly as upstream does.
+    keep_flag = wings_same_request and parent is not None and _wings_only_restricts(authority, parent)
     authority = parent.intersect(authority) if parent is not None else authority
+    if keep_flag:
+        authority = replace(authority, inherited=parent.inherited)
     token = _ACTIVE.set(authority)
     try:
         yield authority

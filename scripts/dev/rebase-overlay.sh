@@ -47,6 +47,11 @@ patches=("$ROOT"/patches/*.patch)
 
 # Files touched by any patch, relative to the upstream root.
 files="$(for p in "${patches[@]}"; do git -C "$src" apply --numstat "$p" | awk '{print $3}'; done | sort -u)"
+# Upstream's image leaves documentation out (its .dockerignore drops docs/,
+# website/ and *.md). Patches may update those files for anyone applying them
+# to a source checkout, but they are not in the image, so they are neither
+# checksummed nor overlaid (the checksum guard would fail on a missing file).
+files="$(printf '%s\n' "$files" | grep -Ev '^(docs|dev-docs|website)/|\.md$' || true)"
 
 # Hash the pristine upstream versions before patching.
 sums="$work/UPSTREAM_SHA256SUMS"

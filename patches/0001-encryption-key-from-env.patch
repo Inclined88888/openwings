@@ -9,10 +9,30 @@ inherit it) and never write a key file in that mode. A malformed key, or an
 existing key file that differs from the variable, raises instead of silently
 generating a new key and orphaning stored secrets; with WINGS_KEY_FROM_ENV=1 a
 process that lacks the key refuses to create a key file at all.
+scripts/generate_env_reference.py and website/configuration-reference.md
+document the variable (upstream's test fails on any undocumented variable).
 
 Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
+diff --git a/scripts/generate_env_reference.py b/scripts/generate_env_reference.py
+index 06a8a4c..2e0201d 100644
+--- a/scripts/generate_env_reference.py
++++ b/scripts/generate_env_reference.py
+@@ -767,6 +767,13 @@ VARIABLE_NOTES: dict[str, tuple[str, str, str]] = {
+     ),
+ 
+     # -- Auth and internal API ----------------------------------------------
++    "ODYSSEUS_APP_KEY": (
++        "Auth and internal API", USER,
++        "Security-relevant. Fernet key that encrypts stored secrets (Wings). Set, it "
++        "replaces the key file in the data directory, so backups of that directory "
++        "hold no key; a malformed key, or one that differs from an existing key file, "
++        "stops startup instead of orphaning every stored secret.",
++    ),
+     "ODYSSEUS_INTERNAL_TOKEN": (
+         "Auth and internal API", USER,
+         "Security-relevant. Token that lets the in-app tool layer reach admin-gated "
 diff --git a/src/api_key_manager.py b/src/api_key_manager.py
 index 3372041..fda8fe3 100644
 --- a/src/api_key_manager.py
@@ -120,3 +140,33 @@ index c4a08be..0a3101d 100644
      _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
      key = Fernet.generate_key()
      _KEY_PATH.write_bytes(key)
+diff --git a/website/configuration-reference.md b/website/configuration-reference.md
+index 9b9ef7b..d0f4797 100644
+--- a/website/configuration-reference.md
++++ b/website/configuration-reference.md
+@@ -21,7 +21,7 @@ described as a switch that turns something off, the read rejects `0`, `false`,
+ `no` and `off` and treats everything else as on. The `Default` column is the
+ value the code falls back to when the variable is unset, quoted from the source.
+ 
+-The source tree reads **117** `ODYSSEUS_*` variables: 81 an operator may want to set, and 36 that are internal - sentinels, fixture switches, capture hooks and development tooling. The internal ones are listed too, in their own section, so this page can be checked against the source mechanically.
++The source tree reads **118** `ODYSSEUS_*` variables: 82 an operator may want to set, and 36 that are internal - sentinels, fixture switches, capture hooks and development tooling. The internal ones are listed too, in their own section, so this page can be checked against the source mechanically.
+ 
+ > This page is generated. Edit `scripts/generate_env_reference.py` and
+ > re-run it; `tests/test_env_reference.py` enforces that the committed page
+@@ -170,6 +170,7 @@ The source tree reads **117** `ODYSSEUS_*` variables: 81 an operator may want to
+ 
+ | Variable | Default | Read in | What it does |
+ |---|---|---|---|
++| `ODYSSEUS_APP_KEY` | `''` | `src/secret_storage.py` | Security-relevant. Fernet key that encrypts stored secrets (Wings). Set, it replaces the key file in the data directory, so backups of that directory hold no key; a malformed key, or one that differs from an existing key file, stops startup instead of orphaning every stored secret. |
+ | `ODYSSEUS_INTERNAL_BASE` | *unset* | `src/constants.py` | Base URL the in-app tool layer uses for loopback HTTP calls. Set it when the app is not reachable at the port it thinks it is bound to. |
+ | `ODYSSEUS_INTERNAL_TOKEN` | *unset* | `core/middleware.py` | Security-relevant. Token that lets the in-app tool layer reach admin-gated routes over loopback. Unset generates a fresh per-process token, which is what you want unless something outside the process needs the same value. |
+ 
+@@ -265,7 +266,7 @@ reads three ways, because no single pattern covers the codebase:
+   lines, so one read lives inside a string literal.
+ 
+ The three passes are not redundancy. A line-based grep for a direct
+-`os.environ.get("ODYSSEUS_...` call finds 87 of the 117 variables on this
++`os.environ.get("ODYSSEUS_...` call finds 87 of the 118 variables on this
+ page. What it misses is reads through an env-reader helper, reads whose call
+ spans more than one line, reads whose variable name is held in a module
+ constant, and reads through a mapping passed in as an argument - which is the

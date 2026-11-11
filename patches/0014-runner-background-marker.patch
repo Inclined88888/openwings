@@ -18,7 +18,7 @@ Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
 License: AGPL-3.0-or-later (same as upstream)
 
 diff --git a/src/tool_execution.py b/src/tool_execution.py
-index f8aec9a..13250b9 100644
+index a410f40..2611ecb 100644
 --- a/src/tool_execution.py
 +++ b/src/tool_execution.py
 @@ -2152,6 +2152,13 @@ async def _execute_tool_block_impl(

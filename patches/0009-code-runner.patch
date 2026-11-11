@@ -15,13 +15,17 @@ workspace writable (wings/runner.py, docker/runner/).
     the runner is enabled. Without it, upstream behaviour is unchanged.
   * src/tool_schemas.py: python and bash describe the runner, its
     libraries, and that saved images appear in the chat.
-  * src/agent_runtime/authority.py: fixes an upstream bug that made every
-    exact-approved process launch fail ("Producer operation has no request
-    admission or exact claim"): tool_execution narrows a request's authority
-    with a restricted copy of the same request, and intersect() marked that
-    as an inherited (child) authority, which exact approvals refuse. Same
-    request now keeps its inherited flag; a different request is still a
-    child. Unreachable upstream in Docker until code could run at all.
+  * src/agent_runtime/authority.py, src/tool_execution.py: fixes an
+    upstream bug that made every exact-approved process launch fail
+    ("Producer operation has no request admission or exact claim"): around
+    each tool call tool_execution rebinds the running request's own
+    authority, restricted by the tool policy, and intersect() marks every
+    result inherited (a child), which exact approvals refuse. Only that
+    rebinding, and only when the authority is a pure restriction of the
+    active one, now keeps the active authority's flag. intersect() itself is
+    unchanged, so child runs and any authority with other grants or
+    resources stay inherited (upstream's child approval tests pass).
+    Unreachable upstream in Docker until code could run at all.
   * app.py, static/js/wings-ui.js: "Workspace files" page and sidebar entry
     to download what the agent wrote (wings/files_routes.py, admins only).
 
@@ -47,27 +51,48 @@ index 5d518a9..5baf69f 100644
  
  @app.post("/api/activity/heartbeat")
 diff --git a/src/agent_runtime/authority.py b/src/agent_runtime/authority.py
-index 0b8acdd..8bf0d11 100644
+index 0b8acdd..bc2e859 100644
 --- a/src/agent_runtime/authority.py
 +++ b/src/agent_runtime/authority.py
-@@ -242,9 +242,16 @@ class RequestAuthority:
-             from src.browser_identity import intersect_browser
-             browser_sessions, browser_pages = intersect_browser(self.browser_sessions, self.browser_pages,
-                 child.browser_sessions, child.browser_pages)
-+        # Wings: narrowing a request's authority by a restricted copy of the
-+        # same request (tool_execution does this per call) is not a child
-+        # authority. Marking it inherited made every exact-approved process
-+        # launch (python, bash) fail admission. A different request stays
-+        # inherited, and an already inherited side keeps the flag.
-+        same_request = (self.request_id, self.owner, self.session_id) == (child.request_id, child.owner, child.session_id)
-+        inherited = (self.inherited or child.inherited) if same_request else True
-         return replace(self, grants=tuple(grants), denied=self.denied | child.denied,
-                        block_all=self.block_all or child.block_all,
--                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=True,
-+                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=inherited,
-                        resource_roots=roots, backend_resources=backends, owned_scopes=owned,
-                        launch_scopes=launches, process_resources=processes, job_resources=jobs,
-                        browser_sessions=browser_sessions, browser_pages=browser_pages)
+@@ -461,12 +461,37 @@ def request_authority_for_http(request, request_text, **context):
+     return create_request_authority(request_text, **context)
+ 
+ 
++def _wings_only_restricts(authority, parent):
++    """Wings: True when `authority` is `parent` with only more tools denied
++    (what restrict() makes), every other field, the inherited flag included,
++    unchanged."""
++    from dataclasses import fields
++    narrowed = ("denied", "block_all", "disable_mcp")
++    return (isinstance(parent, RequestAuthority) and isinstance(authority, RequestAuthority)
++            and authority.denied >= parent.denied
++            and (authority.block_all or not parent.block_all)
++            and (authority.disable_mcp or not parent.disable_mcp)
++            and all(getattr(authority, f.name) == getattr(parent, f.name)
++                    for f in fields(RequestAuthority) if f.name not in narrowed))
++
++
+ @contextmanager
+-def bind_request_authority(authority):
++def bind_request_authority(authority, *, wings_same_request=False):
+     if not isinstance(authority, RequestAuthority):
+         raise TypeError("Authority must be server-owned RequestAuthority")
+     parent = _ACTIVE.get()
++    # Wings: tool_execution rebinds the running request's own authority,
++    # restricted by the tool policy, around each tool call. intersect() marks
++    # every result inherited (a child), and an inherited authority can never
++    # use an exact approval, so every approved python or bash run failed
++    # process admission. Only that caller passes wings_same_request, and only
++    # a pure restriction of the active authority keeps the parent's flag; a
++    # child run, or any authority with other grants or resources, is still
++    # marked inherited exactly as upstream does.
++    keep_flag = wings_same_request and parent is not None and _wings_only_restricts(authority, parent)
+     authority = parent.intersect(authority) if parent is not None else authority
++    if keep_flag:
++        authority = replace(authority, inherited=parent.inherited)
+     token = _ACTIVE.set(authority)
+     try:
+         yield authority
 diff --git a/src/agent_tools/subprocess_tools.py b/src/agent_tools/subprocess_tools.py
 index e98b273..ab13c3b 100644
 --- a/src/agent_tools/subprocess_tools.py
@@ -86,6 +111,19 @@ index e98b273..ab13c3b 100644
      grant = None
      launch = None
      result = None
+diff --git a/src/tool_execution.py b/src/tool_execution.py
+index f8aec9a..a410f40 100644
+--- a/src/tool_execution.py
++++ b/src/tool_execution.py
+@@ -1901,7 +1901,7 @@ async def execute_tool_block(
+             browser_operation = replace(browser_operation, exact_approval=exact_approval)
+         normalized = resource_operation or owned_operation
+         sealed_document = owned_operation or (exact_approval.pending if approval_claimed else None)
+-        with (bind_request_authority(authority), bind_resource_operation(resource_operation),
++        with (bind_request_authority(authority, wings_same_request=True), bind_resource_operation(resource_operation),
+               bind_backend_operation(backend_operation), bind_owned_operation(owned_operation),
+               bind_process_operation(process_operation), bind_browser_operation(browser_operation)):
+             output = await _execute_tool_block_impl(
 diff --git a/src/tool_schemas.py b/src/tool_schemas.py
 index ae12102..a70f37d 100644
 --- a/src/tool_schemas.py

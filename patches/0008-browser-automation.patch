@@ -21,6 +21,8 @@ outline the model acts on by ref.
   * src/settings.py: agent_max_rounds defaults to 40 (was 20); web tasks take
     many small steps. Settings > Agent still controls it.
   * app.py: mounts the live view routes (wings/browser_routes.py).
+    scripts/verify_frontend_runtime.py copies the wings package into its
+    isolated distribution check, since app.py now imports it.
   * static/js/wings-ui.js: a "Live browser" sidebar entry, shown only when
     the browser is enabled and the account may use it.
 
@@ -68,6 +70,21 @@ index 331b695..16567a8 100644
  
  
  def _is_external_discovery_request(text: str) -> bool:
+diff --git a/scripts/verify_frontend_runtime.py b/scripts/verify_frontend_runtime.py
+index 2a960c3..642dbf0 100644
+--- a/scripts/verify_frontend_runtime.py
++++ b/scripts/verify_frontend_runtime.py
+@@ -49,7 +49,9 @@ def main() -> int:
+         target = Path(directory)
+         for name in ("app.py", "HARNESS_VERSION"):
+             shutil.copy2(ROOT / name, target / name)
+-        for name in ("core", "routes", "src", "services", "resources", "mcp_servers", "companion", "config", "static", "scripts"):
++        # Wings: its overlay package sits next to app.py in the image.
++        extra = ("wings",) if (ROOT / "wings").is_dir() else ()
++        for name in ("core", "routes", "src", "services", "resources", "mcp_servers", "companion", "config", "static", "scripts", *extra):
+             shutil.copytree(ROOT / name, target / name, ignore=shutil.ignore_patterns("__pycache__", "node_modules", ".env", "secrets.env*", "*.db", "*.sqlite*"))
+         # Reserve a non-listening port so initialization cannot reach a real store.
+         chroma_guard.bind(("127.0.0.1", 0))
 diff --git a/src/agent_loop.py b/src/agent_loop.py
 index 65af608..aaca7bd 100644
 --- a/src/agent_loop.py
