@@ -100,6 +100,105 @@ stack passed. The harness retries one model call after the app's 20 second
 host cooldown. If you see `Model request failed` in an e2e run on your server,
 rerun before investigating.
 
+## Browser automation (patch 0008, profile `browser`)
+
+The browser container was built from the pinned Selenium Chromium image
+(Chromium 156.0.8078.79) and run with all capabilities dropped and
+`no-new-privileges`. Checked:
+
+* **Isolation**: from a container named `odysseus` the guard admits DevTools
+  and the noVNC bridge; from any other container on the same network, and
+  from the Docker host through the bridge address, the connection is reset.
+  Chromium's DevTools, VNC and noVNC listen on loopback only.
+* **Driver, directly against the container** with a local test site
+  (`tests/e2e/site/`): numbered outline with headings, text and controls;
+  fill, dropdown, checkbox, textarea, submit; elements inside an iframe;
+  a `target=_blank` link opens a tab the chat follows; tabs and switching;
+  a `confirm()` dialog is reported and answered (the click returns at once
+  instead of hanging); `find`, `read` with parts, `scroll`, `screenshot`;
+  unknown refs are refused; password and card fields refused;
+  "Place order" refused by click and by Enter in its form; `file:` URLs
+  refused; `evaluate` refused. Downloads: see the end to end list.
+* **Through the chat API** (`tests/e2e/`, `WINGS_E2E_ONLY=browser`, mock
+  model, web switch off as in the UI), last run after the security fixes:
+  19 PASS (login, endpoint registration and key never returned, live view
+  page and noVNC client served only with a
+  session, WebSocket streams the screen and refuses a foreign Origin or no
+  session, web task wording offered the browser, `file:` refused, page
+  JavaScript refused, open, fill, dropdown, checkbox, card number handed to
+  the person, order not placed), 3 SKIP (turns whose model call never
+  reached the mock: password handoff, submit, "Place order"), 1 FAIL (the
+  download click, because the preceding "open" turn never reached the model
+  and the page was still the checkout), then the run hit its 28 minute cap.
+  An earlier chat API run, before the security fixes, completed open, fill
+  and submit through to the thanks page. Everything skipped there was
+  verified directly against the backend (next bullet).
+* **Driver, directly against the container, after the security fixes**: the
+  functional script (form, dropdown, checkbox, submit, iframe, pop up tab,
+  dialog, screenshot, refusals) behaved as before, and 20 of 20 hostile page
+  checks passed: password field by single key and by typing; paste; a button
+  named "Place order" only through aria-labelledby; the icon inside a "Buy
+  now" button; Space on "Place your order"; Control+Enter in a form whose
+  button is "Send"; a card field named through aria-labelledby; a card
+  field focused inside an iframe, by typing and by a single key; forged
+  page state markers; page supplied refs; download reported, read, and a
+  path escape refused; a second account neither sees nor selects the first
+  account's tab.
+* **The model connection fault**: during these runs, new connections from
+  the app's model client to the mock sometimes never reached it (the mock
+  logged no connection), even with the mock inside the app container's own
+  network namespace, while separate clients in the same container always
+  connected. It was not traced to its cause; it is outside the browser code
+  (it hits plain chat turns too). Rerun if you see "Model request failed"
+  in e2e on your server.
+* **Routing**: 13 realistic requests sent with the web switch off. Before the
+  fix in `_looks_like_explicit_browser_interaction`, 5 web tasks, including
+  "Use the browser to check the opening hours on the council website", were
+  refused with "Web access is disabled for this turn". After it, every web
+  task tried was offered `private_browser` ("Log into my supplier portal…",
+  "Go to example.com…", "Book a table … at bistro.com", "Fill in the contact
+  form on their website…", "Add the blue mug to my cart…", "Open my Stripe
+  dashboard…", "Apply for the job on seek.com.au…", "Check my order status on
+  amazon.com", "Renew my car registration online"); "What is the capital of
+  France?" was not. "Sign in to LinkedIn…" was missed by the first version of
+  the rule, fixed, and is covered by the unit tests; it was not run again
+  through the chat API.
+* **Live view in Chromium (Playwright)**: after signing in, the sidebar shows
+  **Live browser**; `/wings/browser/` connects (status "Live") and shows the
+  remote Chromium under the app's normal Content Security Policy.
+* **Unit tests**: `tests/unit/test_wings_browser.py` (URL policy including DNS
+  answers on private addresses, risky labels, sensitive fields, keys, users,
+  outline format and retirement, routing wording, the enable switch, the
+  authority grant).
+
+* **Independent review and fixes**: a separate reviewer read the browser code
+  with a hostile web page and a hostile container in mind. Confirmed issues,
+  all fixed before release: the VNC bridge was reachable from pages on
+  loopback (moved to unix sockets, guard now also needs a shared token);
+  the noVNC client was served from the browser container onto the Wings
+  origin (now vendored in the app image); downloads followed symlinks (now
+  refused) and HTML downloads were stripped with a quadratic regex on the
+  event loop (now a linear parser in a thread); private addresses were
+  checked only for top level navigations (now every request goes through a
+  filtering proxy, and every read path rechecks the URL); passwords and card
+  numbers could be typed key by key, by paste or inside iframes, and
+  pay/order/send could be triggered by Space, Control+Enter, child elements,
+  aria-labelledby labels or dialogs (all now checked against the element
+  that really has focus, across frames); a page could pre-stamp element refs
+  (refs now use a random attribute per tab and cannot move between frames);
+  tabs were not scoped per account; API tokens could drive the browser (now
+  refused, as for email). Verified after the fixes: the guard returns 403
+  without the token or with a wrong one and drops connections from other
+  containers; the egress proxy refuses private, loopback, link-local
+  (metadata), IPv4-mapped IPv6 and CONNECT targets; with the browser
+  container set to refuse private addresses, Chromium's own request to the
+  private test site was answered by the proxy's refusal even though the
+  app-side check had been relaxed.
+
+Not verified here (no internet in the test environment): any public website,
+bot detection and CAPTCHAs, real logins, downloads, and the agent's decisions
+with a real model. The mock model only replays the tool calls a test names.
+
 ## Operations
 
 * `setup.sh`: fresh `.env`, secrets generated, mode 600, CalDAV user bcrypt

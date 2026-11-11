@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Thanks</title></head>
+<body><h1 id="t">Thanks</h1><p id="d"></p>
+<script>
+const q = new URLSearchParams(location.search);
+document.getElementById('t').textContent = 'Thanks, ' + (q.get('name') || 'stranger');
+document.getElementById('d').textContent = 'country=' + q.get('country') + ' agree=' + q.get('agree') + ' msg=' + q.get('msg');
+</script></body></html>

@@ -16,13 +16,13 @@ jobs:
       - name: Shell scripts
         run: |
           pip install --quiet shellcheck-py==0.11.0.1
-          shellcheck -x scripts/*.sh scripts/dev/*.sh tests/*/run.sh
+          shellcheck -x scripts/*.sh scripts/dev/*.sh tests/*/run.sh docker/browser/*.sh
 
       - name: Compose files
         run: |
           printf 'ODYSSEUS_APP_KEY=%s\n' "$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')" > .env
           docker compose config --quiet
-          docker compose --profile ollama --profile caldav --profile https config --quiet
+          docker compose --profile ollama --profile caldav --profile https --profile browser config --quiet
           docker compose -f docker-compose.yml -f compose/ollama-nvidia.yml --profile ollama config --quiet
           rm .env
 
@@ -34,4 +34,8 @@ jobs:
 
       - name: Python syntax
         run: |
-          python3 -m py_compile overlay/app/wings/*.py tests/unit/*.py tests/e2e/*.py scripts/vendor/*.py
+          python3 -m py_compile overlay/app/wings/*.py tests/unit/*.py tests/e2e/*.py scripts/vendor/*.py docker/browser/guard_proxy.py
+          python3 -c "import json; json.load(open('docker/browser/policies.json'))"
+
+      - name: Browser image builds
+        run: docker build -f docker/browser/Dockerfile -t wings/browser:ci .

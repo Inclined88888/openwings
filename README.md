@@ -16,6 +16,7 @@ Wings is a hardened deployment of [Odysseus](https://github.com/odysseus-dev/ody
 | Calendar sync (CalDAV), schedule questions, proposed events | Upstream + optional bundled Radicale |
 | Memory you can view, edit, delete | Upstream |
 | Web search tool for chat and agents | Upstream + bundled SearXNG |
+| **Browser automation**: the agent uses websites in a real browser; you watch live and take over | Upstream tool + Wings patch 0008 + optional browser container |
 | Local and hosted models, configured in the UI | Upstream |
 | Model comparison side by side | Upstream |
 | Secrets encrypted at rest, key outside the data | Upstream + Wings patches 0001 to 0003 |
@@ -29,6 +30,7 @@ Wings is a hardened deployment of [Odysseus](https://github.com/odysseus-dev/ody
 * [Email](#email)
 * [Calendar](#calendar)
 * [Agents and tool access](#agents)
+* [Browser automation](#browser)
 * [Where everything is in the app](#map)
 * [Backup, restore, upgrade](#backup)
 * [Security model](#security)
@@ -69,6 +71,7 @@ Optional extras, all through the same script (safe to re-run; it never regenerat
 | `--ollama-gpu nvidia` | GPU for the bundled Ollama (needs the NVIDIA Container Toolkit) |
 | `--ollama-model qwen3:4b` | Pulls a model into the bundled Ollama after start |
 | `--with-caldav` | Bundled Radicale CalDAV server: a private calendar your phone can sync |
+| `--with-browser` | A real Chromium the agent drives for web tasks, with a live view you can take over (see [Browser automation](#browser)) |
 | `--domain ai.example.com --acme-email you@example.com` | Public HTTPS through Caddy with Let's Encrypt (the email is required) |
 | `--bind 0.0.0.0 --port 7011` | Expose the UI on your LAN instead of only this machine |
 | `--no-agents` | Skip adding the starter agents |
@@ -84,6 +87,7 @@ The stack:
 | `ollama` (profile `ollama`) | Local models | internal only |
 | `radicale` (profile `caldav`) | CalDAV calendars | `127.0.0.1:5232` |
 | `caddy` (profile `https`) | HTTPS front door | `80`, `443` |
+| `browser` (profile `browser`) | Chromium for the agent; live view through the app at `/wings/browser` | none (reachable only from `odysseus`) |
 
 All state lives in named Docker volumes (`odysseus-data`, `chromadb-data`, `radicale-data`, `ollama-models` and others listed at the end of `docker-compose.yml`). `docker compose down`, upgrades and container rebuilds never touch them; only `docker compose down -v` deletes data.
 
@@ -190,7 +194,60 @@ Four starter agents are added on first install (`./scripts/seed-agents.sh` re-ad
 
 **Self improvement**: memory facts are extracted from conversations automatically (every few messages; toggle in the Memory panel), and the system drafts reusable "skills" from long agent runs. Wings changes one default: drafted skills wait in **Skills** for your approval instead of auto publishing into future prompts, because they can be learned from untrusted web or email text. Turn "Auto approve skills" on in the Memory panel if you prefer full autonomy.
 
-**Browser and computer use**: upstream ships browser automation and agent shell tools, but in this upstream build the browser automation is disabled in code and agent shell commands refuse to run without a sandbox (bubblewrap) the image lacks. Wings leaves both off. Web search, page reading, PDFs and YouTube transcripts work.
+**Browser and computer use**: browser automation works with `--with-browser` (next section). Agent shell and code execution stay off: upstream's `bash` and `python` tools refuse to run without a sandbox (bubblewrap) that the upstream image lacks, and Wings does not loosen that. Web search, page reading, PDFs and YouTube transcripts work without either.
+
+<a id="browser"></a>
+## Browser automation
+
+Turn it on once:
+
+```bash
+./scripts/setup.sh --with-browser     # or add "browser" to COMPOSE_PROFILES in .env, then docker compose up -d
+```
+
+This adds the `browser` container: a real, headful Chromium on a virtual screen. The agent drives it through upstream's `private_browser` tool, which Wings connects to that container (patch 0008). It works the way OpenManus and browser-use do: after every step the agent gets the page as a numbered outline of headings, text and controls, for example
+
+```text
+# Contact us
+[e6] textbox "Full name" required
+[e8] textbox "Password" type=password [password field: the person types this in the live view]
+[e9] select "Country" selected="Choose…" options: Choose… | Australia | New Zealand
+[e12] button "Continue"
+```
+
+and acts by number: open, read, find, click, fill (text, dropdowns, checkboxes), type, press keys, scroll, wait, tabs, back and forward, and screenshots for vision models. Because the outline is text, it works with local and hosted models alike. Each chat gets its own tab, and pop up windows are followed automatically. Files the browser downloads are saved in the `browser-downloads` volume: the agent can read text and PDF downloads (for example the amount on an invoice), and you save any of them from **Downloads** in the live view.
+
+**Ask in plain words**, in Agent mode: "Log into the supplier portal and download last month's invoice", "Fill in the contact form on example.com with my details", "Check my order status on the shop site", "Go to the council website and find the bin collection days". Naming a site, a portal, a form or the browser is enough; the web search switch does not need to be on.
+
+**Live view and take over**: sidebar **Live browser** (or `<your Wings address>/wings/browser`) shows the browser screen in your own browser and lets you click and type in it. It needs your Wings sign in; nothing about it is exposed on a separate port. Use it to:
+
+* **sign in** to sites once: the agent never types passwords, one time codes or card numbers. It stops with *PAUSED, needs the person*, you sign in through the live view (the *Type or paste text* box sends text from your password manager), then tell the agent to continue. Logins persist in the `browser-profile` volume across restarts;
+* **approve committing steps**: the agent does not click buttons such as Pay, Place order, Buy now, Send, Post, Publish, Submit application, Book now, Subscribe or Delete account, and does not press Enter in a form whose button is one of those. It stops and you click it yourself. This mirrors the email rule: nothing leaves on your behalf without your click;
+* **solve CAPTCHAs** and anything else the agent gets stuck on, or simply watch (tick *Watch only* to avoid stray clicks).
+
+**Guardrails** enforced by the browser backend itself (`overlay/app/wings/browser_policy.py`), regardless of what a page or a prompt says:
+
+| Rule | Switch in `.env` |
+| --- | --- |
+| Password, one time code and card fields are typed only by you, also key by key, by paste or inside iframes | always on |
+| Pay, order, send, publish, apply, delete style clicks are handed to you, also by Enter or Space and in confirmation dialogs | `WINGS_BROWSER_CONFIRM_RISKY=0` turns it off (not recommended) |
+| Only `http`/`https`; no `file:`, `chrome:`, `data:`, `javascript:` pages | always on |
+| No private or local addresses (your router, LAN devices, cloud metadata, the other Wings containers), for every request the browser makes: pages, redirects, iframes, scripts, form posts and WebSockets all pass through a filtering proxy inside the browser container | `WINGS_BROWSER_ALLOW_PRIVATE=1` allows them |
+| The agent cannot run its own JavaScript in pages | `WINGS_BROWSER_ALLOW_EVAL=1` allows it |
+| Optional allow list of sites | `WINGS_BROWSER_ALLOWED_DOMAINS=gov.au,example.com` |
+| One browser profile holds one person's logins, so only the admin account may use it | `WINGS_BROWSER_USERS=alice,bob` (or `*`) |
+
+Other settings: `WINGS_BROWSER_SCREEN=1440x900`, `WINGS_BROWSER_LANG=en-US` (websites also see your `TZ`), `WINGS_BROWSER_MEMORY=3g`, `WINGS_BROWSER_MAX_TABS=10`. New installs allow 40 agent steps per message (upstream: 20) because web tasks take many small steps; change it in **Settings → Agent**.
+
+**Limits, honestly**:
+
+* Sites with strong bot detection or CAPTCHAs on every action (some banks, airlines, ticketing, social networks) may block or slow automation. The browser is a normal headful Chromium with a persistent profile, which helps, but there is no stealth or CAPTCHA solving. Take over in the live view when that happens.
+* File uploads are not supported for the agent yet (you cannot upload through the live view either: it shows the server's browser, not your computer). Downloads are not copied into Wings **Files** automatically; save them from the live view's Downloads list and upload them there if you want them indexed.
+* One browser and one action at a time: chats and scheduled agents share it, each in its own tab.
+* Quality depends on the model. Small local models (under about 14B parameters) often lose track over long web tasks; a strong hosted model or a large local one does far better.
+* Resource use: the browser container measured about 0.26 GB with a few simple test pages open. Real websites with heavy scripts take far more per tab, so the container is capped at 3 GB (`WINGS_BROWSER_MEMORY`) and at 10 tabs (`WINGS_BROWSER_MAX_TABS`, least recently used tabs close first).
+
+How this compares with OpenManus, and what Wings still lacks (code execution is the big one): [docs/openmanus_comparison.md](docs/openmanus_comparison.md).
 
 <a id="map"></a>
 ## Where everything is in the app
@@ -249,7 +306,8 @@ Nightly backups with cron (`crontab -e`):
 * **Child processes**: the server is started by `wings.serve`, which moves the key into memory and drops the admin password before anything runs, so no child process inherits either. Third party MCP servers, Cookbook engines, pip installs and terminal sessions additionally get an environment without any secret looking variable (provider keys, OAuth client secrets, tokens). A process that lacks the key refuses to create a new key file.
 * **Network**: the app listens on loopback by default; SearXNG and ChromaDB have no host ports; HTTPS through Caddy with the proxy pinned to one trusted address (`FORWARDED_ALLOW_IPS`) so login rate limits see real client addresses.
 * **Email**: see [No email leaves without your click](#no-email-leaves-without-your-click).
-* **Pinned supply chain**: every image is pinned by digest; Wings disables upstream's start time download of an unpinned npm browser package.
+* **Pinned supply chain**: every image is pinned by digest; Python packages Wings adds (the browser driver) are pinned by SHA-256; Wings disables upstream's start time download of an unpinned npm browser package.
+* **Browser container**: no host ports and no access to your data or keys. Chromium's DevTools listens on loopback and the screen (VNC and its WebSocket bridge) on unix sockets, so no web page in that browser can reach them. The only way in is a guard that requires both the `odysseus` container's address and a shared secret (`WINGS_BROWSER_TOKEN`, generated by setup.sh and held only in memory by the app). The app relays the screen only to a signed in person allowed to use the browser, over a same origin WebSocket that closes within 30 seconds of the session ending; the viewer's code ships in the Wings image, not from the browser container. Every request Chromium makes goes through a proxy that refuses private and local addresses after resolving them itself. All capabilities are dropped and privilege escalation is blocked. Chromium runs without its own sandbox (Docker's default seccomp profile blocks the namespaces it needs), so the container is the isolation boundary. Downloads are read without following links. Its cookies are live sessions: treat the `browser-profile` volume like a password store. Backups leave it out on purpose.
 
 Not covered (upstream behaviour, documented rather than changed): web search API keys typed into **Settings → Search** are stored in plaintext `settings.json` (put them in `.env` instead: `DATA_BRAVE_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`); two factor seeds and server side session tokens sit unencrypted in the data volume; the agent approval gate is taint based (it asks after untrusted web or mail content has entered a run, not before every action). Do not expose the app to the internet without HTTPS, two factor authentication and a strong password.
 
@@ -265,8 +323,11 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0005](patches/0005-per-agent-tool-access.patch) | Per agent tool access, enforced server side, with an editor UI |
 | [0006](patches/0006-sidebar-agents-files-and-os-theme.patch) | Agents and Files entries in the sidebar; theme follows the OS |
 | [0007](patches/0007-safer-defaults-and-caldav-fix.patch) | Document auto delete job ships paused; learned skills need approval; CalDAV writeback crash fix |
+| [0008](patches/0008-browser-automation.patch) | `private_browser` page actions run in the Wings browser container; web task wording routes to it; old page outlines leave the context; live view routes and sidebar entry |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
+
+Patches form a series: each is the diff of one commit on top of the pinned upstream commit, so later patches may touch files earlier ones changed (`scripts/dev/export-patches.sh` writes them from such a checkout).
 
 How the overlay works: `docker/odysseus/Dockerfile` starts `FROM` the upstream image pinned by digest, checks that each file it replaces is byte identical to the upstream version the patches were written for (`overlay/UPSTREAM_SHA256SUMS`), copies `overlay/app/` over `/app`, and runs a preflight (`overlay/app/wings/preflight.py`) before the upstream entrypoint. `patches/` is the source of truth; `scripts/dev/rebase-overlay.sh` regenerates `overlay/` from it.
 
@@ -281,6 +342,7 @@ Verified by running the real stack (with a stand in for the upstream image, buil
 * 4,998 upstream tests over every area the patches touch: no new failures with the email gate off; with it on, only the 30 tests that assert sends happen without a person's session fail, by design
 * 44 Wings unit tests; the end to end suite in `tests/e2e/` (streaming chat, model switch, per agent tool access A/B, human send delivered, agent and token sends refused, unapproved scheduled mail refused, CalDAV round trip with Radicale, no plaintext secret anywhere in the data volume or logs)
 * the UI changes in Chromium: Agents entry, tool access editor saving and restoring, OS light/dark
+* browser automation against local test pages. Through the real chat API with the web switch off, as in the UI: web task wording is offered the browser; open, fill, dropdown, checkbox and submit; a card field handed to the person and the order not placed; `file:` URLs and page JavaScript refused; the live view needs a session and a same origin WebSocket. Directly against the browser backend: iframes, pop up tabs, dialogs, screenshots, downloads, and 20 hostile page cases (passwords and card numbers by single keys, paste or inside iframes; pay and send by Space, Control+Enter, hidden labels and dialogs; forged refs and markers; account scoping), all handled; the egress proxy refused Chromium's own request to a private address. Some chat turns in the test run never reached the mock model (a test environment fault, see the verification record); those are reported as skipped, not passed
 
 Not verifiable here, verify on your server:
 
@@ -291,6 +353,7 @@ Not verifiable here, verify on your server:
 5. **First start downloads**: the embedding model (FastEmbed from Hugging Face) and Ollama models need internet access from the server.
 6. **HTTPS**: `setup.sh --domain` needs DNS pointing at the server and ports 80/443 open.
 7. **NVIDIA GPU** for Ollama: `docker run --rm --gpus all ubuntu nvidia-smi` must work first.
+8. **Browser on real websites** with your model: the test environment had no internet, so no public site was tried. Sign in to one site through the live view, then give the agent a small task there and watch it in the live view.
 
 To run the end to end suite on a **test** install (it creates test data): `./tests/e2e/run.sh`. It needs `EMAIL_ALLOW_PRIVATE_IPS=true` for its local test mail server.
 
@@ -308,6 +371,11 @@ To run the end to end suite on a **test** install (it creates test data): `./tes
 | Task or reminder emails are not delivered | List your address in `WINGS_EMAIL_SELF_ADDRESSES` |
 | Scheduled emails did not go out after a restart | Open the Email view once; upstream starts its scheduled-send worker there |
 | Local CalDAV server rejected | `ODYSSEUS_ALLOW_PRIVATE_CALDAV=1` |
+| No **Live browser** entry in the sidebar | Browser not enabled (`./scripts/setup.sh --with-browser`) or your account is not in `WINGS_BROWSER_USERS` |
+| Agent says "WINGS_BROWSER_TOKEN is not set" | Run `./scripts/setup.sh` once more (it adds the missing secret), then `docker compose up -d` |
+| Agent says "The browser service is not running" | `docker compose ps browser`; `docker compose logs --tail 50 browser` |
+| Agent stops with "PAUSED, needs the person" | Intended: do that step in the live view, then tell the agent to continue |
+| A site on your LAN is refused | `WINGS_BROWSER_ALLOW_PRIVATE=1` in `.env`, then `docker compose up -d` |
 | Slow or no answers from a local model | Use a smaller model, raise `OLLAMA_CONTEXT_LENGTH` carefully, or add a hosted provider |
 | Anything else | `docker compose ps`, `docker compose logs --tail 100 odysseus` |
 

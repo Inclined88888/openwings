@@ -38,6 +38,18 @@ if ! running "${project}-greenmail"; then
     docker.io/greenmail/standalone:2.1.14@sha256:1ef95a966418cd09b7ea91d504d8c0826bbe7a2f6e679a75c601a831587c1626 >/dev/null
   created="$created ${project}-greenmail"
 fi
+case ",$(env_get COMPOSE_PROFILES)," in
+  *,browser,*)
+    # Static test pages for the browser checks, on the browser's own network.
+    if ! running "${project}-testsite"; then
+      docker rm -f "${project}-testsite" >/dev/null 2>&1 || true
+      docker run -d --name "${project}-testsite" --network "${project}_browser" --network-alias testsite \
+        -v "${WINGS_ROOT}/tests/e2e/site:/srv:ro" -w /srv docker.io/library/python:3.14.9-slim \
+        python -m http.server 8000 >/dev/null
+      created="$created ${project}-testsite"
+    fi
+    ;;
+esac
 [ -z "$created" ] || sleep 8
 
 bind="$(env_get APP_BIND)"; [ -z "$bind" ] || [ "$bind" = "0.0.0.0" ] && bind=127.0.0.1

@@ -15,13 +15,20 @@ What it proves, against the real application:
   * secrets at rest: no plaintext endpoint key, mail password or MCP env value
     anywhere in the data volume; no key file in the data volume
   * child-process environment scrubbing for user-added MCP servers
+  * browser automation (profile browser): the agent opens, fills and submits
+    a real form in the browser container through the chat API; passwords,
+    card numbers and "Place order" are handed to the person; non-web URLs
+    and page JavaScript are refused; the live view needs a signed-in session
+    and a same-origin WebSocket
 """
 from __future__ import annotations
 
+import base64
 import http.cookiejar
 import imaplib
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -135,6 +142,168 @@ def _stream_chat_once(c: Client, session_id: str, message: str, **extra) -> str:
     return "".join(out) or text
 
 
+def chat_tool_outputs(c: Client, session_id: str, message: str, **extra) -> tuple[list[dict], str]:
+    """One agent turn; returns the tool_output events and the raw stream.
+
+    Retries while the sandbox's model host is cooling down (see stream_chat)."""
+    form = {"message": message, "session": session_id, "mode": "agent", "allow_web_search": "false", **extra}
+    for attempt in range(8):
+        status, body = c.req("POST", "/api/chat_stream", form=form, raw=True, timeout=240)
+        text = body.decode("utf-8", "replace") if isinstance(body, bytes) else str(body)
+        events = []
+        for line in text.splitlines():
+            if line.startswith("data:"):
+                try:
+                    evt = json.loads(line[5:].strip())
+                except ValueError:
+                    continue
+                if isinstance(evt, dict) and evt.get("type") == "tool_output":
+                    events.append(evt)
+        if events or not ("Model request failed" in text or "cooldown active" in text or "Cannot reach" in text):
+            return events, text
+        time.sleep(25)
+    return events, text
+
+
+def _ws_handshake(cookie_header: str, origin: str) -> tuple[int, bytes]:
+    """Open the live-view WebSocket by hand (stdlib only). Returns the HTTP
+    status and the first frame's payload (the VNC server greeting)."""
+    url = urllib.parse.urlsplit(BASE)
+    sock = socket.create_connection((url.hostname, url.port or 80), timeout=15)
+    try:
+        key = base64.b64encode(os.urandom(16)).decode()
+        request = (f"GET /wings/browser/websockify HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\n"
+                   f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+                   f"Sec-WebSocket-Protocol: binary\r\nOrigin: {origin}\r\nCookie: {cookie_header}\r\n\r\n")
+        sock.sendall(request.encode())
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        head, _, rest = data.partition(b"\r\n\r\n")
+        status = int(head.split(b" ", 2)[1]) if head.startswith(b"HTTP/") else 0
+        if status != 101:
+            return status, b""
+        while len(rest) < 2:
+            rest += sock.recv(4096)
+        length = rest[1] & 0x7F
+        offset = 2
+        if length == 126:
+            while len(rest) < 4:
+                rest += sock.recv(4096)
+            length, offset = int.from_bytes(rest[2:4], "big"), 4
+        while len(rest) < offset + length:
+            rest += sock.recv(4096)
+        return status, rest[offset:offset + length]
+    finally:
+        sock.close()
+
+
+def browser_checks(c: Client, ep_id: str) -> None:
+    st, status = c.req("GET", "/api/wings/browser/status")
+    check("browser status: enabled and allowed for the admin", isinstance(status, dict) and status.get("allowed") is True, str(status)[:200])
+    st, page = c.req("GET", "/wings/browser/", raw=True)
+    check("live view page is served to the signed-in admin", st == 200 and b"live.js" in page, str(st))
+    st, rfb = c.req("GET", "/wings/browser/novnc/core/rfb.js", raw=True)
+    check("live view relays the noVNC client from the browser container", st == 200 and b"class RFB" in rfb, str(st))
+    anon = Client()
+    st, _ = anon.req("GET", "/api/wings/browser/status")
+    check("browser status needs a signed-in session", st == 401, str(st))
+    cookie = "; ".join(f"{k.name}={k.value}" for k in c.jar)
+    st, greeting = _ws_handshake(cookie, ORIGIN)
+    check("live view WebSocket streams the browser screen", st == 101 and greeting.startswith(b"RFB "), f"{st} {greeting[:20]!r}")
+    st, _ = _ws_handshake(cookie, "http://evil.example")
+    check("live view WebSocket refuses a foreign Origin", st != 101, str(st))
+    st, _ = _ws_handshake("", ORIGIN)
+    check("live view WebSocket refuses a request without a session", st != 101, str(st))
+
+    st, sess = c.req("POST", "/api/session", form={
+        "name": "e2e browser", "endpoint_url": "http://mockllm:9999/v1", "model": "mock-alpha", "endpoint_id": ep_id})
+    sid = sess["id"]
+
+    unreachable = "MODEL_UNREACHABLE"
+
+    def run(message: str) -> str:
+        events, text = chat_tool_outputs(c, sid, message)
+        out = "\n".join(str(e.get("output") or "") for e in events if e.get("tool") == "private_browser")
+        if not out and ("Model request failed" in text or "cooldown active" in text):
+            return unreachable
+        return out or text[-400:]
+
+    def bcheck(name: str, ok: bool, out: str) -> None:
+        # A turn whose model call never got through (seen in the test sandbox:
+        # new connections from the app to the mock are sometimes dropped)
+        # proves nothing either way: report it, do not count it as a failure.
+        if out == unreachable:
+            skip(name, "the model host was unreachable for this turn; rerun")
+        else:
+            check(name, ok, out[:300])
+
+    def call(args: dict, words: str = "Use the browser for this.") -> str:
+        return run(f"{words} WINGS_CALL private_browser {json.dumps(args)}")
+
+    # Routing: the web toggle is off by default in the UI; a web task must
+    # still be offered the browser instead of a "web search is off" refusal.
+    events, text = chat_tool_outputs(c, sid, "WINGS_LIST_TOOLS Log into my supplier portal and download the latest invoice")
+    bcheck("web-task wording is offered the browser with web search off", "private_browser" in text and "Web access is disabled" not in text,
+          text[-200:])
+
+    private_ok = app_python("import os;print(os.environ.get('WINGS_BROWSER_ALLOW_PRIVATE',''))").strip() in ("1", "true")
+    site = "http://testsite:8000"
+    out = call({"action": "open", "url": "file:///etc/passwd"})
+    bcheck("browser refuses non-web URLs", "Only http and https" in out, out)
+    out = call({"action": "evaluate", "script": "document.cookie"})
+    # Refused twice over: the request authority does not grant evaluate, and
+    # the backend refuses it unless WINGS_BROWSER_ALLOW_EVAL=1.
+    bcheck("browser refuses page JavaScript by default", "turned off" in out or "outside server request authority" in out, out)
+    if not private_ok:
+        out = call({"action": "open", "url": f"{site}/form.html"})
+        bcheck("browser refuses private network addresses by default", "private or local" in out, out)
+        skip("browser page flow", "test site is on a private address; set WINGS_BROWSER_ALLOW_PRIVATE=1 to run it")
+        return
+    out = call({"action": "open", "url": f"{site}/form.html"})
+    bcheck("agent opens a page and gets a numbered outline", "PAGE STATE" in out and 'textbox "Full name"' in out, out)
+    out = call({"action": "fill", "find": "Full name", "text": "Ada Lovelace"})
+    bcheck("agent fills a text field", 'value="Ada Lovelace"' in out, out)
+    out = call({"action": "fill", "find": "Country", "text": "New Zealand"})
+    bcheck("agent chooses a dropdown option", 'selected="New Zealand"' in out, out)
+    out = call({"action": "fill", "find": "I agree to the terms", "text": "true"})
+    bcheck("agent ticks a checkbox", "checked" in out and "unchecked" not in out.split("I agree to the terms", 2)[-1][:20], out)
+    out = call({"action": "fill", "find": "Password", "text": "hunter2"})
+    bcheck("agent never types a password (handed to the person)", "PAUSED" in out and "password" in out, out)
+    out = call({"action": "click", "find": "Continue"})
+    bcheck("agent submits the form", "Thanks, Ada Lovelace" in out and "country=nz" in out and "agree=yes" in out, out)
+    out = call({"action": "open", "url": f"{site}/checkout.html"})
+    out = call({"action": "fill", "find": "Card number", "text": "4111111111111111"})
+    bcheck("agent never types a card number", "PAUSED" in out and "payment card" in out, out)
+    out = call({"action": "click", "find": "Place order"})
+    bcheck("'Place order' is handed to the person", "PAUSED" in out, out)
+    out = call({"action": "press", "key": "Enter", "find": "Card number"})
+    out = call({"action": "snapshot"})
+    bcheck("the order was not placed", "checkout.html" in out and "ORDER PLACED" not in out, out)
+    out = call({"action": "open", "url": f"{site}/index.html"})
+    out = call({"action": "click", "find": "Download invoice"})
+    m = __import__("re").search(r'Downloaded "([^"]+)"', out)
+    bcheck("a download is saved and reported to the agent", bool(m), out)
+    if m:
+        name = m.group(1)
+        out = call({"action": "read", "path": name})
+        bcheck("the agent reads the downloaded file", "Amount due: 42.10" in out, out)
+        st, listing = c.req("GET", "/api/wings/browser/downloads")
+        check("the live view lists the download", st == 200 and any(d.get("name") == name for d in listing.get("downloads", [])),
+              str(listing)[:200])
+        st, body = c.req("GET", "/wings/browser/downloads/" + urllib.parse.quote(name), raw=True)
+        check("the person can save the download through Wings", st == 200 and b"Amount due" in body, str(st))
+    out = call({"action": "read", "path": "../../app/data/app.db"})
+    bcheck("download names cannot escape the downloads folder", "without folders" in out, out)
+    events, text = chat_tool_outputs(c, sid, "Use the browser for this. WINGS_CALL private_browser " + json.dumps({"action": "screenshot"}))
+    shot = next((e for e in events if e.get("screenshot")), None)
+    bcheck("screenshot reaches the chat as an image", bool(shot) and str(shot.get("screenshot", "")).startswith("data:image/jpeg;base64,"),
+           unreachable if not events and "Model request failed" in text else str([sorted(e.keys()) for e in events])[:200])
+
+
 def main() -> int:
     c = Client()
     st, body = c.req("POST", "/api/auth/login", json_body={"username": USER, "password": PASSWORD})
@@ -154,6 +323,11 @@ def main() -> int:
     # falls back to textual tool transport for endpoints of unknown ability).
     c.req("PATCH", f"/api/model-endpoints/{ep_id}", json_body={"supports_tools": True})
     check("API never returns the endpoint key", SECRET_ENDPOINT_KEY not in json.dumps(c.req("GET", "/api/model-endpoints")[1]))
+
+    if os.environ.get("WINGS_E2E_ONLY") == "browser":
+        browser_checks(c, ep_id)
+        print(f"\n{failures} failure(s)")
+        return failures
 
     # --- chat, streaming, model switch ---------------------------------------
     st, sess = c.req("POST", "/api/session", form={
@@ -389,6 +563,13 @@ def main() -> int:
         check("CalDAV password not stored in plaintext", raw_pref == "", raw_pref)
     else:
         skip("CalDAV round trip", "caldav profile not enabled")
+
+    # --- browser automation (profile browser) ----------------------------------
+    st, bstat = c.req("GET", "/api/wings/browser/status")
+    if isinstance(bstat, dict) and bstat.get("enabled"):
+        browser_checks(c, ep_id)
+    else:
+        skip("browser automation", "browser profile not enabled")
 
     # --- whole-volume plaintext sweep -----------------------------------------
     hits = sh("docker", "exec", APP, "sh", "-c",
