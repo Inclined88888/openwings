@@ -1,0 +1,70 @@
+Wings patch 0010: move files between the browser and the workspace
+
+OpenManus's sandbox shares files between its browser, shell and code. Wings
+now does the same, safely:
+
+  * Downloads: the browser's downloads volume is mounted read-only inside
+    the default workspace (/workspaces/default/downloads, compose), so
+    read_file, python and the Workspace files page see what the browser
+    downloaded.
+  * Uploads: private_browser fill on a file field with path= attaches a
+    workspace file (wings/browser.py; no symlinks, at most 50 MB, nothing
+    outside /workspaces). src/tool_capabilities.py classifies a browser
+    action carrying a path as an external side effect, so upstream's
+    approval gate shows the person the exact upload before it happens.
+  * src/tool_schemas.py: documents both.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/src/tool_capabilities.py b/src/tool_capabilities.py
+index f0ba4b3..790ed07 100644
+--- a/src/tool_capabilities.py
++++ b/src/tool_capabilities.py
+@@ -538,6 +538,24 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
+                 known=base.known,
+             )
+ 
++    # Wings: a browser action that carries a workspace file (an upload into a
++    # page's file field) sends local data to a website. Classify it as an
++    # external side effect so the approval gate shows the person the exact
++    # upload before it happens (browsing always arms that gate).
++    if tool_name == "private_browser":
++        payload = content
++        if isinstance(payload, str):
++            try:
++                payload = json.loads(payload) if payload.strip().startswith("{") else {}
++            except (TypeError, ValueError):
++                payload = {}
++        if isinstance(payload, Mapping) and str(payload.get("path") or "").strip() and \
++                str(payload.get("action") or "").strip().lower() in {"fill", "press", "click", "upload"}:
++            return ToolCapabilities(
++                frozenset(base.effects | {ToolEffect.READ_WORKSPACE, ToolEffect.EXTERNAL_SIDE_EFFECT}),
++                base.result_integrity, known=base.known,
++            )
++
+     if tool_name == "extract_text":
+         payload = content
+         if isinstance(payload, str):
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index a70f37d..15f3377 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -393,7 +393,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "private_browser",
+-            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
++            "description": "Use websites in a real Chromium browser (the Wings browser service): open pages, read them, click, fill in forms, choose options, press keys, scroll and switch tabs. Every action returns the page as a numbered outline; act on elements by the [eN] refs of the NEWEST outline. Loop: open a url, read the outline, fill or click by ref, check the new outline, repeat until done. On long pages use find to locate text or elements and read for the full text; use screenshot when layout or images matter. Logins persist between chats. Downloads land in the workspace folder downloads/ (readable by read_file and python); to upload a workspace file, fill the file field with path=. The agent never types passwords, one-time codes or card numbers and never clicks pay, order, send, publish, apply or delete buttons: when a result says PAUSED, stop and ask the user to do that step in the live browser (Live browser in the sidebar), then continue from the new state. Prefer web_fetch to read one known page and web_search for open lookups. If the browser service is not enabled every action fails; then use web_search/web_fetch.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+@@ -410,7 +410,7 @@ FUNCTION_TOOL_SCHEMAS = [
+                     "selector": {"type": "string", "description": "CSS selector, only when no ref or visible text identifies the element."},
+                     "target": {"type": "string", "description": "Same as selector."},
+                     "script": {"type": "string", "description": "evaluate: JavaScript to run in the page (refused unless the admin enabled it)."},
+-                    "path": {"type": "string", "description": "Unused."},
++                    "path": {"type": "string", "description": "fill on a file upload field: the workspace file to attach (for example report.pdf or downloads/invoice.pdf); the person approves each upload. read: a downloaded file's name, to read its text."},
+                     "timeout_ms": {"type": "integer", "minimum": 0, "maximum": 60000, "description": "wait: milliseconds (default 2000, max 30000). open: page load timeout."}
+                 },
+                 "required": ["action"],

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Upload</title></head>
+<body><h1>Expense claim</h1>
+<label>Receipt <input type="file" name="receipt" id="receipt"></label>
+<p id="picked">No file chosen yet.</p>
+<script>
+document.getElementById('receipt').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  const text = (await f.text()).slice(0, 40);
+  document.getElementById('picked').textContent = 'Picked ' + f.name + ' (' + f.size + ' bytes): ' + text;
+});
+</script></body></html>

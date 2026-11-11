@@ -15,6 +15,9 @@ What it proves, against the real application:
   * secrets at rest: no plaintext endpoint key, mail password or MCP env value
     anywhere in the data volume; no key file in the data volume
   * child-process environment scrubbing for user-added MCP servers
+  * code runner (profile runner): the agent's python runs after one approval,
+    isolated (no secrets, no app data, no network); charts reach the chat and
+    files are downloadable
   * browser automation (profile browser): the agent opens, fills and submits
     a real form in the browser container through the chat API; passwords,
     card numbers and "Place order" are handed to the person; non-web URLs
@@ -304,6 +307,54 @@ def browser_checks(c: Client, ep_id: str) -> None:
            unreachable if not events and "Model request failed" in text else str([sorted(e.keys()) for e in events])[:200])
 
 
+def runner_checks(c: Client, ep_id: str) -> None:
+    """The agent's python runs in the runner container after one approval."""
+    st, d = c.req("GET", "/api/workspace/default")
+    ws = d.get("path") if isinstance(d, dict) else None
+    check("default chat workspace is configured", ws == "/workspaces/default", str(d)[:200])
+    if not ws:
+        return
+    st, sess = c.req("POST", "/api/session", form={
+        "name": "e2e runner", "endpoint_url": "http://mockllm:9999/v1", "model": "mock-alpha", "endpoint_id": ep_id})
+    sid = sess["id"]
+    code = ("import os, socket, pandas as pd, matplotlib.pyplot as plt\n"
+            "df = pd.DataFrame({'month': ['Jan', 'Feb', 'Mar'], 'sales': [120, 95, 143]})\n"
+            "df.to_excel('e2e-sales.xlsx', index=False)\n"
+            "df.plot(x='month', y='sales', kind='bar'); plt.savefig('e2e-sales.png')\n"
+            "print('total', df.sales.sum())\n"
+            "print('secrets', [k for k in os.environ if any(w in k for w in ('KEY', 'TOKEN', 'PASS', 'SECRET'))])\n"
+            "print('appdb', os.path.exists('/app/data/app.db'))\n"
+            "try:\n    socket.create_connection(('1.1.1.1', 80), timeout=3); print('network OPEN')\n"
+            "except OSError as e:\n    print('network closed')\n")
+    events, text = chat_tool_outputs(c, sid, "Analyse the sales with python. WINGS_CALL python " + json.dumps({"code": code}),
+                                     workspace=ws)
+    ask = next((e.get("ask_user") for e in events if isinstance(e.get("ask_user"), dict)), None)
+    if not events and "Model request failed" in text:
+        skip("code runner", "the model host was unreachable for this turn; rerun")
+        return
+    check("running code asks the person first (once per task)", bool(ask and ask.get("approval_id")), str(events)[:200])
+    if not ask:
+        return
+    events, text = chat_tool_outputs(c, sid, "", workspace=ws, tool_approval_id=ask["approval_id"],
+                                     tool_approval_decision="approve_task")
+    run = next((e for e in events if e.get("tool") == "python"), None)
+    out = str((run or {}).get("output") or "")
+    check("approved code runs in the runner", "total 358" in out, out[:300] or text[-300:])
+    check("code sees no secrets", "secrets []" in out, out[:300])
+    check("code cannot see the app's data", "appdb False" in out, out[:300])
+    check("code has no network", "network closed" in out, out[:300])
+    check("a chart the code saves is shown in the chat", str((run or {}).get("screenshot", "")).startswith("data:image/png"),
+          str(sorted((run or {}).keys())))
+    check("files the code wrote come with download links", "/wings/files/download?path=default/e2e-sales.xlsx" in out, out[:400])
+    st, body = c.req("GET", "/wings/files/download?path=default/e2e-sales.xlsx", raw=True)
+    check("the person can download the spreadsheet", st == 200 and body[:2] == b"PK", str(st))
+    st, body = c.req("GET", "/wings/files/download?path=../../app/data/app.db", raw=True)
+    check("workspace downloads cannot leave /workspaces", st == 404, str(st))
+    anon = Client()
+    st, _ = anon.req("GET", "/api/wings/files")
+    check("workspace files need a signed-in session", st in (401, 403), str(st))
+
+
 def main() -> int:
     c = Client()
     st, body = c.req("POST", "/api/auth/login", json_body={"username": USER, "password": PASSWORD})
@@ -324,8 +375,12 @@ def main() -> int:
     c.req("PATCH", f"/api/model-endpoints/{ep_id}", json_body={"supports_tools": True})
     check("API never returns the endpoint key", SECRET_ENDPOINT_KEY not in json.dumps(c.req("GET", "/api/model-endpoints")[1]))
 
-    if os.environ.get("WINGS_E2E_ONLY") == "browser":
-        browser_checks(c, ep_id)
+    only = os.environ.get("WINGS_E2E_ONLY", "")
+    if only in ("browser", "runner"):
+        if only == "browser":
+            browser_checks(c, ep_id)
+        else:
+            runner_checks(c, ep_id)
         print(f"\n{failures} failure(s)")
         return failures
 
@@ -570,6 +625,13 @@ def main() -> int:
         browser_checks(c, ep_id)
     else:
         skip("browser automation", "browser profile not enabled")
+
+    # --- code runner (profile runner) -------------------------------------------
+    profiles = app_python("import os;print(os.environ.get('WINGS_COMPOSE_PROFILES',''))")
+    if "runner" in profiles.split(","):
+        runner_checks(c, ep_id)
+    else:
+        skip("code runner", "runner profile not enabled")
 
     # --- whole-volume plaintext sweep -----------------------------------------
     hits = sh("docker", "exec", APP, "sh", "-c",
