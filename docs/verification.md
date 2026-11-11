@@ -388,6 +388,24 @@ bounds it.
 
 Unit tests: 181 pass.
 
+Live, on the rebuilt image, `tests/e2e/browser_actions.py` (browser actions
+called directly in the app container against the browser container and the
+test site): 13 of 13 pass. A batch read all three pages of a paged table in
+one call, repeated open, click and read for two items, stopped with PAUSED
+at "Place order" (the order was not placed) and refused page JavaScript;
+hover opened a menu shown only under the pointer; pointer clicks on an icon
+inside a labelled Delete button, on a labelled icon component and on a
+"Place order" button inside a closed shadow root were all handed to the
+person (nothing was deleted or ordered); a canvas click registered at the
+point asked for (within the 1 pixel the outline rounds to); drag onto a drop
+zone and the Pay now handoff still work. Through the chat, "batch reads
+every page" passed earlier; the chat driven browser suite could not be
+completed in this sandbox, where upstream's tool index retries an embedding
+model download every 30 seconds without internet access (490 attempts in an
+hour), which made about one model turn in five fail and some turns offer no
+browser tool. That upstream behaviour affects only installs that cannot
+reach HuggingFace.
+
 ## Operations
 
 * `setup.sh`: fresh `.env`, secrets generated, mode 600, CalDAV user bcrypt
