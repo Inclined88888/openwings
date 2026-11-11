@@ -16,7 +16,9 @@ Wings is a hardened deployment of [Odysseus](https://github.com/odysseus-dev/ody
 | Calendar sync (CalDAV), schedule questions, proposed events | Upstream + optional bundled Radicale |
 | Memory you can view, edit, delete | Upstream |
 | Web search tool for chat and agents | Upstream + bundled SearXNG |
-| **Browser automation**: the agent uses websites in a real browser; you watch live and take over | Upstream tool + Wings patch 0008 + optional browser container |
+| **Browser automation**: the agent uses websites in a real browser; you watch live and take over | Upstream tool + Wings patches 0008, 0010, 0011 + optional browser container |
+| **Code runner**: the agent runs Python and shell for data analysis, charts and office files, isolated from the app | Upstream tools + Wings patches 0009, 0014 + optional runner container |
+| Approved plans followed through long tasks; hard token and spend limits | Upstream plans + Wings patches 0012, 0013 |
 | Local and hosted models, configured in the UI | Upstream |
 | Model comparison side by side | Upstream |
 | Secrets encrypted at rest, key outside the data | Upstream + Wings patches 0001 to 0003 |
@@ -31,6 +33,8 @@ Wings is a hardened deployment of [Odysseus](https://github.com/odysseus-dev/ody
 * [Calendar](#calendar)
 * [Agents and tool access](#agents)
 * [Browser automation](#browser)
+* [Code runner and workspace files](#runner)
+* [Long tasks: plans and limits](#long-tasks)
 * [Where everything is in the app](#map)
 * [Backup, restore, upgrade](#backup)
 * [Security model](#security)
@@ -72,6 +76,7 @@ Optional extras, all through the same script (safe to re-run; it never regenerat
 | `--ollama-model qwen3:4b` | Pulls a model into the bundled Ollama after start |
 | `--with-caldav` | Bundled Radicale CalDAV server: a private calendar your phone can sync |
 | `--with-browser` | A real Chromium the agent drives for web tasks, with a live view you can take over (see [Browser automation](#browser)) |
+| `--with-runner` | An isolated container where the agent runs Python and shell code (see [Code runner](#runner)) |
 | `--domain ai.example.com --acme-email you@example.com` | Public HTTPS through Caddy with Let's Encrypt (the email is required) |
 | `--bind 0.0.0.0 --port 7011` | Expose the UI on your LAN instead of only this machine |
 | `--no-agents` | Skip adding the starter agents |
@@ -88,6 +93,7 @@ The stack:
 | `radicale` (profile `caldav`) | CalDAV calendars | `127.0.0.1:5232` |
 | `caddy` (profile `https`) | HTTPS front door | `80`, `443` |
 | `browser` (profile `browser`) | Chromium for the agent; live view through the app at `/wings/browser` | none (reachable only from `odysseus`) |
+| `runner` (profile `runner`) | Runs the agent's Python and shell code; no network at all | none (reachable only from `odysseus`) |
 
 All state lives in named Docker volumes (`odysseus-data`, `chromadb-data`, `radicale-data`, `ollama-models` and others listed at the end of `docker-compose.yml`). `docker compose down`, upgrades and container rebuilds never touch them; only `docker compose down -v` deletes data.
 
@@ -195,7 +201,7 @@ Five starter agents are added on first install (`./scripts/seed-agents.sh` re-ad
 
 **Self improvement**: memory facts are extracted from conversations automatically (every few messages; toggle in the Memory panel), and the system drafts reusable "skills" from long agent runs. Wings changes one default: drafted skills wait in **Skills** for your approval instead of auto publishing into future prompts, because they can be learned from untrusted web or email text. Turn "Auto approve skills" on in the Memory panel if you prefer full autonomy.
 
-**Browser and computer use**: browser automation works with `--with-browser` (next section). Agent shell and code execution stay off: upstream's `bash` and `python` tools refuse to run without a sandbox (bubblewrap) that the upstream image lacks, and Wings does not loosen that. Web search, page reading, PDFs and YouTube transcripts work without either.
+**Browser and code**: browser automation works with `--with-browser` ([Browser automation](#browser)) and code execution with `--with-runner` ([Code runner](#runner)). Without the runner, upstream's `bash` and `python` tools refuse to run: they need a sandbox (bubblewrap) that Docker does not allow, and Wings does not loosen that; the runner gives them a separate locked down container instead. Web search, page reading, PDFs and YouTube transcripts work without either.
 
 <a id="browser"></a>
 ## Browser automation
@@ -216,7 +222,11 @@ This adds the `browser` container: a real, headful Chromium on a virtual screen.
 [e12] button "Continue"
 ```
 
-and acts by number: open, read, find, click, fill (text, dropdowns, checkboxes), type, press keys, scroll, wait, tabs, back and forward, and screenshots for vision models. Because the outline is text, it works with local and hosted models alike. Each chat gets its own tab, and pop up windows are followed automatically. Files the browser downloads are saved in the `browser-downloads` volume: the agent can read text and PDF downloads (for example the amount on an invoice), and you save any of them from **Downloads** in the live view.
+and acts by number: open, read, find, click, fill (text, dropdowns, checkboxes), type, press keys, scroll, wait, tabs, back and forward, and screenshots for vision models. Because the outline is text, it works with local and hosted models alike. Each chat gets its own tab, and pop up windows are followed automatically.
+
+* **Reading** returns headings, lists and tables as structured text (tables stay tables), so the agent can pull figures out of a page reliably.
+* **Canvas apps and drag and drop** (patch 0011): canvas areas and draggable items appear in the outline with their position, and the agent can click at a point (`x`, `y`) or drag from one element or point to another, including onto a drop zone named by its visible text. The pay and send guard below applies to pointer clicks and to both ends of a drag.
+* **Files** (patch 0010): downloads land in the agent workspace under `downloads/`, where the agent can read them, analyse them with the code runner, and you can save them from **Workspace files** or the live view's **Downloads**. The agent can also upload a workspace file into a web form (`fill` with `path=`); every upload asks for your approval first, because it sends your file to a website.
 
 **Ask in plain words**, in Agent mode: "Log into the supplier portal and download last month's invoice", "Fill in the contact form on example.com with my details", "Check my order status on the shop site", "Go to the council website and find the bin collection days". Naming a site, a portal, a form or the browser is enough; the web search switch does not need to be on.
 
@@ -243,12 +253,47 @@ Other settings: `WINGS_BROWSER_SCREEN=1440x900`, `WINGS_BROWSER_LANG=en-US` (web
 **Limits, honestly**:
 
 * Sites with strong bot detection or CAPTCHAs on every action (some banks, airlines, ticketing, social networks) may block or slow automation. The browser is a normal headful Chromium with a persistent profile, which helps, but there is no stealth or CAPTCHA solving. Take over in the live view when that happens.
-* File uploads are not supported for the agent yet (you cannot upload through the live view either: it shows the server's browser, not your computer). Downloads are not copied into Wings **Files** automatically; save them from the live view's Downloads list and upload them there if you want them indexed.
+* Uploads come only from the agent workspace (you cannot upload from your own computer through the live view: it shows the server's browser). Downloads are not added to Wings **Files** (the searchable library) automatically; upload them there if you want them indexed.
 * One browser and one action at a time: chats and scheduled agents share it, each in its own tab.
 * Quality depends on the model. Small local models (under about 14B parameters) often lose track over long web tasks; a strong hosted model or a large local one does far better.
 * Resource use: the browser container measured about 0.26 GB with a few simple test pages open. Real websites with heavy scripts take far more per tab, so the container is capped at 3 GB (`WINGS_BROWSER_MEMORY`) and at 10 tabs (`WINGS_BROWSER_MAX_TABS`, least recently used tabs close first).
 
-How this compares with OpenManus, and what Wings still lacks (code execution is the big one): [docs/openmanus_comparison.md](docs/openmanus_comparison.md).
+How this compares with OpenManus, capability by capability, and what Wings still lacks: [docs/openmanus_comparison.md](docs/openmanus_comparison.md).
+
+<a id="runner"></a>
+## Code runner and workspace files
+
+Turn it on once:
+
+```bash
+./scripts/setup.sh --with-runner      # or add "runner" to COMPOSE_PROFILES in .env, then docker compose up -d
+```
+
+The agent's `python` and `bash` tools then run in the `runner` container (patch 0009), with numpy, pandas, scipy, matplotlib, Pillow, openpyxl, XlsxWriter, python-docx, python-pptx, pypdf and tabulate installed. Ask in plain words, in Agent mode: "Analyse this CSV and chart sales by month", "Clean this spreadsheet and give me an Excel file", "Turn these notes into a Word document". The **Data Analyst** starter agent is set up for this kind of work.
+
+* **What you see**: charts the code saves appear in the chat; every file the code writes is listed with a download link, and sidebar **Workspace files** lists everything in the workspace (newest first) for download. Files are never opened on the app's own address, only downloaded.
+* **Approval**: running code is an action on your behalf, so upstream's approval gate asks before the first run in a task once the chat has seen web or email content ("Allow for this task", "Allow for this chat", "Deny").
+* **Isolation** (`docker-compose.yml`, `docker/runner/runner_server.py`): no network at all (not even the internet), no secrets in its environment, no access to the app's data or keys, read only system files, all capabilities dropped, no privilege escalation, and limits on CPU time, memory, file size and processes. Only the agent workspace (`agent-workspaces` volume, mounted at `/workspaces`) is writable. The app reaches it with a shared secret (`WINGS_RUNNER_TOKEN`) from its own address only.
+* **Limits**: each run stops after `WINGS_RUNNER_MAX_TIMEOUT` seconds (default 300). Upstream starts long commands as detached background jobs, which Docker cannot contain; Wings runs them in the runner at the full time limit instead and tells the agent so (patch 0014). Nothing keeps running between calls, and a run cannot install packages from the internet.
+* **Where files live**: chats work in `/workspaces/default` (`ODYSSEUS_WORKSPACE_DEFAULT`). The browser's downloads appear inside it as `downloads/` (read only there). Backups include the workspace.
+
+Settings: `WINGS_RUNNER_MAX_TIMEOUT=300`, `WINGS_RUNNER_MEMORY_MB=2048` (per run), `WINGS_RUNNER_MEMORY=3g` and `WINGS_RUNNER_CPUS=2` (whole container).
+
+<a id="long-tasks"></a>
+## Long tasks: plans and limits
+
+**Plans**: press Tab in the message box (on a phone, swipe sideways on the message bar) to turn on **Plan mode**: the agent researches and proposes a checklist without changing anything, and you review it and press **Execute** under its reply. While it works it ticks steps off. Wings keeps the approved plan for that chat (patch 0012): when the agent reaches its step limit with steps left, the chat continues on its own up to 3 times per approval (press **Stop here** to prevent that), and a **Continue** or a typed "continue" carries the plan and its ticks forward instead of starting from memory. Approvals, questions and the stop button still pause it. The step limit per message is in **Settings → Agent** (40 by default in Wings, up to 200).
+
+**Token and spend limits** (patch 0013, all off until you set them in `.env`):
+
+| Setting | Stops |
+| --- | --- |
+| `WINGS_RUN_MAX_TOKENS` | one agent reply, including all its tool rounds, after this many input plus output tokens |
+| `WINGS_RUN_MAX_USD` | one agent reply after about this many US dollars |
+| `WINGS_DAY_MAX_TOKENS` | each person's chats, agents and scheduled tasks for the rest of the day |
+| `WINGS_DAY_MAX_USD` | the same, in estimated US dollars |
+
+When a limit is reached the agent stops before its next tool and says which limit it hit; a used up daily limit refuses new messages until midnight (in `TZ`). Dollar amounts are estimates from upstream's price table; models it does not know, and local models, count as zero dollars but still count tokens. A reply can overshoot by at most one model round, and small helper calls (chat titles, memory extraction) are not counted.
 
 <a id="map"></a>
 ## Where everything is in the app
@@ -310,6 +355,9 @@ Nightly backups with cron (`crontab -e`):
 * **Pinned supply chain**: every image is pinned by digest; Python packages Wings adds (the browser driver) are pinned by SHA-256; Wings disables upstream's start time download of an unpinned npm browser package.
 * **Browser container**: no host ports and no access to your data or keys. Chromium's DevTools listens on loopback and the screen (VNC and its WebSocket bridge) on unix sockets, so no web page in that browser can reach them. The only way in is a guard that requires both the `odysseus` container's address and a shared secret (`WINGS_BROWSER_TOKEN`, generated by setup.sh and held only in memory by the app). The app relays the screen only to a signed in person allowed to use the browser, over a same origin WebSocket that closes within 30 seconds of the session ending; the viewer's code ships in the Wings image, not from the browser container. Every request Chromium makes goes through a proxy that refuses private and local addresses after resolving them itself. All capabilities are dropped and privilege escalation is blocked. Chromium runs without its own sandbox (Docker's default seccomp profile blocks the namespaces it needs), so the container is the isolation boundary. Downloads are read without following links. Its cookies are live sessions: treat the `browser-profile` volume like a password store. Backups leave it out on purpose.
 
+* **Code runner container**: no network of any kind (its only network is internal and shared with the app alone), no host ports, no secrets in its environment, no access to the app's data volume or keys, read only root filesystem, all capabilities dropped, privilege escalation blocked, CPU, memory, file size and process limits per run, and the run's process group killed when it ends. It accepts work only from the `odysseus` container's address with the shared secret `WINGS_RUNNER_TOKEN` (generated by setup.sh, held only in memory by the app). The agent workspace it writes to is shared with the app's file tools and downloadable only by a signed in admin, never rendered on the app's address. Code the agent runs can read and change everything in the workspace except `downloads/`, which is read only in both the app and the runner.
+* **Token and spend limits**: optional hard caps per reply and per person per day ([Long tasks](#long-tasks)).
+
 Not covered (upstream behaviour, documented rather than changed): web search API keys typed into **Settings → Search** are stored in plaintext `settings.json` (put them in `.env` instead: `DATA_BRAVE_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`); two factor seeds and server side session tokens sit unencrypted in the data volume; the agent approval gate is taint based (it asks after untrusted web or mail content has entered a run, not before every action). Do not expose the app to the internet without HTTPS, two factor authentication and a strong password.
 
 <a id="patches"></a>
@@ -325,6 +373,12 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0006](patches/0006-sidebar-agents-files-and-os-theme.patch) | Agents and Files entries in the sidebar; theme follows the OS |
 | [0007](patches/0007-safer-defaults-and-caldav-fix.patch) | Document auto delete job ships paused; learned skills need approval; CalDAV writeback crash fix |
 | [0008](patches/0008-browser-automation.patch) | `private_browser` page actions run in the Wings browser container; web task wording routes to it; old page outlines leave the context; live view routes and sidebar entry |
+| [0009](patches/0009-code-runner.patch) | `python` and `bash` run in the Wings runner container; Workspace files page and sidebar entry; fixes an upstream bug that refused every approved code run (`RequestAuthority.intersect` marked the request's own authority as inherited) |
+| [0010](patches/0010-browser-file-transfer.patch) | Browser uploads from the workspace (classified as an external action, so the approval gate asks); downloads land in the workspace |
+| [0011](patches/0011-browser-pointer-actions.patch) | Browser clicks at screen points and drag and drop, with the same guards as clicks by element |
+| [0012](patches/0012-plan-continuation.patch) | An approved plan stays pinned on Continue and is followed automatically, a bounded number of times, past the step limit |
+| [0013](patches/0013-run-budget.patch) | Hard token and spend caps per reply and per person per day |
+| [0014](patches/0014-runner-background-marker.patch) | Long commands upstream would start as detached jobs (which always failed in Docker) run in the runner instead |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 
@@ -378,6 +432,10 @@ To run the end to end suite on a **test** install (it creates test data): `./tes
 | Agent stops with "PAUSED, needs the person" | Intended: do that step in the live view, then tell the agent to continue |
 | A site on your LAN is refused | `WINGS_BROWSER_ALLOW_PRIVATE=1` in `.env`, then `docker compose up -d` |
 | Slow or no answers from a local model | Use a smaller model, raise `OLLAMA_CONTEXT_LENGTH` carefully, or add a hosted provider |
+| Agent says "The code runner is not running" | `./scripts/setup.sh --with-runner`, or `docker compose ps runner` and `docker compose logs --tail 50 runner` |
+| Agent says "Process creation requires a sealed workspace" | The chat has no workspace: check `ODYSSEUS_WORKSPACE_DEFAULT` in `.env` (default `/workspaces/default`) and restart |
+| Code run "timed out" | Raise `WINGS_RUNNER_MAX_TIMEOUT` in `.env` (seconds), then `docker compose up -d` |
+| "Daily token limit reached" or "Run spend limit reached" | Intended: raise or empty the matching `WINGS_RUN_MAX_*` or `WINGS_DAY_MAX_*` setting in `.env`, then `docker compose up -d` |
 | Anything else | `docker compose ps`, `docker compose logs --tail 100 odysseus` |
 
 ## License

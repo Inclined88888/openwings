@@ -1107,9 +1107,20 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
         state, _ = await driver.observe(tab, key)
         if tab.dialog is not None:
             return "screenshot", {"output": "No screenshot while a dialog is open.\n" + state, "exit_code": 0}
-        shot = await page.screenshot(type="jpeg", quality=60, timeout=10000)
+        marks = await _draw_marks(page, tab)
+        try:
+            shot = await page.screenshot(type="jpeg", quality=60, timeout=10000)
+        finally:
+            if marks is not None:
+                try:
+                    await marks.evaluate("(host) => host.remove()")
+                    await marks.dispose()
+                except Exception:
+                    pass
         await driver.require_allowed_url(tab)  # discard it if the page moved somewhere blocked meanwhile
-        return "screenshot", {"output": "Screenshot of the visible part of the page attached.\n" + state, "exit_code": 0,
+        labelled = " Boxes labelled e1, e2, ... are the refs in the page state below." if marks is not None else ""
+        return "screenshot", {"output": "Screenshot of the visible part of the page attached." + labelled + "\n" + state,
+                              "exit_code": 0,
                               "images": [{"mimeType": "image/jpeg", "data": base64.b64encode(shot).decode()}]}
 
     if action == "read" and args.get("path"):
@@ -1409,6 +1420,46 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
     raise BrowserError(f"Unsupported action {action}.")
 
 
+# Boxes of the ref'd elements visible in one frame, for screenshot labels.
+_MARK_BOXES_JS = """(attr) => {
+  const out = [];
+  for (const el of document.querySelectorAll('[' + attr + ']')) {
+    const ref = el.getAttribute(attr);
+    if (!/^e\\d{1,6}$/.test(ref || '')) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
+    out.push([ref, r.left, r.top, r.width, r.height]);
+    if (out.length >= 300) break;
+  }
+  return out;
+}"""
+
+# Draws numbered boxes over the page for one screenshot (removed right after).
+# A closed shadow root keeps page styles and scripts out of the labels.
+_MARKS_DRAW_JS = """(boxes) => {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;overflow:visible;z-index:2147483647;pointer-events:none;';
+  const root = host.attachShadow({ mode: 'closed' });
+  const colors = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#008080', '#9a6324', '#800000', '#000075', '#808000'];
+  boxes.forEach((b, i) => {
+    const [ref, x, y, w, h] = b;
+    const c = colors[i % colors.length];
+    const box = document.createElement('div');
+    box.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:${w}px;height:${h}px;border:2px solid ${c};box-sizing:border-box;`;
+    const tag = document.createElement('div');
+    tag.textContent = ref;
+    // Just right of the box (usually empty space in forms and lists),
+    // inside its right edge when the box reaches the edge of the screen.
+    const lw = 8 + 7 * ref.length;
+    const lx = x + w + 2 + lw <= innerWidth ? x + w + 2 : Math.max(0, x + w - lw);
+    tag.style.cssText = `position:fixed;left:${lx}px;top:${Math.max(0, y)}px;background:${c};color:#fff;font:bold 11px/14px monospace;padding:0 3px;border-radius:2px;`;
+    root.appendChild(box);
+    root.appendChild(tag);
+  });
+  document.documentElement.appendChild(host);
+  return host;
+}"""
+
 _POINT_JS = "([x, y]) => {" + _LABEL_FN + """
   if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return { outside: true };
   const el = document.elementFromPoint(x, y);
@@ -1439,6 +1490,34 @@ async def _point_info(page, x: int, y: int) -> dict:
     if info.get("frame"):
         raise BrowserError("That point is inside an embedded frame; act on the refs inside it instead.")
     return info
+
+
+async def _draw_marks(page, tab: _Tab):
+    """Label the refs on screen (set of marks) so a vision model can match
+    what it sees to the refs it acts on. Returns the overlay handle, or None
+    when nothing could be labelled; never fails the screenshot."""
+    boxes = []
+    try:
+        frames = {id(frame): frame for frame, _ in tab.refs.values()}.values()
+        for frame in frames:
+            if frame.is_detached():
+                continue
+            dx = dy = 0.0
+            if frame is not page.main_frame:
+                handle = await frame.frame_element()
+                fbox = await handle.bounding_box()
+                if not fbox:
+                    continue
+                dx, dy = fbox["x"], fbox["y"]
+            for ref, x, y, w, h in await asyncio.wait_for(frame.evaluate(_MARK_BOXES_JS, tab.attr), 5):
+                if ref in tab.refs and tab.refs[ref][0] is frame:
+                    boxes.append([ref, round(x + dx), round(y + dy), round(w), round(h)])
+        if not boxes:
+            return None
+        return await asyncio.wait_for(page.main_frame.evaluate_handle(_MARKS_DRAW_JS, boxes[:300]), 5)
+    except Exception as exc:
+        logger.debug("screenshot labels skipped: %s", _short_error(exc))
+        return None
 
 
 async def _drag_end(driver: _Driver, tab: _Tab, ref, point, text=None):

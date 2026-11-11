@@ -305,6 +305,8 @@ def browser_checks(c: Client, ep_id: str) -> None:
     shot = next((e for e in events if e.get("screenshot")), None)
     bcheck("screenshot reaches the chat as an image", bool(shot) and str(shot.get("screenshot", "")).startswith("data:image/jpeg;base64,"),
            unreachable if not events and "Model request failed" in text else str([sorted(e.keys()) for e in events])[:200])
+    bcheck("the screenshot labels the refs the agent acts on", bool(shot) and "Boxes labelled e1" in str(shot.get("output", "")),
+           unreachable if not events and "Model request failed" in text else str((shot or {}).get("output", ""))[:200])
 
 
 def runner_checks(c: Client, ep_id: str) -> None:
