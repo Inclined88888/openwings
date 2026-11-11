@@ -9,6 +9,14 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { snapModalToZone } from './tileManager.js?v=20260910responsivebounds1';
 
 export const THEMES = {
+  // OpenWings looks: each also changes type, shapes and textures through
+  // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
+  'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
+  'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#8FC6CF' },
+  'ow-fieldbook':       { bg:'#F6F1E7', fg:'#2B2A26', panel:'#FCF9F3', border:'#E2D9C8', red:'#33604A' },
+  'ow-fieldbook-night': { bg:'#1C1E1A', fg:'#E8E3D7', panel:'#262A23', border:'#343A30', red:'#9CCBA9' },
+  'ow-hush':            { bg:'#ECEAE6', fg:'#23201F', panel:'#FCFBFA', border:'#DAD6D0', red:'#A3405A' },
+  'ow-hush-night':      { bg:'#1C1A19', fg:'#ECE7E2', panel:'#282523', border:'#3B3633', red:'#E8919F' },
   dark:       { bg:'#282c34', fg:'#9cdef2', panel:'#111111', border:'#355a66', red:'#e06c75' },
   light:      { bg:'#f3f5f7', fg:'#26313a', panel:'#ffffff', border:'#cbd3da', red:'#b34d5c' },
   midnight:   { bg:'#0d1117', fg:'#c9d1d9', panel:'#161b22', border:'#30363d', red:'#f85149' },
@@ -34,11 +42,17 @@ export const THEMES = {
   yoyo:       { bg:'#211f23', fg:'#dfdbd7', panel:'#141415', border:'#3e5146', red:'#e09d6c' },
 };
 
-// Wings: with no saved choice, follow the operating system's light/dark
-// preference instead of always starting dark. A saved theme still wins.
-const DEFAULT_THEME = (typeof window !== 'undefined' && window.matchMedia
-  && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
-const THEME_DISPLAY_NAMES = { ocean: 'starfield' };
+// OpenWings: with no saved choice, start in the default OpenWings look, in
+// its day or night version per the operating system. A saved theme still wins.
+const OW_DEFAULT_LOOK = 'ow-duet';
+const DEFAULT_THEME = OW_DEFAULT_LOOK + ((typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(prefers-color-scheme: light)').matches) ? '' : '-night');
+const THEME_DISPLAY_NAMES = {
+  ocean: 'starfield',
+  'ow-duet': 'Duet', 'ow-duet-night': 'Duet night',
+  'ow-fieldbook': 'Fieldbook', 'ow-fieldbook-night': 'Fieldbook night',
+  'ow-hush': 'Hush', 'ow-hush-night': 'Hush night',
+};
 const LS_KEY = 'odysseus-theme';
 const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
 
@@ -2314,6 +2328,7 @@ async function _initWithSync() {
       }
       Storage.setJSON(LS_KEY, serverTheme);
       applyColors(serverTheme.colors);
+      applyOpenWingsSkin(serverTheme.name);
     }
   }
   // Also sync custom themes from server
@@ -2340,4 +2355,9 @@ if (document.readyState === 'loading') {
 }
 
 // OpenWings: the look of the saved theme (or the default) from the start.
-try { applyOpenWingsSkin((getSaved() || {}).name || DEFAULT_THEME); } catch (_) {}
+// With nothing saved, the default look's colours are applied too, so the
+// look never sits on upstream's dark defaults.
+try {
+  applyOpenWingsSkin((getSaved() || {}).name || DEFAULT_THEME);
+  if (!getSaved()) applyColors(THEMES[DEFAULT_THEME]);
+} catch (_) {}
