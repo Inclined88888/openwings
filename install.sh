@@ -40,15 +40,18 @@ openwings_install() {
   say()  { printf '%s==>%s %s\n' "$G" "$N" "$*"; }
   warn() { printf '%s!!%s  %s\n' "$Y" "$N" "$*" >&2; }
   die()  { printf '%sxx%s  %s\n' "$R" "$N" "$*" >&2; exit 1; }
-  # Questions are read from the terminal, not from the piped script.
+  # Questions are read from the terminal, not from the piped script. Each
+  # one is something the install cannot go on without, so Enter means yes.
+  # With no terminal to ask (unattended), the answer is no unless
+  # OPENWINGS_YES=1.
   ask() {
     local answer=""
     if [ "${OPENWINGS_YES:-}" = "1" ]; then return 0; fi
     if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-      printf '%s%s%s [y/N] ' "$B" "$1" "$N" > /dev/tty
-      read -r answer < /dev/tty || answer=""
+      printf '%s%s%s [Y/n] ' "$B" "$1" "$N" > /dev/tty
+      read -r answer < /dev/tty || answer="n"
+      case "$answer" in ''|y|Y|yes|Yes|YES) return 0 ;; esac
     fi
-    case "$answer" in y|Y|yes|Yes|YES) return 0 ;; esac
     return 1
   }
   need() { command -v "$1" >/dev/null 2>&1 || die "$1 is needed and was not found. Install it, then run this again."; }
@@ -287,7 +290,7 @@ openwings_install() {
       case "$mem_bytes" in ''|*[!0-9]*) mem_bytes=0 ;; esac
       mem_gb=$(( (mem_bytes + 536870912) / 1073741824 ))
       if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$min_gb" ]; then
-        if ask "Colima has ${mem_gb} GB of memory; OpenWings needs ${min_gb} GB. Restart Colima with ${min_gb} GB now?"; then
+        if ask "Docker (Colima) has only ${mem_gb} GB of memory and OpenWings needs ${min_gb} GB to start. Restart Colima with ${min_gb} GB? (Anything else running in Colima restarts too.)"; then
           say "Restarting Colima with ${min_gb} GB"
           if ! { colima stop && colima start --memory "$min_gb"; }; then
             die "Colima did not restart. Run: colima stop && colima start --memory ${min_gb}"
