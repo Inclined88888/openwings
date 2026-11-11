@@ -427,8 +427,61 @@ reach HuggingFace.
 Sidebar shows **Agents** (keyboard focusable) and **Files & Docs**; the agent
 editor's Tool access section renders 15 families; ticking two and pressing
 Start Persona stores exactly those on the active agent and its saved template,
-and reopening the editor restores them; with no saved theme the app opens
-light under a light OS setting and dark under a dark one; no page errors.
+and reopening the editor restores them; no page errors. (Theme defaults are
+now covered under "OpenWings looks" below.)
+
+## OpenWings looks (patches 0019 and 0020, 2026-11-11)
+
+Two looks ship, each with a night version: **Duet** (the default) and
+**Hush**. Three were designed, built in the running app and judged side by
+side by a separate art director pass; the third (Fieldbook) was dropped because
+it read as an existing product. Both kept looks then had a polish round
+against the art director's must fix list.
+
+Checked in the rebuilt image, in Chromium:
+
+* **First run** (fresh browser, nothing saved, no server theme): the login
+  page and the app open in Duet under a light OS setting and Duet night under
+  a dark one, with the look's colours, not upstream's dark defaults.
+* **Theme picker**: picking Hush applies the Hush look; picking an upstream
+  theme (midnight) removes the look; Reset to Default returns to Duet from
+  either, look and colours together.
+* **Customize tab**: while a look is active, colour, colour harmony and font
+  controls are locked behind a note, so one colour edit cannot silently drop
+  the look; with an upstream theme they work as before.
+* **Wording**: the welcome line reads "Your private workspace. Ready when you
+  are."; upstream's "Nobody" mode is labelled Incognito with a plain tooltip.
+* **Send button**: an empty box keeps a quiet send arrow; Enter or a click on
+  an empty box does nothing (upstream opened a new chat); typing switches to
+  send; the accessible name follows the button's action.
+* **Incognito and Tidy**: an Incognito chat answered, survived the sidebar
+  Tidy (`/api/sessions/auto-sort?skip_llm=true`, 200), and answered again in
+  the same session.
+* **Contrast**: every visible text element on the welcome screen and the
+  sample chat was measured against its real background in all four themes
+  (31 and 66 to 69 elements per view). All meet WCAG AA except one reading
+  the scanner cannot see correctly: Duet's active Chat pill, whose background
+  is a separate sliding element. Measured from pixels it is 7.73:1 (Duet) and
+  8.63:1 (Duet night).
+* **Fonts**: all self hosted (Atkinson Hyperlegible Next and Mono, Bricolage
+  Grotesque, Figtree, Readex Pro, Red Hat Mono), each with its OFL licence;
+  nothing is fetched from another site. `tests/unit/test_wings_looks.py`
+  checks this, and that the colour table, first paint colours, look files,
+  display names and boot defaults agree.
+
+An independent review of the patch's JavaScript found 8 issues; 6 were
+confirmed and all 8 are fixed: Reset to Default left the old look, `/theme
+save` fell back to upstream dark, the assistant's theme tool did not know the
+looks, a colour edit dropped the look, Enter on an empty box still submitted,
+the send button kept the accessible name "New chat", and renaming the stored
+Incognito session would have let upstream's Tidy delete a chat in use (the
+stored name stays `Nobody`; only the labels changed).
+
+Upstream tests over the 61 test files touching the changed code: unpatched
+14 failed, OpenWings 15 failed, the same set plus
+`test_clean_agent_preview.py::test_v3_browser_schema_does_not_offer_batch_or_current_tab_authority`.
+That one is intended and comes from patch 0018: upstream asserts the browser
+tool has no `batch` action, and OpenWings adds it.
 
 ## Not verified: please check on your server
 

@@ -393,7 +393,7 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0017](patches/0017-mcp-server-instructions.patch) | The usage notes MCP servers send when they connect reach the model, labelled as the server's words, on turns where that server's tools are offered |
 | [0018](patches/0018-browser-batch-and-hover.patch) | Several browser actions in one call (per item or per page), each guarded as if alone; hover for menus |
 | [0019](patches/0019-openwings-branding.patch) | OpenWings name, logo and icons in the app, login page and installed app; a "built on Odysseus (AGPL 3.0)" line on the login page |
-| [0020](patches/0020-openwings-looks.patch) | OpenWings looks (Duet and Hush, each with a night version) in the theme picker, with their own type and shapes; new users start in Duet; plain wording for Incognito chats and the welcome line |
+| [0020](patches/0020-openwings-looks.patch) | OpenWings looks (Duet and Hush, each with a night version) in the theme picker, with their own type and shapes; new users start in Duet; plain wording for Incognito chats and the welcome line; an empty message box no longer opens a new chat |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 

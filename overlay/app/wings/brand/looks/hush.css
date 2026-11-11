@@ -1908,3 +1908,20 @@
   :root[data-ow-skin="ow-hush"] #chat-history .msg .body pre code,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre code { padding-top: 14px !important; }
 }
+
+/* Edit: upstream draws it as the text glyph ✎, thinner than the drawn bin and
+   menu icons beside it. Redrawn as a stroked pencil (same path as Duet). */
+:root[data-ow-skin^="ow-hush"] #chat-history .msg-action-btn[data-action="edit"] {
+  font-size: 0 !important;
+  letter-spacing: 0 !important;
+  line-height: 0 !important;
+}
+:root[data-ow-skin^="ow-hush"] #chat-history .msg-action-btn[data-action="edit"]::before {
+  content: '' !important;
+  display: block !important;
+  width: 15px !important;
+  height: 15px !important;
+  background: currentColor !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a2.82 2.82 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center / 100% 100% no-repeat !important;
+}
