@@ -1,6 +1,8 @@
 # OpenWings brand files
 
-Two open black wings on a white background.
+Two open black wings on a white background; their inner edges cradle an open
+"O" (for OpenWings). Chosen from five candidates drawn for a softer, more
+premium mark.
 
 | File | Use |
 | --- | --- |
@@ -12,10 +14,14 @@ Two open black wings on a white background.
 | `png/icon-192.png`, `png/icon-512.png`, `png/icon-maskable-512.png`, `png/favicon.ico`, `png/apple-touch-icon.png` | App icons; the image build installs the copies in `overlay/app/wings/brand/` |
 | `png/openwings-mark.png` | The logo as a 512 x 512 PNG |
 
-The PNG files are rendered from the SVG files with Chromium (wordmark in the
-Inter typeface). To change the logo, edit `openwings-mark.svg` (the other SVG
-files reuse its feather and wing shapes), render the PNG files again, and copy
-the app icons into `overlay/app/wings/brand/`.
+Everything is built from `openwings-mark.svg` (a 512 x 512 SVG: a white square
+plus black shapes) by one command, which writes the other SVG files, renders
+the PNG files with Chromium (wordmark in the Inter typeface), makes
+`favicon.ico` and copies the app icons into `overlay/app/wings/brand/`:
+
+    python3 scripts/dev/brand/build.py [new-mark.svg]
+
+It needs node with the playwright package, and Pillow.
 
 ## GitHub
 
