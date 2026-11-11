@@ -33,7 +33,7 @@ openwings_install() {
   local DIR="${OPENWINGS_DIR:-$HOME/openwings}"
   local REF="${OPENWINGS_REF:-}"
   local WAIT="${OPENWINGS_DOCKER_WAIT:-300}"
-  local OS USE_SG=0 SUDO=""
+  local OS USE_SG=0 SUDO="" arg no_start=0
 
   local B="" G="" Y="" R="" N=""
   if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'; fi
@@ -70,6 +70,7 @@ openwings_install() {
   fi
   need curl
   need tar
+  for arg in ${1+"$@"}; do [ "$arg" = "--no-start" ] && no_start=1; done
 
   # 1. Which version ------------------------------------------------------
   if [ -z "$REF" ]; then
@@ -83,40 +84,70 @@ openwings_install() {
   fi
 
   # 2. The code ----------------------------------------------------------
-  has_git() { git --version >/dev/null 2>&1; }   # false for macOS's git stub without the developer tools
+  # On a Mac without Apple's command line tools, /usr/bin/git is only a stub
+  # that pops up an install dialog; treat that as no git.
+  has_git() {
+    if [ "$OS" = "mac" ] && [ "$(command -v git 2>/dev/null)" = "/usr/bin/git" ] && ! xcode-select -p >/dev/null 2>&1; then
+      return 1
+    fi
+    git --version >/dev/null 2>&1
+  }
+  # Without git: download the release archive. On an update, the folders that
+  # hold only shipped code are replaced so files removed upstream go away;
+  # .env, config/ (CalDAV users) and backups/ are never touched.
   fetch_tarball() {
-    local tmp kind
+    local tmp kind d
     tmp="$(mktemp -d)"
     for kind in heads tags; do
-      if curl -fsSL "https://codeload.github.com/${SLUG}/tar.gz/refs/${kind}/${REF}" | tar -xzf - -C "$tmp" --strip-components=1 2>/dev/null; then
+      if curl -fsSL "https://codeload.github.com/${SLUG}/tar.gz/refs/${kind}/${REF}" | tar -xzf - -C "$tmp" --strip-components=1 2>/dev/null \
+         && [ -f "$tmp/scripts/setup.sh" ]; then
         mkdir -p "$DIR"
+        for d in compose docker docs overlay patches scripts tests; do
+          if [ -d "$tmp/$d" ]; then rm -rf "${DIR:?}/$d"; fi
+        done
         cp -R "$tmp/." "$DIR/"
         rm -rf "$tmp"
         return 0
       fi
+      rm -rf "$tmp"; tmp="$(mktemp -d)"
     done
     rm -rf "$tmp"
     die "Could not download OpenWings (${REF}) from GitHub."
   }
+  is_openwings_repo() {
+    case "$(git -C "$DIR" remote get-url origin 2>/dev/null)" in
+      *[/:]Inclined88888/openwings|*[/:]Inclined88888/openwings.git|*[/:]Inclined88888/wings|*[/:]Inclined88888/wings.git) return 0 ;;
+    esac
+    return 1
+  }
 
   if [ -d "$DIR/.git" ]; then
     has_git || die "$DIR is a git checkout, but git does not work here. Install git (on macOS: xcode-select --install), then run this again."
+    is_openwings_repo || die "$DIR is a git checkout of something other than OpenWings. Choose another folder: OPENWINGS_DIR=/path/to/folder"
     say "Updating OpenWings in $DIR ($REF)"
-    git -C "$DIR" fetch --quiet origin "$REF" || die "Could not fetch $REF from GitHub."
     if [ -n "$(git -C "$DIR" status --porcelain --untracked-files=no)" ]; then
       die "$DIR has local changes to OpenWings' own files. Commit or undo them (git -C \"$DIR\" status), then run this again."
     fi
-    if git -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
-      git -C "$DIR" checkout --quiet "$REF"
-      git -C "$DIR" merge --quiet --ff-only FETCH_HEAD \
-        || die "Your local $REF in $DIR has commits that are not on GitHub. Sort that out with git, then run this again."
+    if git -C "$DIR" fetch --quiet origin "+refs/heads/${REF}:refs/remotes/origin/${REF}" 2>/dev/null; then
+      if git -C "$DIR" show-ref --verify --quiet "refs/heads/$REF"; then
+        git -C "$DIR" checkout --quiet "$REF"
+        git -C "$DIR" branch --quiet --set-upstream-to="origin/$REF" "$REF" 2>/dev/null || true
+        git -C "$DIR" merge --quiet --ff-only "origin/$REF" \
+          || die "Could not move $DIR to the latest $REF: it has commits or files that are not on GitHub. Check with: git -C \"$DIR\" status"
+      else
+        git -C "$DIR" checkout --quiet -b "$REF" --track "origin/$REF" \
+          || die "Could not switch $DIR to $REF. Check with: git -C \"$DIR\" status"
+      fi
+    elif git -C "$DIR" fetch --quiet origin "+refs/tags/${REF}:refs/tags/${REF}" 2>/dev/null; then
+      git -C "$DIR" checkout --quiet --detach "refs/tags/$REF" \
+        || die "Could not switch $DIR to $REF. Check with: git -C \"$DIR\" status"
     else
-      git -C "$DIR" checkout --quiet -b "$REF" FETCH_HEAD
+      die "Could not fetch $REF from GitHub."
     fi
-  elif [ -f "$DIR/scripts/setup.sh" ]; then
+  elif [ -f "$DIR/scripts/setup.sh" ] && [ -f "$DIR/upstream.lock" ]; then
     say "Updating OpenWings in $DIR ($REF)"
     fetch_tarball
-  elif [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
+  elif [ -e "$DIR" ] && { [ ! -d "$DIR" ] || [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; }; then
     die "$DIR already exists and is not OpenWings. Choose another folder: OPENWINGS_DIR=/path/to/folder"
   elif has_git; then
     say "Downloading OpenWings to $DIR ($REF)"
@@ -128,8 +159,23 @@ openwings_install() {
 
   # 3. Docker ------------------------------------------------------------
   docker_ok() { docker info >/dev/null 2>&1; }
+  # On Linux the daemon can be running while this user may not use it yet.
+  # (The output is matched, not piped: under pipefail docker's own failure
+  # would hide the match.)
+  docker_needs_group() {
+    local out
+    [ "$OS" = "mac" ] && return 1
+    out="$(docker info 2>&1 || true)"
+    case "$out" in *[Pp]ermission\ denied*) return 0 ;; esac
+    return 1
+  }
+  wsl_desktop_exe() {
+    local exe="/mnt/c/Program Files/Docker/Docker/Docker Desktop.exe"
+    if [ -f "$exe" ]; then printf '%s' "$exe"; fi
+  }
 
   install_docker() {
+    local id=""
     case "$OS" in
       mac)
         if command -v brew >/dev/null 2>&1 && ask "Docker is not installed. Install Docker Desktop with Homebrew now?"; then
@@ -142,6 +188,11 @@ openwings_install() {
         if [ -n "$SUDO" ] && ! command -v sudo >/dev/null 2>&1; then
           die "Docker is not installed and sudo is missing. Install Docker Engine as root, then run this again."
         fi
+        id="$( { sed -n 's/^ID=//p' /etc/os-release 2>/dev/null || true; } | tr -d '"' | head -n 1)"
+        case "$id" in
+          ubuntu|debian|raspbian|fedora|centos|rhel) ;;
+          *) die "Docker is not installed. Install Docker Engine and its Compose plugin for your system (https://docs.docker.com/engine/install/), then run this again." ;;
+        esac
         if ask "Docker is not installed. Install Docker Engine now with Docker's official script (get.docker.com, needs sudo)?"; then
           curl -fsSL https://get.docker.com | $SUDO sh || die "Docker's install script failed."
           if [ -d /run/systemd/system ]; then $SUDO systemctl enable --now docker || true; fi
@@ -166,15 +217,21 @@ openwings_install() {
           die "Docker is installed but no Docker app was found to start. Start your Docker engine, then run this again."
         fi ;;
       linux)
-        say "Starting the Docker service"
-        if [ -d /run/systemd/system ]; then
+        say "Starting Docker"
+        if command -v systemctl >/dev/null 2>&1 && systemctl --user cat docker-desktop.service >/dev/null 2>&1; then
+          systemctl --user start docker-desktop || true
+        elif command -v systemctl >/dev/null 2>&1 && systemctl --user cat docker.service >/dev/null 2>&1; then
+          systemctl --user start docker || true        # rootless Docker
+        elif command -v snap >/dev/null 2>&1 && snap list docker >/dev/null 2>&1; then
+          $SUDO snap start docker || true
+        elif [ -d /run/systemd/system ]; then
           $SUDO systemctl start docker || true
         elif command -v service >/dev/null 2>&1; then
           $SUDO service docker start || true
         fi ;;
       wsl)
-        local exe="/mnt/c/Program Files/Docker/Docker/Docker Desktop.exe"
-        if [ -f "$exe" ]; then
+        local exe; exe="$(wsl_desktop_exe)"
+        if [ -n "$exe" ]; then
           say "Starting Docker Desktop for Windows"; "$exe" >/dev/null 2>&1 &
         else
           die "Start Docker Desktop for Windows (with WSL integration on for this distribution), then run this again."
@@ -196,37 +253,48 @@ openwings_install() {
     printf ' ready\n'
   }
 
-  # On Linux the daemon can be running while this user may not use it yet.
-  docker_needs_group() {
-    [ "$OS" != "mac" ] && docker info 2>&1 | grep -qi "permission denied"
-  }
-
-  local arg no_start=0
-  for arg in ${1+"$@"}; do [ "$arg" = "--no-start" ] && no_start=1; done
   if [ "$no_start" -eq 0 ]; then
-  command -v docker >/dev/null 2>&1 || install_docker
-  command -v docker >/dev/null 2>&1 || die "Docker was not found after installing. Open a new terminal and run this again."
-  if ! docker_ok && ! docker_needs_group; then
-    start_docker
-    wait_docker || die "Docker did not start within ${WAIT} seconds. Start it yourself, then run this command again."
-  fi
-  if ! docker_ok && docker_needs_group; then
-    local me; me="$(id -un)"
-    if ask "Your user ($me) may not use Docker yet. Add it to the docker group (needs sudo)?"; then
-      $SUDO usermod -aG docker "$me" || die "Could not add $me to the docker group."
-      command -v sg >/dev/null 2>&1 || die "Added $me to the docker group. Log out and back in, then run this again."
-      USE_SG=1
-    else
-      die "Docker refused this user. Add it to the docker group (sudo usermod -aG docker $me), log out and back in, then run this again."
+    if ! command -v docker >/dev/null 2>&1; then
+      # Docker Desktop for Windows adds docker to WSL only while it runs.
+      if [ "$OS" = "wsl" ] && [ -n "$(wsl_desktop_exe)" ]; then
+        start_docker
+        wait_docker || die "Docker Desktop did not make docker available in WSL within ${WAIT} seconds. In Docker Desktop, turn on Settings > Resources > WSL integration for this distribution, then run this again."
+      else
+        install_docker
+      fi
     fi
-  fi
+    command -v docker >/dev/null 2>&1 || die "Docker was not found after installing. Open a new terminal and run this again."
+    if ! docker_ok && ! docker_needs_group; then
+      start_docker
+      wait_docker || die "Docker did not start within ${WAIT} seconds. Start it yourself, then run this command again."
+    fi
+    if ! docker_ok && docker_needs_group; then
+      local me; me="$(id -un)"
+      if ask "Your user ($me) may not use Docker yet. Add it to the docker group (needs sudo)?"; then
+        $SUDO usermod -aG docker "$me" || die "Could not add $me to the docker group."
+        command -v sg >/dev/null 2>&1 || die "Added $me to the docker group. Log out and back in, then run this again."
+        USE_SG=1
+      else
+        die "Docker refused this user. Add it to the docker group (sudo usermod -aG docker $me), log out and back in, then run this again."
+      fi
+    fi
+    if [ "$USE_SG" -eq 1 ]; then
+      sg docker -c "docker compose version" >/dev/null 2>&1 || die "Docker Compose v2 is missing. Install Docker's Compose plugin (https://docs.docker.com/compose/install/linux/), then run this again."
+    else
+      docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is missing. Install Docker's Compose plugin (https://docs.docker.com/compose/install/), then run this again."
+    fi
   fi
 
   # 4. Setup -------------------------------------------------------------
   cd "$DIR"
   chmod +x scripts/*.sh 2>/dev/null || true
   if [ "$USE_SG" -eq 1 ]; then
-    local cmd; cmd="./scripts/setup.sh$(printf ' %q' ${1+"$@"})"
+    # sg hands one command line to /bin/sh: quote each option for sh.
+    local cmd="./scripts/setup.sh" q
+    for arg in ${1+"$@"}; do
+      q="$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")"
+      cmd="$cmd '$q'"
+    done
     sg docker -c "$cmd" < /dev/null
   else
     ./scripts/setup.sh ${1+"$@"} < /dev/null
@@ -251,7 +319,13 @@ openwings_install() {
       linux) if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then xdg-open "$url" >/dev/null 2>&1 || true; fi ;;
     esac
   fi
-  say "Installed in $DIR. Start it again later with: cd \"$DIR\" && docker compose up -d"
+  if [ "$USE_SG" -eq 1 ]; then
+    say "Installed in $DIR. Log out and back in once so this user can use Docker directly."
+  else
+    say "Installed in $DIR. Start it again later with: cd \"$DIR\" && docker compose up -d"
+  fi
 }
 
-openwings_install "$@"
+# Same line as the call: a copy of this file replaced while it runs (an
+# update over itself) is never read further.
+openwings_install "$@"; exit $?
