@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Web components</title></head>
+<body style="margin:0">
+<button aria-label="Delete" onclick="document.getElementById('s').textContent='DELETED'" style="position:absolute;left:10px;top:10px;width:60px;height:40px"><x-icon></x-icon></button>
+<x-icon-button aria-label="Delete" style="position:absolute;left:10px;top:100px;display:block;width:60px;height:40px"></x-icon-button>
+<div id="closed" style="position:absolute;left:10px;top:300px;width:120px;height:40px"></div>
+<p id="s" style="position:absolute;left:200px;top:10px">Nothing clicked.</p>
+<script>
+customElements.define('x-icon', class extends HTMLElement { constructor() { super(); this.attachShadow({mode: 'open'}).innerHTML = '<svg width="60" height="40"><rect width="60" height="40"/></svg>'; } });
+customElements.define('x-icon-button', class extends HTMLElement { constructor() { super();
+  const r = this.attachShadow({mode: 'open'});
+  r.innerHTML = '<button style="width:60px;height:40px"><svg width="40" height="30"><rect width="40" height="30"/></svg></button>';
+  r.querySelector('button').addEventListener('click', () => { document.getElementById('s').textContent = 'DELETED'; }); } });
+const closed = document.getElementById('closed').attachShadow({mode: 'closed'});
+closed.innerHTML = '<button style="width:120px;height:40px">Place order</button>';
+closed.querySelector('button').addEventListener('click', () => { document.getElementById('s').textContent = 'ORDERED'; });
+</script></body></html>
