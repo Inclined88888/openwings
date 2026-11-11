@@ -387,6 +387,7 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0014](patches/0014-runner-background-marker.patch) | Long commands upstream would start as detached jobs (which always failed in Docker) run in the runner instead |
 | [0015](patches/0015-render-javascript-pages.patch) | Web fetch and deep research read pages that need JavaScript in the stateless renderer |
 | [0016](patches/0016-model-retry-backoff.patch) | Model rate limits and overloads are retried with backoff before a reply starts |
+| [0017](patches/0017-mcp-server-instructions.patch) | The usage notes MCP servers send when they connect reach the model, labelled as the server's words |
 
 Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 
