@@ -81,6 +81,7 @@ archive_volume() {
 }
 
 archive_volume odysseus-ssh
+archive_volume agent-workspaces runner
 archive_volume chromadb-data chromadb
 archive_volume radicale-data radicale
 archive_volume caddy-data

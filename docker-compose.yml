@@ -15,6 +15,7 @@
 #   caldav  bundled Radicale CalDAV server, a private calendar your phone can sync
 #   https   Caddy reverse proxy with automatic Let's Encrypt TLS for WINGS_DOMAIN
 #   browser real Chromium the agent drives for web tasks, with a live view at /wings/browser
+#   runner  isolated container where the agent's Python and shell code runs (no network)
 
 name: ${COMPOSE_PROJECT_NAME:-wings}
 
@@ -44,9 +45,15 @@ services:
       - odysseus-ssh:/app/.ssh
       - odysseus-hf-cache:/app/.cache/huggingface
       - odysseus-local:/app/.local
-      # Files the agent browser downloaded (profile browser), read-only here:
-      # the agent can read them and you can save them from the live view.
-      - browser-downloads:/browser-downloads:ro
+      # Agent workspace: where the agent's file tools and code work, and what
+      # the code runner (profile runner) can write. Separate from app data.
+      - agent-workspaces:/workspaces
+      # Agent workspace: where the agent's file tools and code work, and what
+      # the code runner (profile runner) can write. Separate from app data.
+      - agent-workspaces:/workspaces
+      # Files the agent browser downloaded (profile browser), read-only and
+      # inside the default workspace, so file tools and code can use them.
+      - browser-downloads:/workspaces/default/downloads:ro
     extra_hosts:
       # Reach services on the Docker host, e.g. a native Ollama at
       # http://host.docker.internal:11434 (the right choice on macOS, where
@@ -87,9 +94,16 @@ services:
       - WINGS_BROWSER_ALLOW_EVAL=${WINGS_BROWSER_ALLOW_EVAL:-0}
       - WINGS_BROWSER_ALLOWED_DOMAINS=${WINGS_BROWSER_ALLOWED_DOMAINS:-}
       - WINGS_BROWSER_MAX_TABS=${WINGS_BROWSER_MAX_TABS:-10}
+      - WINGS_BROWSER_DOWNLOADS=/workspaces/default/downloads
       # Shared secret the browser container requires on every connection.
       # [generated] by setup.sh; held in memory only (wings.keyholder).
       - WINGS_BROWSER_TOKEN=${WINGS_BROWSER_TOKEN:-}
+      # Code runner (profile: runner, patch 0009): where python and bash run.
+      - WINGS_RUNNER_TOKEN=${WINGS_RUNNER_TOKEN:-}
+      - WINGS_RUNNER_MAX_TIMEOUT=${WINGS_RUNNER_MAX_TIMEOUT:-300}
+      # Default workspace for chats in the web UI (admins). Without one,
+      # upstream refuses every file and code tool in an ordinary chat.
+      - ODYSSEUS_WORKSPACE_DEFAULT=${ODYSSEUS_WORKSPACE_DEFAULT:-/workspaces/default}
       # Accounts and auth
       - AUTH_ENABLED=true
       - LOCALHOST_BYPASS=false
@@ -163,6 +177,8 @@ services:
       wings:
       # Shared only with the browser container, which admits this app alone.
       browser:
+      # Shared only with the code runner; that network has no internet.
+      runner:
     logging: *logging
     restart: unless-stopped
 
@@ -361,7 +377,50 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  runner:
+    # Optional isolated code runner (profile: runner). Upstream's python and
+    # bash tools run here instead of in the app: no network at all, no
+    # secrets, read-only root, all capabilities dropped, CPU, memory and
+    # process caps. Its only writable folder is the agent workspaces volume;
+    # it never sees the app's data volume, database or keys.
+    profiles: ["runner"]
+    image: wings/runner:${WINGS_RUNNER_IMAGE_TAG:-py3.14.9-w1}
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: docker/runner/Dockerfile
+      args:
+        WINGS_RUNNER_BASE_IMAGE: ${WINGS_RUNNER_BASE_IMAGE:-docker.io/library/python:3.14.9-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - agent-workspaces:/workspaces
+      # The browser's downloads, read-only, at the same path as in the app.
+      - browser-downloads:/workspaces/default/downloads:ro
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - WINGS_RUNNER_TOKEN=${WINGS_RUNNER_TOKEN:-}
+      - WINGS_RUNNER_CLIENTS=odysseus
+      - WINGS_RUNNER_MAX_TIMEOUT=${WINGS_RUNNER_MAX_TIMEOUT:-300}
+      - WINGS_RUNNER_MEMORY_MB=${WINGS_RUNNER_MEMORY_MB:-2048}
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: ${WINGS_RUNNER_MEMORY:-3g}
+    pids_limit: 512
+    cpus: ${WINGS_RUNNER_CPUS:-2}
+    networks:
+      runner:
+    logging: *logging
+    restart: unless-stopped
+
 networks:
+  # Code runner network: the app and the runner only, no route to the internet.
+  runner:
+    internal: true
   # Separate bridge for the browser: it needs the internet, but nothing on it
   # but the app should be able to reach the browser.
   browser:
@@ -386,5 +445,6 @@ volumes:
   radicale-data:      # your CalDAV calendars and contacts
   caddy-data:         # TLS certificates
   caddy-config:
+  agent-workspaces:   # files the agent creates and edits, and the code runner's only writable place
   browser-profile:    # the agent browser's cookies and logins (sensitive; not in backups)
   browser-downloads:  # files the agent browser downloaded

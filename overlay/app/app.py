@@ -684,6 +684,9 @@ app.include_router(auth_router)
 # Wings: live view of the browser container (wings/browser_routes.py).
 from wings.browser_routes import router as _wings_browser_router
 app.include_router(_wings_browser_router)
+# Wings: list and download the files the agent wrote (wings/files_routes.py).
+from wings.files_routes import router as _wings_files_router
+app.include_router(_wings_files_router)
 
 
 @app.post("/api/activity/heartbeat")

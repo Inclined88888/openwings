@@ -113,7 +113,27 @@ def _migrate_scheduled_emails(data_dir: Path) -> None:
         print(f"wings: could not migrate scheduled emails: {exc}", file=sys.stderr)
 
 
+def _prepare_workspace() -> None:
+    """Create the default agent workspace (ODYSSEUS_WORKSPACE_DEFAULT) on the
+    agent-workspaces volume, owned by the user the app runs as, so the web UI
+    can bind it to chats. Only acts on paths under /workspaces."""
+    target = os.environ.get("ODYSSEUS_WORKSPACE_DEFAULT", "").strip()
+    if not target.startswith("/workspaces/") or ".." in target.split("/"):
+        return
+    try:
+        uid = int(os.environ.get("PUID", "1000"))
+        gid = int(os.environ.get("PGID", "1000"))
+        os.makedirs(target, exist_ok=True)
+        for path in ("/workspaces", target):
+            st = os.lstat(path)
+            if not os.path.islink(path) and (st.st_uid, st.st_gid) != (uid, gid):
+                os.chown(path, uid, gid)
+    except (OSError, ValueError) as exc:
+        print(f"wings: could not prepare the agent workspace {target}: {exc}", file=sys.stderr)
+
+
 def main() -> int:
+    _prepare_workspace()
     data_dir = Path(os.environ.get("ODYSSEUS_DATA_DIR") or "/app/data")
     raw = os.environ.get(ENV_KEY_VAR, "").strip()
     if not raw:

@@ -12,6 +12,8 @@ APP_KEY: str | None = None
 # Shared secret the browser container's guard requires on every connection
 # (WINGS_BROWSER_TOKEN); held here for the same reason as APP_KEY.
 BROWSER_TOKEN: str | None = None
+# Same for the code runner container (WINGS_RUNNER_TOKEN).
+RUNNER_TOKEN: str | None = None
 
 
 def with_key(env: dict) -> dict:

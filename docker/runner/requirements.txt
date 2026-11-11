@@ -1,0 +1,15 @@
+# Libraries available to code the agent runs in the runner container.
+# Exact versions, binary wheels only; bump together after a release has been
+# out a few weeks. The runner has no network at run time, so anything the
+# agent needs must be here.
+numpy==2.5.3
+pandas==3.0.6
+scipy==1.18.1
+matplotlib==3.11.2
+pillow==12.3.0
+openpyxl==3.1.5
+xlsxwriter==3.2.9
+python-docx==1.2.0
+python-pptx==1.0.2
+pypdf==6.21.4
+tabulate==0.10.0

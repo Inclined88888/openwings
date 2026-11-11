@@ -242,9 +242,16 @@ class RequestAuthority:
             from src.browser_identity import intersect_browser
             browser_sessions, browser_pages = intersect_browser(self.browser_sessions, self.browser_pages,
                 child.browser_sessions, child.browser_pages)
+        # Wings: narrowing a request's authority by a restricted copy of the
+        # same request (tool_execution does this per call) is not a child
+        # authority. Marking it inherited made every exact-approved process
+        # launch (python, bash) fail admission. A different request stays
+        # inherited, and an already inherited side keeps the flag.
+        same_request = (self.request_id, self.owner, self.session_id) == (child.request_id, child.owner, child.session_id)
+        inherited = (self.inherited or child.inherited) if same_request else True
         return replace(self, grants=tuple(grants), denied=self.denied | child.denied,
                        block_all=self.block_all or child.block_all,
-                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=True,
+                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=inherited,
                        resource_roots=roots, backend_resources=backends, owned_scopes=owned,
                        launch_scopes=launches, process_resources=processes, job_resources=jobs,
                        browser_sessions=browser_sessions, browser_pages=browser_pages)

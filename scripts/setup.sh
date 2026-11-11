@@ -7,6 +7,7 @@
 #                                           public HTTPS via Caddy + Let's Encrypt
 #   ./scripts/setup.sh --with-caldav        also run a private CalDAV calendar server
 #   ./scripts/setup.sh --with-browser       also run a real browser the agent can use
+#   ./scripts/setup.sh --with-runner        let the agent run Python and shell code, isolated
 #
 # Safe to re-run: existing secrets in .env are never regenerated or overwritten.
 set -euo pipefail
@@ -14,7 +15,7 @@ set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 usage() {
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
 
 Options:
@@ -26,6 +27,7 @@ Options:
   --with-caldav          Run the bundled Radicale CalDAV server (profile caldav)
   --caldav-user NAME     CalDAV username to create (default: wings)
   --with-browser         Run the agent browser with live view at /wings/browser (profile browser)
+  --with-runner          Run the isolated code runner for the agent's python and bash (profile runner)
   --bind ADDR            Host address for the web UI (default 127.0.0.1; 0.0.0.0 = whole LAN)
   --port N               Host port for the web UI (default 7011)
   --no-start             Write .env and config only; do not build or start anything
@@ -35,7 +37,7 @@ EOF
 }
 
 DOMAIN=""; ACME_EMAIL=""; WITH_OLLAMA=0; OLLAMA_GPU=""; OLLAMA_MODEL=""
-WITH_CALDAV=0; CALDAV_USER="wings"; BIND=""; PORT=""; START=1; SEED_AGENTS=1; WITH_BROWSER=0
+WITH_CALDAV=0; CALDAV_USER="wings"; BIND=""; PORT=""; START=1; SEED_AGENTS=1; WITH_BROWSER=0; WITH_RUNNER=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,6 +49,7 @@ while [ $# -gt 0 ]; do
     --with-caldav) WITH_CALDAV=1; shift ;;
     --caldav-user) CALDAV_USER="${2:?--caldav-user needs a value}"; WITH_CALDAV=1; shift 2 ;;
     --with-browser) WITH_BROWSER=1; shift ;;
+    --with-runner) WITH_RUNNER=1; shift ;;
     --bind) BIND="${2:?--bind needs a value}"; shift 2 ;;
     --port) PORT="${2:?--port needs a value}"; shift 2 ;;
     --no-start) START=0; shift ;;
@@ -97,6 +100,8 @@ ensure_secret ODYSSEUS_ADMIN_PASSWORD gen_password
 ensure_secret SEARXNG_SECRET gen_searxng
 # Shared secret between the app and the browser container (profile browser).
 ensure_secret WINGS_BROWSER_TOKEN gen_searxng
+# Shared secret between the app and the code runner (profile runner).
+ensure_secret WINGS_RUNNER_TOKEN gen_searxng
 
 # Upstream silently skips creating the admin for passwords under 8 characters
 # and leaves the web setup page open to whoever reaches it first.
@@ -178,6 +183,11 @@ fi
 if [ "$WITH_BROWSER" -eq 1 ]; then
   add_profile browser
   ok "agent browser enabled (live view at /wings/browser once started)"
+fi
+
+if [ "$WITH_RUNNER" -eq 1 ]; then
+  add_profile runner
+  ok "code runner enabled (the agent's python and bash run isolated, without network)"
 fi
 
 [ -n "$profiles" ] && env_set COMPOSE_PROFILES "$profiles"

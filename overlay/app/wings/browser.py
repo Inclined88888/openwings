@@ -54,7 +54,7 @@ _TEXT_SUFFIXES = (".txt", ".csv", ".tsv", ".json", ".md", ".xml", ".html", ".htm
 
 
 def downloads_dir() -> Path:
-    return Path(os.environ.get("WINGS_BROWSER_DOWNLOADS", "/browser-downloads"))
+    return Path(os.environ.get("WINGS_BROWSER_DOWNLOADS", "/workspaces/default/downloads"))
 
 
 def safe_download_name(name: str) -> str | None:
@@ -174,6 +174,31 @@ async def read_download(name: str, *, part: int = 1) -> str:
     chunk = text[(part - 1) * _READ_CHUNK: part * _READ_CHUNK]
     more = f"; read again with amount={part + 1} for more" if part < parts else ""
     return f"Downloaded file {_q(safe)}, {size} bytes (part {part} of {parts}{more}):\n\n{chunk or '(no text found)'}"
+
+
+_MAX_UPLOAD = 50 * 1024 * 1024
+
+
+def workspace_file(path: str) -> tuple[str, bytes]:
+    """(path relative to /workspaces, bytes) of a file the agent may upload.
+    Relative paths are in the default workspace; nothing outside /workspaces,
+    no symlinks, at most 50 MB."""
+    from wings import files_routes
+    raw = str(path or "").strip()
+    default = os.environ.get("ODYSSEUS_WORKSPACE_DEFAULT", "/workspaces/default").rstrip("/")
+    root = files_routes.ROOT.rstrip("/")
+    if raw.startswith("/workspace/"):
+        raw = default + raw[len("/workspace"):]
+    full = raw if raw.startswith("/") else f"{default}/{raw}"
+    if not full.startswith(root + "/"):
+        raise BrowserError("Only files in the workspace (/workspaces) can be uploaded.")
+    rel = full[len(root) + 1:]
+    data = files_routes.read_file_bytes(rel)
+    if data is None:
+        raise BrowserError(f"No readable file {_q(raw)} in the workspace (symlinks are not followed).")
+    if len(data) > _MAX_UPLOAD:
+        raise BrowserError(f"{raw} is larger than 50 MB.")
+    return rel, data
 
 
 def _saved_name(suggested: str) -> str:
@@ -427,7 +452,7 @@ def format_item(item: dict) -> str:
     if sensitive:
         parts.append(f"[{sensitive} field: the person types this in the live view]")
     if role == "file":
-        parts.append("[file upload: not supported for the agent yet]")
+        parts.append("[file upload: fill with path= of a workspace file; the person approves it]")
     return " ".join(parts)
 
 
@@ -629,8 +654,9 @@ class _Driver:
         for d in recent:
             if d["state"] == "completed":
                 name = _saved_name(d["name"])
-                notes.append(f"Downloaded {_q(name)} ({d['bytes']} bytes). Read it with action=read path={_q(name)}; "
-                             "the person can save it from the live browser's Downloads list.")
+                notes.append(f"Downloaded {_q(name)} ({d['bytes']} bytes) into the workspace at downloads/{name}. "
+                             f"Read it with action=read path={_q(name)}, or with read_file or python "
+                             f"(downloads/{name}); the person can save it from Workspace files.")
             elif d["state"] == "canceled":
                 notes.append(f"The download of {_q(d['name'])} was cancelled or blocked by the browser.")
             else:
@@ -1228,7 +1254,19 @@ async def _act(driver: _Driver, args: dict, key: str) -> tuple[str, dict]:
             raise Handoff(f"{label} is a {sensitive} field. Only the person types those, in the live view.")
         tag, typ = info.get("tag"), info.get("type")
         if typ == "file":
-            raise BrowserError("File upload fields are not supported for the agent yet.")
+            if not args.get("path"):
+                raise BrowserError("This is a file upload field. Give path= of a file in the workspace "
+                                   "(for example report.pdf or downloads/invoice.pdf).")
+            rel, data = workspace_file(str(args["path"]))
+            import mimetypes
+            mime = mimetypes.guess_type(rel)[0] or "application/octet-stream"
+            await locator.set_input_files({"name": os.path.basename(rel), "mimeType": mime, "buffer": data},
+                                          timeout=_OP_TIMEOUT_MS)
+            await asyncio.sleep(0.3)
+            return await _state_result(driver, tab, key, "fill",
+                                       f"Attached {_q(rel)} ({len(data)} bytes) to {label}{_named(info)}.")
+        if args.get("path"):
+            raise BrowserError(f"{label} is not a file upload field; path= only works on file inputs.")
         if tag == "select":
             try:
                 await locator.select_option(label=value, timeout=_OP_TIMEOUT_MS)

@@ -80,3 +80,48 @@ if (document.readyState === 'loading') {
 } else {
   addLiveBrowserEntry();
 }
+
+// Wings: sidebar entry for the files the agent wrote in its workspace
+// (patch 0009). Upstream's file and code tools are admin-only, so the page
+// is too; the entry only appears when the list loads.
+const FILES_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.5;" '
+  + 'aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+
+async function addWorkspaceFilesEntry() {
+  if (document.getElementById('wings-workspace-files-btn')) return;
+  const anchor = document.getElementById('tool-agents-btn');
+  if (!anchor) return;
+  try {
+    const res = await fetch('/api/wings/files', { credentials: 'same-origin' });
+    if (!res.ok) return;
+  } catch (e) {
+    return;
+  }
+  const item = document.createElement('div');
+  item.className = 'list-item';
+  item.id = 'wings-workspace-files-btn';
+  item.setAttribute('role', 'button');
+  item.tabIndex = 0;
+  item.title = 'Workspace files: download what the agent created';
+  item.innerHTML = FILES_ICON;
+  const label = document.createElement('span');
+  label.className = 'grow';
+  label.textContent = 'Workspace files';
+  item.appendChild(label);
+  const open = () => window.open('/wings/files/', 'wings-workspace-files', 'noopener');
+  item.addEventListener('click', open);
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      open();
+    }
+  });
+  anchor.insertAdjacentElement('afterend', item);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', addWorkspaceFilesEntry);
+} else {
+  addWorkspaceFilesEntry();
+}

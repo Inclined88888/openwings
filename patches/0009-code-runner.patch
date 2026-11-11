@@ -1,0 +1,163 @@
+Wings patch 0009: run the agent's python and bash in the code runner
+
+Upstream runs agent code only inside bubblewrap containment
+(src/containment.py). The upstream image does not ship bubblewrap and
+Docker's default seccomp profile blocks the namespaces it needs, so in a
+Docker deployment python and bash always refuse ("containment
+unavailable"). With the runner compose profile on, Wings sends the code,
+after upstream's own checks (no sudo, no ad-hoc HTTP downloads, resource
+identity), to the runner container: no network, no secrets, read-only root,
+all capabilities dropped, CPU/memory/process caps, and only the agent
+workspace writable (wings/runner.py, docker/runner/).
+
+  * src/agent_tools/subprocess_tools.py: _run_owned_command, the single
+    choke point both tools use, delegates to wings.runner.run_owned() when
+    the runner is enabled. Without it, upstream behaviour is unchanged.
+  * src/tool_schemas.py: python and bash describe the runner, its
+    libraries, and that saved images appear in the chat.
+  * src/agent_runtime/authority.py: fixes an upstream bug that made every
+    exact-approved process launch fail ("Producer operation has no request
+    admission or exact claim"): tool_execution narrows a request's authority
+    with a restricted copy of the same request, and intersect() marked that
+    as an inherited (child) authority, which exact approvals refuse. Same
+    request now keeps its inherited flag; a different request is still a
+    child. Unreachable upstream in Docker until code could run at all.
+  * app.py, static/js/wings-ui.js: "Workspace files" page and sidebar entry
+    to download what the agent wrote (wings/files_routes.py, admins only).
+
+Wings also sets ODYSSEUS_WORKSPACE_DEFAULT=/workspaces/default (compose), an
+upstream setting the web UI already honours: without a bound workspace,
+upstream refuses every file and code tool in an ordinary chat.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/app.py b/app.py
+index 5d518a9..5baf69f 100644
+--- a/app.py
++++ b/app.py
+@@ -684,6 +684,9 @@ app.include_router(auth_router)
+ # Wings: live view of the browser container (wings/browser_routes.py).
+ from wings.browser_routes import router as _wings_browser_router
+ app.include_router(_wings_browser_router)
++# Wings: list and download the files the agent wrote (wings/files_routes.py).
++from wings.files_routes import router as _wings_files_router
++app.include_router(_wings_files_router)
+ 
+ 
+ @app.post("/api/activity/heartbeat")
+diff --git a/src/agent_runtime/authority.py b/src/agent_runtime/authority.py
+index 0b8acdd..8bf0d11 100644
+--- a/src/agent_runtime/authority.py
++++ b/src/agent_runtime/authority.py
+@@ -242,9 +242,16 @@ class RequestAuthority:
+             from src.browser_identity import intersect_browser
+             browser_sessions, browser_pages = intersect_browser(self.browser_sessions, self.browser_pages,
+                 child.browser_sessions, child.browser_pages)
++        # Wings: narrowing a request's authority by a restricted copy of the
++        # same request (tool_execution does this per call) is not a child
++        # authority. Marking it inherited made every exact-approved process
++        # launch (python, bash) fail admission. A different request stays
++        # inherited, and an already inherited side keeps the flag.
++        same_request = (self.request_id, self.owner, self.session_id) == (child.request_id, child.owner, child.session_id)
++        inherited = (self.inherited or child.inherited) if same_request else True
+         return replace(self, grants=tuple(grants), denied=self.denied | child.denied,
+                        block_all=self.block_all or child.block_all,
+-                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=True,
++                       disable_mcp=self.disable_mcp or child.disable_mcp, inherited=inherited,
+                        resource_roots=roots, backend_resources=backends, owned_scopes=owned,
+                        launch_scopes=launches, process_resources=processes, job_resources=jobs,
+                        browser_sessions=browser_sessions, browser_pages=browser_pages)
+diff --git a/src/agent_tools/subprocess_tools.py b/src/agent_tools/subprocess_tools.py
+index e98b273..ab13c3b 100644
+--- a/src/agent_tools/subprocess_tools.py
++++ b/src/agent_tools/subprocess_tools.py
+@@ -520,6 +520,13 @@ async def _run_owned_command(command, ctx: dict, *, tool: str, timeout: int, arg
+                              readonly_extra: tuple = ()) -> dict:
+     from src.tool_execution import agent_cwd, _truncate
+ 
++    # Wings: with the code runner container enabled, python and bash run there
++    # (no network, no secrets, only the agent workspace writable) instead of
++    # needing bubblewrap here, which Docker's default profile does not allow.
++    from wings import runner as _wings_runner
++    if _wings_runner.enabled() and tool in ("python", "bash"):
++        return await _wings_runner.run_owned(command, ctx, tool=tool, timeout=timeout, argv=argv)
++
+     grant = None
+     launch = None
+     result = None
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index ae12102..a70f37d 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -289,7 +289,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "bash",
+-            "description": "Run a shell command (full access). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
++            "description": "Run a shell command (with the Wings code runner: isolated, no network, in the agent workspace). Prefer a dedicated tool whenever one fits the job (reading, writing, editing, searching, or listing files); use bash only for what no dedicated tool covers (installs, git, builds, running programs, system info). Do NOT create or edit files via bash redirects/heredocs/sed -- use the dedicated file tools.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+@@ -318,7 +318,7 @@ FUNCTION_TOOL_SCHEMAS = [
+         "type": "function",
+         "function": {
+             "name": "python",
+-            "description": "Execute Python code to compute a result or test something. Prefer a dedicated tool whenever one fits the job (reading, writing, or searching files); use python only for computation, data processing, or scripting no dedicated tool covers.",
++            "description": "Execute Python code to compute a result or test something. Prefer a dedicated tool whenever one fits the job (reading, writing, or searching files); use python only for computation, data processing, or scripting no dedicated tool covers. With the Wings code runner, code runs isolated with no network, in the agent workspace, with pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx and pypdf available. Save charts and files in the current folder: images you save are shown in the chat.",
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+diff --git a/static/js/wings-ui.js b/static/js/wings-ui.js
+index 08f38ed..5e3a0b0 100644
+--- a/static/js/wings-ui.js
++++ b/static/js/wings-ui.js
+@@ -80,3 +80,48 @@ if (document.readyState === 'loading') {
+ } else {
+   addLiveBrowserEntry();
+ }
++
++// Wings: sidebar entry for the files the agent wrote in its workspace
++// (patch 0009). Upstream's file and code tools are admin-only, so the page
++// is too; the entry only appears when the list loads.
++const FILES_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
++  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.5;" '
++  + 'aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
++
++async function addWorkspaceFilesEntry() {
++  if (document.getElementById('wings-workspace-files-btn')) return;
++  const anchor = document.getElementById('tool-agents-btn');
++  if (!anchor) return;
++  try {
++    const res = await fetch('/api/wings/files', { credentials: 'same-origin' });
++    if (!res.ok) return;
++  } catch (e) {
++    return;
++  }
++  const item = document.createElement('div');
++  item.className = 'list-item';
++  item.id = 'wings-workspace-files-btn';
++  item.setAttribute('role', 'button');
++  item.tabIndex = 0;
++  item.title = 'Workspace files: download what the agent created';
++  item.innerHTML = FILES_ICON;
++  const label = document.createElement('span');
++  label.className = 'grow';
++  label.textContent = 'Workspace files';
++  item.appendChild(label);
++  const open = () => window.open('/wings/files/', 'wings-workspace-files', 'noopener');
++  item.addEventListener('click', open);
++  item.addEventListener('keydown', (e) => {
++    if (e.key === 'Enter' || e.key === ' ') {
++      e.preventDefault();
++      open();
++    }
++  });
++  anchor.insertAdjacentElement('afterend', item);
++}
++
++if (document.readyState === 'loading') {
++  document.addEventListener('DOMContentLoaded', addWorkspaceFilesEntry);
++} else {
++  addWorkspaceFilesEntry();
++}
