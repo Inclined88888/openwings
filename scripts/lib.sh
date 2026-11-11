@@ -5,6 +5,10 @@
 
 WINGS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${WINGS_ROOT}/.env"
+# Memory to give Docker. Colima's default 2 GB machine was not enough for a
+# real first start (the app was stopped for lack of memory while loading its
+# embedding model); 4 GB leaves a margin. Not a measured minimum.
+WINGS_MIN_MEM_GB=4
 
 if [ -t 1 ]; then
   C_BOLD=$'\033[1m'; C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_RESET=$'\033[0m'
@@ -117,6 +121,40 @@ wait_healthy() {
   return 1
 }
 
+# Memory Docker can use, in whole GB (0 when Docker cannot say).
+docker_mem_gb() {
+  local bytes
+  bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
+  case "$bytes" in ''|*[!0-9]*) echo 0 ;; *) echo $(( (bytes + 536870912) / 1073741824 )) ;; esac
+}
+
+# Say in plain words why a service did not come up, when Docker can tell.
+# Docker resets a container's exit code and out of memory flag when it
+# restarts, so this reads the container's recent events instead.
+explain_unhealthy() {
+  local svc="$1" cid events
+  cid="$(container_id "$svc")"
+  if [ -z "$cid" ]; then warn "The $svc container was not created; see the messages above."; return 0; fi
+  events="$(docker events --since 30m --until "$(( $(date +%s) + 2 ))" --filter "container=$cid" \
+    --filter event=die --filter event=oom --format '{{.Action}} {{index .Actor.Attributes "exitCode"}}' 2>/dev/null || true)"
+  case "$events" in
+    *oom*|*"die 137"*)
+      warn "OpenWings ran out of memory and was stopped (Docker has about $(docker_mem_gb) GB)."
+      warn "Give Docker at least ${WINGS_MIN_MEM_GB} GB, then run this again:"
+      warn "  Colima:         colima stop && colima start --memory ${WINGS_MIN_MEM_GB}"
+      warn "  Docker Desktop: Settings > Resources > Memory"
+      warn "  OrbStack:       Settings > System > Memory limit" ;;
+    *"die 78"*)
+      warn "OpenWings refused its encryption key (exit 78): the data was made with another key. See README, Troubleshooting, or run ./scripts/adopt-key.sh." ;;
+    *die*)
+      warn "OpenWings stopped unexpectedly ($(printf '%s\n' "$events" | grep '^die' | tail -n 1)). The last lines of its log:"
+      dc logs --tail 30 "$svc" 2>/dev/null || true ;;
+    *)
+      warn "OpenWings was still starting when setup gave up. The last lines of its log:"
+      dc logs --tail 30 "$svc" 2>/dev/null || true ;;
+  esac
+}
+
 # Random secrets with no shell-special characters.
 rand_token() { head -c "${1:-24}" /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
 # A Fernet key: 32 random bytes, URL-safe base64, padded (44 chars).
@@ -138,11 +176,11 @@ sha256_stdin_short() {
 # containers that need python/tar but must not start the app.
 wings_image() {
   local img
-  img="$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 '^wings/odysseus' || true)"
+  img="$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 '^openwings:' || true)"
   [ -n "$img" ] || die "could not resolve the OpenWings image name from docker-compose.yml"
   if ! docker image inspect "$img" >/dev/null 2>&1; then
     info "Building ${img}" >&2
-    dc build odysseus >&2
+    dc build openwings >&2
   fi
   printf '%s' "$img"
 }

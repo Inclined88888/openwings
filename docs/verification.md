@@ -516,6 +516,33 @@ the macOS developer tools pop up, other git folders accepted). All are fixed.
 
 Not run here: a real Mac, WSL, and distributions other than Ubuntu.
 
+## App service renamed, memory check (2026-11-11)
+
+The first real install on a Mac (Colima, default 2 GB machine) stopped while
+the app loaded its embedding model: the container restarted with no error in
+its log, the pattern of a kill for lack of memory. Docker resets a
+container's exit code and out of memory flag when it restarts, so setup now
+reads the container's events instead; a real out of memory kill (a container
+limited to 50 MB asked for 300 MB) is reported as such, with how to give
+Docker more memory. The installer offers to restart Colima with 4 GB when it
+has less, and setup warns below 4 GB. 4 GB is a margin over the 2 GB that
+failed, not a measured minimum: this sandbox cannot load the embedding model,
+so its app (about 440 MB) does not show the peak.
+
+The app service is now `openwings` (container `wings-openwings-1`, image
+`openwings:<tag>`) instead of `odysseus`; setup and its messages say
+OpenWings. Checked by running setup over an existing install with the old
+container and the browser, runner and renderer profiles: the old container
+was removed, the new one became healthy, sign in worked with the same
+password and all 76 existing chats were there. The browser guard returned
+Chrome's version to the app and dropped an outsider container on the same
+network holding the right token; the runner admitted the app (404 on an
+unknown path) and refused the outsider (403). An old compose override that
+still names `odysseus` is refused with a message saying what to rename.
+Unit tests: 187 passed. Volume names (`odysseus-data` and so on) and the
+`ODYSSEUS_*` settings keep their names: they hold existing data and are
+read by upstream.
+
 ## Not verified: please check on your server
 
 1. Build on the real upstream image: `./scripts/setup.sh`, then

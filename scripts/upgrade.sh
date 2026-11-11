@@ -57,12 +57,12 @@ done
 
 info "Rebuilding (${before} -> ${after})"
 dc pull --ignore-buildable --quiet
-dc build --pull odysseus
+dc build --pull openwings
 dc up -d --remove-orphans
 
-if wait_healthy odysseus 900; then
-  ok "Upgrade complete; Odysseus is healthy"
+if wait_healthy openwings 900; then
+  ok "Upgrade complete; OpenWings is healthy"
 else
-  dc logs --tail 80 odysseus || true
-  die "Odysseus is not healthy after the upgrade. Roll back: git checkout ${before} && ./scripts/restore.sh <the pre-upgrade backup> --yes"
+  explain_unhealthy openwings
+  die "OpenWings is not healthy after the upgrade. Roll back: git checkout ${before} && ./scripts/restore.sh <the pre-upgrade backup> --yes"
 fi

@@ -3,7 +3,7 @@
 #
 # Needed only when data was created without ODYSSEUS_APP_KEY (an upstream
 # Odysseus install, a restored upstream backup, or a stack started before
-# setup.sh). Symptom: the odysseus container restarts with
+# setup.sh). Symptom: the openwings container restarts with
 #   "wings: configuration error: /app/data/.app_key exists and differs ..."
 #
 #   ./scripts/adopt-key.sh --yes
@@ -28,8 +28,8 @@ vol="$(volume_name odysseus-data)"
 [ -n "$vol" ] || die "the odysseus-data volume does not exist"
 IMAGE="$(wings_image)"
 
-info "Stopping odysseus"
-dc stop odysseus >/dev/null 2>&1 || true
+info "Stopping OpenWings"
+dc stop openwings >/dev/null 2>&1 || true
 
 # Phase 1 ---------------------------------------------------------------------
 key="$(docker run --rm -i --network none --entrypoint python -v "${vol}:/data" "$IMAGE" - <<'PY'
@@ -118,6 +118,6 @@ ok "ODYSSEUS_APP_KEY in .env now holds the adopted key"
 docker run --rm --network none --entrypoint sh -v "${vol}:/data" "$IMAGE" -c 'rm -f /data/.app_key /data/.key'
 ok "key files removed from the volume"
 
-dc up -d odysseus
-if wait_healthy odysseus 600; then ok "Odysseus is healthy"; else die "Odysseus did not become healthy; see: docker compose logs odysseus"; fi
+dc up -d openwings
+if wait_healthy openwings 600; then ok "OpenWings is healthy"; else die "OpenWings did not become healthy; see: docker compose logs openwings"; fi
 warn "Update your offline copy of .env now: the key changed."

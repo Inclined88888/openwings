@@ -17,7 +17,7 @@
 	}
 
 	handle {
-		reverse_proxy odysseus:7000 {
+		reverse_proxy openwings:7000 {
 			# Stream chat tokens and research progress immediately.
 			flush_interval -1
 		}

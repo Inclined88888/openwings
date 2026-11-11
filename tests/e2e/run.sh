@@ -72,5 +72,5 @@ WINGS_ORIGIN="$origin" \
 WINGS_USER="$user" \
 WINGS_PASSWORD="$(env_get ODYSSEUS_ADMIN_PASSWORD)" \
 COMPOSE_PROJECT_NAME="$project" \
-WINGS_APP_CONTAINER="$(container_id odysseus)" \
+WINGS_APP_CONTAINER="$(container_id openwings)" \
   python3 "${WINGS_ROOT}/tests/e2e/wings_e2e.py"

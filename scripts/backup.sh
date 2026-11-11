@@ -102,7 +102,7 @@ fi
   echo "wings_backup_version=1"
   echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "compose_project=$(project_name)"
-  echo "image=$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 'wings/odysseus' || true)"
+  echo "image=$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 '^openwings:' || true)"
   echo "wings_git_commit=$(git -C "$WINGS_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   echo "app_key_fingerprint=$(env_get ODYSSEUS_APP_KEY | sha256_stdin_short)"
 } > "${DEST}/MANIFEST" 2>/dev/null || true

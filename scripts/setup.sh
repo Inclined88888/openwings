@@ -87,7 +87,15 @@ ensure_secret() {
   local key="$1" generator="$2"
   if [ -z "$(env_get "$key")" ]; then
     env_set "$key" "$($generator)"
-    ok "generated $key"
+    case "$key" in
+      ODYSSEUS_APP_KEY) ok "generated the encryption key" ;;
+      ODYSSEUS_ADMIN_PASSWORD) ok "generated the admin password" ;;
+      SEARXNG_SECRET) ok "generated the web search secret" ;;
+      WINGS_BROWSER_TOKEN) ok "generated the browser access token" ;;
+      WINGS_RUNNER_TOKEN) ok "generated the code runner access token" ;;
+      WINGS_RENDERER_TOKEN) ok "generated the page renderer access token" ;;
+      *) ok "generated $key" ;;
+    esac
     [ "$key" = "ODYSSEUS_ADMIN_PASSWORD" ] && NEW_ADMIN_PASSWORD=1
   fi
   return 0
@@ -200,16 +208,25 @@ if [ "$START" -eq 0 ]; then
 fi
 
 # 3. Build and start -----------------------------------------------------
-info "Building the OpenWings image and starting the stack (the first run downloads several GB of images)"
-dc up -d --build
-
-info "Waiting for Odysseus to become healthy (first boot also downloads the embedding model)"
-if ! wait_healthy odysseus 900; then
-  dc ps
-  dc logs --tail 80 odysseus || true
-  die "Odysseus did not become healthy. See the logs above and the README section Troubleshooting."
+# The app service was renamed from "odysseus" to "openwings"; an old compose
+# override would otherwise add a broken second service.
+if dc config --services 2>/dev/null | grep -qx odysseus; then
+  die "A compose override file still names the app service \"odysseus\"; it is now \"openwings\". Rename it there (COMPOSE_FILE in .env lists the files), then run setup again."
 fi
-ok "Odysseus is healthy"
+mem_gb="$(docker_mem_gb)"
+if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$WINGS_MIN_MEM_GB" ]; then
+  warn "Docker has about ${mem_gb} GB of memory; OpenWings needs at least ${WINGS_MIN_MEM_GB} GB and may be stopped while starting."
+  warn "  Colima: colima stop && colima start --memory ${WINGS_MIN_MEM_GB}   Docker Desktop: Settings > Resources > Memory"
+fi
+info "Building the OpenWings image and starting the stack (the first run downloads several GB of images)"
+dc up -d --build --remove-orphans
+
+info "Waiting for OpenWings to start (first boot also downloads the embedding model)"
+if ! wait_healthy openwings 900; then
+  explain_unhealthy openwings
+  die "OpenWings did not start. Fix the cause above, then run setup again (it keeps your data and settings)."
+fi
+ok "OpenWings is healthy"
 
 if [ -n "$OLLAMA_MODEL" ]; then
   if wait_healthy ollama 300; then
@@ -258,6 +275,6 @@ if [ "$WITH_CALDAV" -eq 1 ]; then
   cat <<EOF
 
   CalDAV:    user $(env_get RADICALE_USER), password in .env as RADICALE_PASSWORD
-             Odysseus URL: http://radicale:5232/$(env_get RADICALE_USER)/
+             In OpenWings, URL: http://radicale:5232/$(env_get RADICALE_USER)/
 EOF
 fi

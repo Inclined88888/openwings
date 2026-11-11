@@ -154,10 +154,10 @@ done
 
 # 4. Start ------------------------------------------------------------------
 info "Starting the stack (file ownership is repaired on start)"
-dc up -d
-if wait_healthy odysseus 900; then
-  ok "Restore complete and Odysseus is healthy"
+dc up -d --remove-orphans
+if wait_healthy openwings 900; then
+  ok "Restore complete and OpenWings is healthy"
 else
-  dc logs --tail 60 odysseus || true
-  die "Odysseus did not become healthy after restore"
+  dc logs --tail 60 openwings || true
+  die "OpenWings did not become healthy after restore"
 fi

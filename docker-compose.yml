@@ -26,11 +26,11 @@ x-logging: &logging
     max-file: "5"
 
 services:
-  odysseus:
+  openwings:
     # Built locally: the pinned upstream image plus the OpenWings patch overlay
     # (docker/odysseus/Dockerfile). pull_policy=build means Compose never tries
     # to pull this tag from a registry, so nobody can squat the name.
-    image: wings/odysseus:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w1}
+    image: openwings:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w1}
     pull_policy: build
     build:
       context: .
@@ -341,7 +341,7 @@ services:
       - WINGS_DOMAIN=${WINGS_DOMAIN:-localhost}
       - WINGS_ACME_EMAIL=${WINGS_ACME_EMAIL:-}
     depends_on:
-      odysseus:
+      openwings:
         condition: service_healthy
     networks:
       wings:
@@ -354,7 +354,7 @@ services:
     # Optional real browser for the agent (profile: browser). Headful Chromium
     # on a virtual screen; the agent drives it over the DevTools protocol and
     # you watch or take over at <your OpenWings address>/wings/browser. No host
-    # ports: it is reachable only from the odysseus container, through a
+    # ports: it is reachable only from the openwings container, through a
     # guard that refuses every other address. Logins you make in the live
     # view persist in the browser-profile volume.
     profiles: ["browser"]
@@ -373,7 +373,7 @@ services:
       - TZ=${TZ:-Etc/UTC}
       - WINGS_BROWSER_LANG=${WINGS_BROWSER_LANG:-en-US}
       - WINGS_BROWSER_SCREEN=${WINGS_BROWSER_SCREEN:-1440x900}
-      - WINGS_BROWSER_CLIENTS=odysseus
+      - WINGS_BROWSER_CLIENTS=openwings
       # Without the token the guard refuses every connection (fail closed).
       - WINGS_BROWSER_TOKEN=${WINGS_BROWSER_TOKEN:-}
       # The egress proxy in the container refuses private and local
@@ -412,7 +412,7 @@ services:
       - TZ=${TZ:-Etc/UTC}
       - WINGS_BROWSER_LANG=${WINGS_BROWSER_LANG:-en-US}
       - WINGS_BROWSER_SCREEN=1280x900
-      - WINGS_BROWSER_CLIENTS=odysseus
+      - WINGS_BROWSER_CLIENTS=openwings
       - WINGS_BROWSER_TOKEN=${WINGS_RENDERER_TOKEN:-}
       # Public addresses only, like upstream's fetcher, whatever the agent
       # browser allows (WINGS_RENDERER_ALLOW_PRIVATE is for test installs).
@@ -450,7 +450,7 @@ services:
     environment:
       - TZ=${TZ:-Etc/UTC}
       - WINGS_RUNNER_TOKEN=${WINGS_RUNNER_TOKEN:-}
-      - WINGS_RUNNER_CLIENTS=odysseus
+      - WINGS_RUNNER_CLIENTS=openwings
       - WINGS_RUNNER_MAX_TIMEOUT=${WINGS_RUNNER_MAX_TIMEOUT:-300}
       - WINGS_RUNNER_MEMORY_MB=${WINGS_RUNNER_MEMORY_MB:-2048}
     read_only: true

@@ -13,7 +13,7 @@ capabilities dropped, no-new-privileges, read-only root filesystem, and only
 the workspaces volume is writable.
 
 Every request must come from a container named in WINGS_RUNNER_CLIENTS
-(default "odysseus") and carry X-Wings-Runner-Token equal to
+(default "openwings") and carry X-Wings-Runner-Token equal to
 WINGS_RUNNER_TOKEN; without a token everything is refused.
 """
 import asyncio
@@ -29,7 +29,7 @@ import sys
 import time
 
 TOKEN = os.environ.pop("WINGS_RUNNER_TOKEN", "").strip()
-CLIENTS = [c.strip() for c in os.environ.get("WINGS_RUNNER_CLIENTS", "odysseus").split(",") if c.strip()]
+CLIENTS = [c.strip() for c in os.environ.get("WINGS_RUNNER_CLIENTS", "openwings").split(",") if c.strip()]
 # The agent-workspaces volume, mounted at the same path as in the app
 # container so absolute paths mean the same thing on both sides.
 ROOT = os.environ.get("WINGS_RUNNER_ROOT", "/workspaces")

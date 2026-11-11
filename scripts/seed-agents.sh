@@ -16,7 +16,7 @@ pw="$(env_get ODYSSEUS_ADMIN_PASSWORD)"
 
 # Runs inside the app container against its own loopback port; credentials
 # travel as environment variables of this one exec, not on a command line.
-dc exec -T -e WINGS_SEED_USER="$user" -e WINGS_SEED_PW="$pw" odysseus python - <<'PY'
+dc exec -T -e WINGS_SEED_USER="$user" -e WINGS_SEED_PW="$pw" openwings python - <<'PY'
 import http.cookiejar, json, os, sys, urllib.error, urllib.request
 
 BASE = "http://127.0.0.1:7000"

@@ -278,6 +278,26 @@ openwings_install() {
         die "Docker refused this user. Add it to the docker group (sudo usermod -aG docker $me), log out and back in, then run this again."
       fi
     fi
+    # Colima's default machine has 2 GB, too little for OpenWings to start.
+    if [ "$OS" = "mac" ] && command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1 \
+       && [ "$(docker context show 2>/dev/null)" = "colima" ]; then
+      local min_gb mem_bytes mem_gb
+      min_gb="$(sed -n 's/^WINGS_MIN_MEM_GB=//p' "$DIR/scripts/lib.sh" 2>/dev/null | head -n 1)"; min_gb="${min_gb:-4}"
+      mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
+      case "$mem_bytes" in ''|*[!0-9]*) mem_bytes=0 ;; esac
+      mem_gb=$(( (mem_bytes + 536870912) / 1073741824 ))
+      if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$min_gb" ]; then
+        if ask "Colima has ${mem_gb} GB of memory; OpenWings needs ${min_gb} GB. Restart Colima with ${min_gb} GB now?"; then
+          say "Restarting Colima with ${min_gb} GB"
+          if ! { colima stop && colima start --memory "$min_gb"; }; then
+            die "Colima did not restart. Run: colima stop && colima start --memory ${min_gb}"
+          fi
+          wait_docker || die "Docker did not come back within ${WAIT} seconds after restarting Colima."
+        else
+          warn "Continuing with ${mem_gb} GB; OpenWings may be stopped for lack of memory while starting."
+        fi
+      fi
+    fi
     if [ "$USE_SG" -eq 1 ]; then
       sg docker -c "docker compose version" >/dev/null 2>&1 || die "Docker Compose v2 is missing. Install Docker's Compose plugin (https://docs.docker.com/compose/install/linux/), then run this again."
     else

@@ -3,7 +3,7 @@
 Run inside the built image (no network, no running app needed):
 
     docker run --rm --network none --entrypoint python \
-      -v "$PWD/tests/unit:/wings-tests:ro" wings/odysseus:<tag> \
+      -v "$PWD/tests/unit:/wings-tests:ro" openwings:<tag> \
       -m pytest -q -p no:cacheprovider /wings-tests
 
 or simply: ./tests/unit/run.sh

@@ -5,7 +5,7 @@ container against the browser container and the test site
 (tests/e2e/run.sh starts both, with WINGS_BROWSER_ALLOW_PRIVATE=1):
 
   docker exec -i -e WINGS_BROWSER_TOKEN="$(grep '^WINGS_BROWSER_TOKEN=' .env | cut -d= -f2-)" \
-    wings-odysseus-1 python -u - < tests/e2e/browser_actions.py
+    wings-openwings-1 python -u - < tests/e2e/browser_actions.py
 
 The chat driven checks in wings_e2e.py cover the same actions through the
 model and the request authority; this one does not depend on the model
