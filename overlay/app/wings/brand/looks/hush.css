@@ -950,8 +950,10 @@
   white-space: pre !important;
 }
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre code { font-weight: 400 !important; }
-:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre code[data-lang]::before,
-:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre code[data-lang]::before {
+/* every block gets the strip (empty when the language is unknown), so the
+   Run, Edit and Copy buttons never sit on top of the first line */
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre code::before,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre code::before {
   content: attr(data-lang) !important;
   display: block !important;
   margin: -14px -18px 12px !important;
@@ -966,6 +968,8 @@
   letter-spacing: 0.02em !important;
   text-transform: none !important;
 }
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre:not(:has(> code)),
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre:not(:has(> code)) { padding: 14px 18px !important; font-family: var(--hu-mono) !important; font-size: 13.5px !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body pre code *,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre code * {
   font-family: var(--hu-mono) !important;
@@ -993,8 +997,15 @@
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body pre .edit-code,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre .edit-code,
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body pre .run-code,
-:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre .run-code {
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre .run-code,
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre .use-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre .use-code {
   top: 3px !important;
+  bottom: auto !important;
+  font-family: var(--hu-sans) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 26px !important;
   height: 26px !important;
   min-width: 26px !important;
   border: 0 !important;
@@ -1015,6 +1026,20 @@
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre .run-code:hover { background: rgba(255, 255, 255, 0.08) !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body pre button svg,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre button svg { color: currentColor !important; }
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.pre-compact .copy-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.pre-compact .copy-code { right: 8px !important; }
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.pre-compact .edit-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.pre-compact .edit-code { right: 66px !important; }
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.pre-compact .run-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.pre-compact .run-code { right: 128px !important; }
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.buttons-hidden .copy-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.buttons-hidden .copy-code,
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.buttons-hidden .edit-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.buttons-hidden .edit-code,
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.buttons-hidden .run-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.buttons-hidden .run-code,
+:root[data-ow-skin="ow-hush"] #chat-history .msg .body pre.buttons-hidden .use-code,
+:root[data-ow-skin="ow-hush-night"] #chat-history .msg .body pre.buttons-hidden .use-code { opacity: 0 !important; pointer-events: none !important; }
 :root[data-ow-skin="ow-hush"] #chat-history .msg .body :not(pre) > code,
 :root[data-ow-skin="ow-hush-night"] #chat-history .msg .body :not(pre) > code {
   font-family: var(--hu-mono) !important;
