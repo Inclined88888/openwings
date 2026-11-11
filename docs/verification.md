@@ -483,6 +483,39 @@ Upstream tests over the 61 test files touching the changed code: unpatched
 That one is intended and comes from patch 0018: upstream asserts the browser
 tool has no `batch` action, and OpenWings adds it.
 
+## One command installer (`install.sh`, 2026-11-11)
+
+Run here under bash 3.2.57 (the version macOS ships; every script it calls
+ran under 3.2 too) and bash 5, shellcheck clean:
+
+* `curl ... | bash` from GitHub: downloads the latest commit and runs setup.
+* Fresh install with git; rerun updates and the branch tracks GitHub; a
+  checkout made with `git clone -b` updates the same way.
+* No working git (as on a Mac without Apple's command line tools): installs
+  from the GitHub archive; a rerun removes files deleted upstream and keeps
+  `.env` (same key) and `config/`.
+* Refuses a folder holding something else, another project's git checkout,
+  a file at the path, and local edits to OpenWings' own files; an empty
+  folder is fine.
+* Docker unreachable: tries to start it, waits, then stops with a clear
+  message.
+* Full start under bash 3.2: build, start, healthy, sign in details printed,
+  login page served.
+* Linux user outside the docker group: detected at once, added to the group,
+  setup run inside the group with no stray argument, stack healthy. The user
+  change and group switch were simulated with stand ins here (creating a real
+  test user with sudo was not allowed in this environment).
+
+An independent review found 7 confirmed defects (the docker group check could
+never match, so such installs waited five minutes and failed; an empty
+argument on the group path; WSL not starting an installed Docker Desktop;
+archive updates leaving removed files; git updates not tracking GitHub) and
+several likely ones (Docker's script offered on systems it does not support,
+no Compose v2 check, rootless, snap and Docker Desktop for Linux not started,
+the macOS developer tools pop up, other git folders accepted). All are fixed.
+
+Not run here: a real Mac, WSL, and distributions other than Ubuntu.
+
 ## Not verified: please check on your server
 
 1. Build on the real upstream image: `./scripts/setup.sh`, then
