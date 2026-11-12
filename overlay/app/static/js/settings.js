@@ -1672,7 +1672,7 @@ async function initShortcuts() {
     try {
       await _postSettings({ keybinds });
       // Update global keybinds so they take effect immediately
-      window._odysseusKeybinds = keybinds;
+      window._openwingsKeybinds = keybinds;
       if (uiModule && uiModule.showToast) uiModule.showToast('Shortcut saved');
     } catch (e) {
       console.error('Failed to save keybinds:', e);
@@ -2723,12 +2723,12 @@ async function initEmailSettings() {
   if (!root || !root.querySelector('[data-settings-panel="email"]')) return;
 
   const styleKey = () => {
-    const account = String(window.__odysseusActiveEmailAccount || '').trim();
+    const account = String(window.__openwingsActiveEmailAccount || '').trim();
     return account ? `odysseus-email-writing-style:${account}` : 'odysseus-email-writing-style';
   };
   const styleEl = el('set-email-style');
   const emailAccountSuffix = () => {
-    const account = String(window.__odysseusActiveEmailAccount || '').trim();
+    const account = String(window.__openwingsActiveEmailAccount || '').trim();
     return account ? `?account_id=${encodeURIComponent(account)}` : '';
   };
 
@@ -3133,10 +3133,10 @@ const AGENT_CONFIGS = {
     defaultName: 'Codex Agent',
     pluginPath: '/api/codex/plugin.zip',
     setupDescription: 'Downloads a plugin bundle and registers it.',
-    buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
-export ODYSSEUS_API_TOKEN='${token}'
+    buildSetup: (origin, token) => `export OPENWINGS_URL=${origin}
+export OPENWINGS_API_TOKEN='${token}'
 mkdir -p ~/plugins
-curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/codex/plugin.zip" -o /tmp/openwings-codex-plugin.zip
+curl -fsSL -H "Authorization: Bearer $OPENWINGS_API_TOKEN" "$OPENWINGS_URL/api/codex/plugin.zip" -o /tmp/openwings-codex-plugin.zip
 python3 -m zipfile -e /tmp/openwings-codex-plugin.zip ~/plugins
 python3 - <<'PY'
 import json
@@ -3153,16 +3153,16 @@ data.setdefault("name", "personal")
 data.setdefault("interface", {}).setdefault("displayName", "Personal")
 plugins = data.setdefault("plugins", [])
 entry = {
-    "name": "odysseus",
-    "source": {"source": "local", "path": "./plugins/odysseus"},
+    "name": "openwings",
+    "source": {"source": "local", "path": "./plugins/openwings"},
     "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
     "category": "Productivity",
 }
-data["plugins"] = [item for item in plugins if item.get("name") != "odysseus"] + [entry]
+data["plugins"] = [item for item in plugins if item.get("name") != "openwings"] + [entry]
 p.write_text(json.dumps(data, indent=2) + "\\n")
 PY
-codex plugin add odysseus@personal
-python3 ~/plugins/odysseus/scripts/odysseus_api.py capabilities`,
+codex plugin add openwings@personal
+python3 ~/plugins/openwings/scripts/openwings_api.py capabilities`,
   },
   claude: {
     label: 'Claude Agent',
@@ -3171,12 +3171,12 @@ python3 ~/plugins/odysseus/scripts/odysseus_api.py capabilities`,
     defaultName: 'Claude Agent',
     pluginPath: '/api/claude/plugin.zip',
     setupDescription: 'Downloads a plugin bundle and registers it.',
-    buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
-export ODYSSEUS_API_TOKEN='${token}'
+    buildSetup: (origin, token) => `export OPENWINGS_URL=${origin}
+export OPENWINGS_API_TOKEN='${token}'
 mkdir -p ~/.claude
-curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/claude/plugin.zip" -o /tmp/openwings-claude-skill.zip
+curl -fsSL -H "Authorization: Bearer $OPENWINGS_API_TOKEN" "$OPENWINGS_URL/api/claude/plugin.zip" -o /tmp/openwings-claude-skill.zip
 python3 -m zipfile -e /tmp/openwings-claude-skill.zip ~/.claude/
-python3 ~/.claude/skills/odysseus/scripts/odysseus_api.py capabilities`,
+python3 ~/.claude/skills/openwings/scripts/openwings_api.py capabilities`,
   },
 };
 

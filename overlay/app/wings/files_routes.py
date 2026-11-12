@@ -160,7 +160,7 @@ table.files th {{ color:var(--muted); font-weight:600; }}
 async def files_js(request: Request):
     if not _allowed(request):
         return PlainTextResponse("", status_code=403)
-    js = ("try { const t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null'); const n = (t && t.name) || 'ow-sage';"
+    js = ("try { const t = JSON.parse(localStorage.getItem('openwings-theme') || 'null'); const n = (t && t.name) || 'ow-sage';"
           " if (/^ow-/.test(n)) document.documentElement.setAttribute('data-ow-skin', n); } catch (_) {}\n"
           "for (const el of document.querySelectorAll('td.t')) el.textContent = new Date(+el.dataset.t * 1000).toLocaleString();\n")
     return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-cache"})

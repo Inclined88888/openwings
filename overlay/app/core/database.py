@@ -1295,6 +1295,32 @@ def _migrate_add_model_endpoint_refresh_columns():
         except Exception:
             pass
 
+def _migrate_notification_sender_name():
+    """OpenWings: task notifications stored under the old default sender name
+    show the current one (idempotent)."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "notification_logs" in tables:
+            conn.execute(
+                "UPDATE notification_logs SET task_name = 'OpenWings' WHERE task_name = ?",
+                ("Ody" + "sseus",),
+            )
+            conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"notification sender migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _migrate_add_task_run_model_column():
     """Add model column to task_runs if it doesn't exist (records which model ran)."""
     import sqlite3
@@ -2431,6 +2457,7 @@ def init_db():
     _migrate_add_supports_tools_column()
     _migrate_add_model_tool_modes_column()
     _migrate_add_task_run_model_column()
+    _migrate_notification_sender_name()
     _migrate_add_owner_column()
     _migrate_add_document_archived_column()
     _migrate_add_last_message_at_column()

@@ -83,6 +83,11 @@ if [ ! -f "$ENV_FILE" ]; then
   [ "$QUIET" -eq 1 ] || info "Created .env from .env.example"
 fi
 chmod 600 "$ENV_FILE"
+# Settings saved under the earlier names are renamed first, so the key and
+# password below are found and never generated a second time.
+migrate_env
+LOG="$WINGS_ROOT/install.log"
+scrub_log "$LOG"
 
 NEW_ADMIN_PASSWORD=0; NEW_SECRETS=0
 ensure_secret() {
@@ -91,23 +96,40 @@ ensure_secret() {
     env_set "$key" "$($generator)"
     NEW_SECRETS=$((NEW_SECRETS + 1))
     [ "$QUIET" -eq 1 ] || case "$key" in
-      ODYSSEUS_APP_KEY) ok "generated the encryption key" ;;
-      ODYSSEUS_ADMIN_PASSWORD) ok "generated the admin password" ;;
+      OPENWINGS_APP_KEY) ok "generated the encryption key" ;;
+      OPENWINGS_ADMIN_PASSWORD) ok "generated the admin password" ;;
       SEARXNG_SECRET) ok "generated the web search secret" ;;
       WINGS_BROWSER_TOKEN) ok "generated the browser access token" ;;
       WINGS_RUNNER_TOKEN) ok "generated the code runner access token" ;;
       WINGS_RENDERER_TOKEN) ok "generated the page renderer access token" ;;
       *) ok "generated $key" ;;
     esac
-    [ "$key" = "ODYSSEUS_ADMIN_PASSWORD" ] && NEW_ADMIN_PASSWORD=1
+    [ "$key" = "OPENWINGS_ADMIN_PASSWORD" ] && NEW_ADMIN_PASSWORD=1
   fi
   return 0
 }
 gen_password() { rand_token 18; }
 gen_searxng() { rand_token 36; }
 
-ensure_secret ODYSSEUS_APP_KEY fernet_key
-ensure_secret ODYSSEUS_ADMIN_PASSWORD gen_password
+# A new encryption key next to data from an earlier install (its .env was
+# deleted or replaced) would leave that data unreadable: the stored passwords
+# and keys cannot be decrypted, and the admin password made below would not
+# match the one in the data. Stop before writing any key.
+if [ -z "$(env_get OPENWINGS_APP_KEY)" ] && docker info >/dev/null 2>&1; then
+  earlier_data="$(data_volumes_present)"
+  case " ${earlier_data} " in *"-data "*) ;; *) earlier_data="" ;; esac
+  if [ -n "$earlier_data" ]; then
+    warn "OpenWings data from an earlier install is still on this computer (${earlier_data}),"
+    warn "but .env has no encryption key for it. Setup stopped before making a new key, so that data stays readable. Choose one:"
+    warn "  1. Keep the data: put back the .env from that install (or a copy of it) as ${ENV_FILE}, then run setup again."
+    warn "  2. Keep the data, when that install kept its key inside the data (an install of the upstream program):"
+    warn "     ./scripts/adopt-key.sh --yes, then run setup again."
+    warn "  3. Start fresh and delete that data for good: docker volume rm ${earlier_data}"
+    die "then run setup again."
+  fi
+fi
+ensure_secret OPENWINGS_APP_KEY fernet_key
+ensure_secret OPENWINGS_ADMIN_PASSWORD gen_password
 ensure_secret SEARXNG_SECRET gen_searxng
 # Shared secret between the app and the browser container (profile browser).
 ensure_secret WINGS_BROWSER_TOKEN gen_searxng
@@ -117,11 +139,12 @@ ensure_secret WINGS_RUNNER_TOKEN gen_searxng
 ensure_secret WINGS_RENDERER_TOKEN gen_searxng
 if [ "$QUIET" -eq 1 ] && [ "$NEW_SECRETS" -gt 0 ]; then ok "Created your admin password and keys (kept in .env)"; fi
 
-# Upstream silently skips creating the admin for passwords under 8 characters
+# The app silently skips creating the admin for passwords under 8 characters
 # and leaves the web setup page open to whoever reaches it first.
-admin_pw="$(env_get ODYSSEUS_ADMIN_PASSWORD)"
-[ "${#admin_pw}" -ge 8 ] || die "ODYSSEUS_ADMIN_PASSWORD in .env must be at least 8 characters"
-case "$admin_pw" in *[[:space:]]*) die "ODYSSEUS_ADMIN_PASSWORD must not contain spaces";; esac
+admin_pw="$(env_get OPENWINGS_ADMIN_PASSWORD)"
+[ "${#admin_pw}" -ge 8 ] || die "OPENWINGS_ADMIN_PASSWORD in .env must be at least 8 characters"
+case "$admin_pw" in *[[:space:]]*) die "OPENWINGS_ADMIN_PASSWORD must not contain spaces";; esac
+unset admin_pw
 
 [ -n "$BIND" ] && env_set APP_BIND "$BIND"
 [ -n "$PORT" ] && env_set APP_PORT "$PORT"
@@ -163,7 +186,7 @@ fi
 
 if [ "$WITH_CALDAV" -eq 1 ]; then
   add_profile caldav
-  env_set ODYSSEUS_ALLOW_PRIVATE_CALDAV 1
+  env_set OPENWINGS_ALLOW_PRIVATE_CALDAV 1
   users_file="$WINGS_ROOT/config/radicale/users"
   if [ -d "$users_file" ]; then
     die "$users_file is a directory (Docker creates one when the file is missing). Remove it (sudo rmdir \"$users_file\") and re-run."
@@ -207,35 +230,59 @@ fi
 [ -n "$profiles" ] && env_set COMPOSE_PROFILES "$profiles"
 
 if [ "$START" -eq 0 ]; then
-  ok ".env is ready. Start with: docker compose up -d --build"
+  # Data from before 1.0.3-w2 moves to the new volume names now, so a plain
+  # `docker compose up` never starts on new, empty volumes.
+  if docker info >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    migrate_volumes
+    ok ".env is ready. Start with: docker compose up -d --build"
+  else
+    ok ".env is ready. Start with: ./scripts/setup.sh (it also moves data from an earlier version to its new place)"
+  fi
   exit 0
 fi
 
 # 3. Build and start -----------------------------------------------------
-# The app service was renamed from "odysseus" to "openwings"; an old compose
-# override would otherwise add a broken second service.
-if dc config --services 2>/dev/null | grep -qx odysseus; then
-  die "A compose override file still names the app service \"odysseus\"; it is now \"openwings\". Rename it there (COMPOSE_FILE in .env lists the files), then run setup again."
+# The app service has been called "openwings" since 1.0.2; an old compose
+# override with the earlier service name would add a broken second service.
+if dc config --services 2>/dev/null | grep -qx 'ody''sseus'; then
+  die "A compose override file still uses the app service's earlier name; it is now \"openwings\". Rename that service there (COMPOSE_FILE in .env lists the files), then run setup again."
 fi
 mem_gb="$(docker_mem_gb)"
 if [ "$mem_gb" -gt 0 ] && [ "$mem_gb" -lt "$WINGS_MIN_MEM_GB" ]; then
   warn "Docker has about ${mem_gb} GB of memory; OpenWings needs at least ${WINGS_MIN_MEM_GB} GB and may be stopped while starting."
   warn "  Colima: colima stop && colima start --memory ${WINGS_MIN_MEM_GB}   Docker Desktop: Settings > Resources > Memory"
 fi
-LOG="$WINGS_ROOT/install.log"
+( umask 077; : >> "$LOG" )
+# Images first, while a running OpenWings keeps running; then the one-time
+# data copy (it stops the app); then the start. A failed download or build
+# changes nothing.
 if [ "$QUIET" -eq 1 ]; then
   printf '\n==== %s setup\n' "$(date)" >> "$LOG"
   log_start=$(wc -l < "$LOG")
-  info "Downloading and starting OpenWings. The first time takes 5 to 15 minutes; details go to install.log"
-  if ! with_dots dc up -d --build --remove-orphans; then
+  info "Downloading and building OpenWings. The first time takes 5 to 15 minutes; details go to install.log"
+  if ! with_dots prepare_images; then
+    warn "Downloading or building OpenWings failed. What Docker said:"
+    tail -n +"$((log_start + 1))" "$LOG" | tail -n 25 >&2
+    die "Fix the cause above, then run this again (your data and settings are kept; a running OpenWings was left running). Full log: $LOG"
+  fi
+else
+  info "Building the OpenWings image (the first run downloads several GB of images)"
+  prepare_images || die "Downloading or building OpenWings failed (see above). Fix the cause, then run this again (your data and settings are kept; a running OpenWings was left running)."
+fi
+# Data volumes from before 1.0.3-w2 are copied to their new names once.
+migrate_volumes
+if [ "$QUIET" -eq 1 ]; then
+  log_start=$(wc -l < "$LOG")
+  info "Starting OpenWings"
+  if ! with_dots start_stack; then
     warn "Starting OpenWings failed. What Docker said:"
     tail -n +"$((log_start + 1))" "$LOG" | tail -n 25 >&2
     die "Fix the cause above, then run this again (your data and settings are kept). Full log: $LOG"
   fi
   info "Waiting for OpenWings to finish starting"
 else
-  info "Building the OpenWings image and starting the stack (the first run downloads several GB of images)"
-  dc up -d --build --remove-orphans
+  info "Starting the stack"
+  start_stack || die "Starting OpenWings failed (see above). Fix the cause, then run this again (your data and settings are kept)."
   info "Waiting for OpenWings to start (first boot also downloads the embedding model)"
 fi
 if ! { if [ "$QUIET" -eq 1 ]; then with_dots wait_healthy openwings 900; else wait_healthy openwings 900; fi; }; then
@@ -243,6 +290,7 @@ if ! { if [ "$QUIET" -eq 1 ]; then with_dots wait_healthy openwings 900; else wa
   die "OpenWings did not start. Fix the cause above, then run setup again (it keeps your data and settings)."
 fi
 ok "OpenWings is healthy"
+remove_old_image_tags
 
 if [ -n "$OLLAMA_MODEL" ]; then
   if wait_healthy ollama 300; then
@@ -269,11 +317,15 @@ if [ -n "$DOMAIN" ]; then url="https://${DOMAIN}"; else
   [ "$bind_v" = "0.0.0.0" ] && bind_v="localhost"
   url="http://${bind_v}:${APP_PORT_V}"
 fi
-admin_user="$(env_get ODYSSEUS_ADMIN_USER)"; admin_user="${admin_user:-admin}"
+admin_user="$(env_get OPENWINGS_ADMIN_USER)"; admin_user="${admin_user:-admin}"
+# The password itself is never printed (terminal scrollback and install logs
+# outlive it); this is how to read it from .env.
+pw_cmd="${WINGS_ROOT}/scripts/show-login.sh"
+pw_alt="grep '^OPENWINGS_ADMIN_PASSWORD=' \"$ENV_FILE\" | cut -d= -f2-"
 if [ "$NEW_ADMIN_PASSWORD" -eq 1 ]; then
-  shown_password="$(env_get ODYSSEUS_ADMIN_PASSWORD)   (saved in .env)"
+  pw_note="(created now and saved in .env)"
 else
-  shown_password="$(env_get ODYSSEUS_ADMIN_PASSWORD)   (set at install; if you changed it in Settings, use yours)"
+  pw_note="(set at install; if you changed it in Settings, use yours)"
 fi
 
 cat <<EOF
@@ -282,7 +334,9 @@ ${C_BOLD}OpenWings is running.${C_RESET}
 
   Open:      ${url}
   Username:  ${admin_user}
-  Password:  ${shown_password}
+  Password:  run   ${pw_cmd}
+             (or:  ${pw_alt})
+             ${pw_note}
 
 Next:
   1. Sign in, then open Settings and add a model provider (see README, "Models").

@@ -4,7 +4,7 @@
 
 A self hosted AI workspace for everyday knowledge work: chat, agents, deep research with cited sources, documents, files, notes, tasks, email, calendar and memory, in one web app on your own server.
 
-OpenWings is a hardened deployment of [Odysseus](https://github.com/odysseus-dev/odysseus) (AGPL-3.0), pinned to an exact upstream build, plus a small, reviewable set of patches that close the gaps between upstream and the requirements below. Everything upstream does well is used as is; every OpenWings change lives in [`patches/`](patches) as a plain diff with its reason written at the top.
+OpenWings is built on an open source upstream project, pinned to an exact build, plus a small, reviewable set of patches that close the gaps between it and the requirements below (see [Credits and license](#credits-and-license)). Everything upstream does well is used as is; every OpenWings change lives in [`patches/`](patches) as a plain diff with its reason written at the top.
 
 | Need | Where it lives |
 | --- | --- |
@@ -55,7 +55,7 @@ Requirements:
 * Docker Engine 24 or newer (Docker Desktop on macOS/Windows) with the Compose v2 plugin, version 2.24 or newer (`docker compose version`)
 * Memory: give Docker at least 4 GB. Colima's default 2 GB was not enough for a real first start (the app was stopped while loading its embedding model); the installer offers to restart Colima with 4 GB, and setup warns below that. Local models need much more (see [Models](#models))
 * Disk: several GB for images (the upstream image bundles Chromium and build tools), plus your data and any local models
-* Outbound access to `ghcr.io` (the Odysseus image) and Docker Hub (sidecars)
+* Outbound access to `ghcr.io` (the base image) and Docker Hub (sidecars)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Inclined88888/openwings/main/install.sh | bash
@@ -97,7 +97,7 @@ The stack:
 
 | Service | Purpose | Reachable from the host |
 | --- | --- | --- |
-| `openwings` | The app (OpenWings image, built on Odysseus) | `127.0.0.1:7011` |
+| `openwings` | The app (OpenWings image) | `127.0.0.1:7011` |
 | `searxng` | Private web search | internal only |
 | `chromadb` | Vector index for files and memory | internal only |
 | `ntfy` | Push notifications | `127.0.0.1:8091` |
@@ -108,7 +108,7 @@ The stack:
 | `renderer` (profile `browser`) | Stateless Chromium that reads pages needing JavaScript for web fetch and deep research; no logins | none (reachable only from `openwings`) |
 | `runner` (profile `runner`) | Runs the agent's Python and shell code; no network at all | none (reachable only from `openwings`) |
 
-All state lives in named Docker volumes (`odysseus-data`, `chromadb-data`, `radicale-data`, `ollama-models` and others listed at the end of `docker-compose.yml`). `docker compose down`, upgrades and container rebuilds never touch them; only `docker compose down -v` deletes data.
+All state lives in named Docker volumes (`app-data`, `chromadb-data`, `radicale-data`, `ollama-models` and others listed at the end of `docker-compose.yml`). `docker compose down`, upgrades and container rebuilds never touch them; only `docker compose down -v` deletes data. After an update from before 1.0.3-w2, the earlier copies of the data volumes stay until `./scripts/migrate-volumes.sh --remove-old` (see Upgrade below); `docker compose down -v` does not remove them, and setup does not copy them back once their data has been copied.
 
 <a id="first-run"></a>
 ## First run
@@ -116,7 +116,7 @@ All state lives in named Docker volumes (`odysseus-data`, `chromadb-data`, `radi
 1. Sign in with the user and password the installer printed. Forgot them? `~/openwings/scripts/show-login.sh` prints the address, user and password again (from `.env`; if you changed the password in Settings, yours is the one that works).
 2. Add a model: **Settings → Add Models**. See [Models](#models). Typing `/setup` in the chat box starts upstream's guided setup instead.
 3. **Settings → Account**: turn on two factor authentication, then change the password. The env password is used only to create the admin on the very first start; later changes made in the app stick.
-4. Copy `.env` somewhere safe and offline (password manager or encrypted USB). It holds `ODYSSEUS_APP_KEY`, the only key that decrypts stored credentials. Backups deliberately do not contain it.
+4. Copy `.env` somewhere safe and offline (password manager or encrypted USB). It holds `OPENWINGS_APP_KEY`, the only key that decrypts stored credentials. Backups deliberately do not contain it.
 5. Optional: set `TZ` in `.env` (for example `TZ=Europe/London`) so reminders and scheduled tasks use your time zone, then `docker compose up -d`.
 
 <a id="models"></a>
@@ -214,7 +214,7 @@ Sidebar **Calendar** (Ctrl+Alt+C): week, month, year and agenda views, .ics impo
 | Google Calendar | Your main Google calendar two way with **Sign in with Google** under [Connect your accounts](#accounts) (needs the admin's one-time Google key); any Google calendar read only by its secret iCal link (Calendar by link) |
 | Microsoft 365 / Outlook.com | Read only by its published ICS link (Calendar by link). Two way sync comes with the Outlook sign-in |
 
-Know before you rely on it (upstream behaviour, not changed by OpenWings): sync pulls when you open the calendar or press "Sync now" (there is no background polling); local changes are pushed immediately, last write wins; recurring series with one edited instance can collapse. `ODYSSEUS_ALLOW_PRIVATE_CALDAV=1` is needed for CalDAV servers on private addresses (`setup.sh --with-caldav` sets it).
+Know before you rely on it (upstream behaviour, not changed by OpenWings): sync pulls when you open the calendar or press "Sync now" (there is no background polling); local changes are pushed immediately, last write wins; recurring series with one edited instance can collapse. `OPENWINGS_ALLOW_PRIVATE_CALDAV=1` is needed for CalDAV servers on private addresses (`setup.sh --with-caldav` sets it).
 
 <a id="agents"></a>
 ## Agents and tool access
@@ -316,7 +316,7 @@ The agent's `python` and `bash` tools then run in the `runner` container (patch 
 * **Approval**: running code is an action on your behalf, so upstream's approval gate asks before the first run in a task once the chat has seen web or email content ("Allow for this task", "Allow for this chat", "Deny").
 * **Isolation** (`docker-compose.yml`, `docker/runner/runner_server.py`): no network at all (not even the internet), no secrets in its environment, no access to the app's data or keys, read only system files, all capabilities dropped, no privilege escalation, and limits on CPU time, memory, file size and processes. Only the agent workspace (`agent-workspaces` volume, mounted at `/workspaces`) is writable. The app reaches it with a shared secret (`WINGS_RUNNER_TOKEN`) from its own address only.
 * **Limits**: each run stops after `WINGS_RUNNER_MAX_TIMEOUT` seconds (default 300). Upstream starts long commands as detached background jobs, which Docker cannot contain; OpenWings runs them in the runner at the full time limit instead and tells the agent so (patch 0014). Nothing keeps running between calls, and a run cannot install packages from the internet.
-* **Where files live**: chats work in `/workspaces/default` (`ODYSSEUS_WORKSPACE_DEFAULT`). The browser's downloads appear inside it as `downloads/` (read only there). Backups include the workspace.
+* **Where files live**: chats work in `/workspaces/default` (`OPENWINGS_WORKSPACE_DEFAULT`). The browser's downloads appear inside it as `downloads/` (read only there). Backups include the workspace.
 
 Settings: `WINGS_RUNNER_MAX_TIMEOUT=300`, `WINGS_RUNNER_MEMORY_MB=2048` (per run), `WINGS_RUNNER_MEMORY=3g` and `WINGS_RUNNER_CPUS=2` (whole container).
 
@@ -368,7 +368,7 @@ Keyboard: Ctrl/Cmd+K search chats, Ctrl/Cmd+Alt+N new chat, Ctrl/Cmd+/ focus the
 
 A backup is a folder with one archive per volume, the CalDAV accounts file, a manifest and SHA-256 checksums. SQLite databases are copied with SQLite's backup API, so it is safe while the app runs; ChromaDB and Radicale pause for the few seconds their archive takes. Archives are mode 600.
 
-**The backup does not contain `.env`.** Keep `.env` separately; without its `ODYSSEUS_APP_KEY`, a restore brings back all data except stored credentials (re-enter API keys and mail/calendar passwords).
+**The backup does not contain `.env`.** Keep `.env` separately; without its `OPENWINGS_APP_KEY`, a restore brings back all data except stored credentials (re-enter API keys and mail/calendar passwords).
 
 ```bash
 ./scripts/restore.sh backups/wings-20261110-030000 --yes
@@ -382,16 +382,20 @@ Nightly backups with cron (`crontab -e`):
 15 3 * * * cd /path/to/wings && ./scripts/backup.sh --out /mnt/nas/wings >> /var/log/wings-backup.log 2>&1
 ```
 
-**Upgrade**: `./scripts/upgrade.sh` takes a backup, `git pull`s this repository, creates any helper container secret a newer version added (the page renderer's, for one), rebuilds and restarts, and tells you how to roll back if the new version is unhealthy. OpenWings pins upstream by image digest; moving to a newer Odysseus is an OpenWings change (bump `upstream.lock`, run `scripts/dev/rebase-overlay.sh`, rebuild, run the tests). The image build refuses to run if any patched upstream file changed underneath the overlay.
+**Upgrade**: `./scripts/upgrade.sh` takes a backup, `git pull`s this repository, creates any helper container secret a newer version added (the page renderer's, for one), rebuilds and restarts, and tells you how to roll back if the new version is unhealthy. OpenWings pins upstream by image digest; moving to a newer upstream version is an OpenWings change (bump `upstream.lock`, run `scripts/dev/rebase-overlay.sh`, rebuild, run the tests). The image build refuses to run if any patched upstream file changed underneath the overlay.
 
-**Names that changed in 1.0.3**, in case your own mail rules, webhook receivers or authenticator app look for them: reminder emails are titled `Reminder (OpenWings): …` (was `Reminder (Odysseus): …`), webhooks arrive with the User-Agent `OpenWings-Webhook/1.0` (was `Odysseus-Webhook/1.0`), and two-factor sign-in set up from now on is listed as "OpenWings" in your authenticator (entries you already have keep their old name and keep working). The headers did not change, so filter on those instead: `X-Odysseus-Kind: reminder` on reminder emails, `X-Odysseus-Event` and `X-Odysseus-Signature` on webhooks.
+**Names that changed**, in case your own mail rules, webhook receivers or authenticator app look for them: reminder emails are titled `Reminder (OpenWings): …`, webhooks arrive with the User-Agent `OpenWings-Webhook/1.0` and the headers `X-OpenWings-Event` and `X-OpenWings-Signature`, and mail the app sends carries `X-OpenWings-Kind` (`reminder` on reminder emails), `X-OpenWings-Origin` and `X-OpenWings-Ref`. Mail sent by earlier versions keeps the headers it was sent with, and is still recognised. Two-factor sign-in set up since 1.0.3 is listed as "OpenWings" in your authenticator; entries you already have keep their old label and keep working (set 2FA up again in Settings to relabel one).
 
-**Moving an existing Odysseus install** into OpenWings: restore its `data/` into the `odysseus-data` volume, then run `./scripts/adopt-key.sh --yes` to move its key file into `.env`.
+**Upgrading from 1.0.3-w1**: run the installer again, or `./scripts/setup.sh`, once. The `./scripts/upgrade.sh` of 1.0.3-w1 stops on this update with "OPENWINGS_APP_KEY is not set in .env" before rebuilding: your app keeps running on the old version, the code is already updated and a backup was taken. Then run setup once; after that, `./scripts/upgrade.sh` works again. Some lines that the earlier script prints on the way (from `git pull` and its backup step) still use the earlier names; they come from the earlier version and cannot be changed.
+
+**Settings and data volumes renamed in 1.0.3-w2**: settings in `.env` are named `OPENWINGS_*`, and the app's data volumes `app-data`, `app-logs`, `app-ssh`, `hf-cache` and `app-local`. `./scripts/setup.sh` and `./scripts/upgrade.sh` rename the settings in your `.env` for you (values unchanged; your previous file is kept as `.env.bak`, readable only by you) and copy your data into the new volumes once, after checking the copy. The previous volumes are left untouched as a way back; remove them when all is well with `./scripts/migrate-volumes.sh --remove-old` (it removes only a volume whose data was copied). Backups made before keep working with `./scripts/restore.sh`. Run setup or upgrade rather than a bare `docker compose up` the first time after updating: Compose stops with "OPENWINGS_APP_KEY is not set" until `.env` is updated. If OpenWings was started on the new volumes before your data was copied (it then looks like a new install), setup stops and says so; `./scripts/migrate-volumes.sh --recopy` sets the new volumes aside (kept, not deleted) and copies your data again. The new images are downloaded and built first, so the app is stopped only for the copy itself. The copy counts as done only when every volume has been copied and checked: if it fails or is interrupted (Ctrl-C, a closed window, Docker or the computer stopping), the next run of setup starts it again from the untouched earlier volumes. `--remove-old` also keeps an earlier volume that changed after it was copied (for example because an older OpenWings was started on it again), and says so. If you delete the OpenWings folder (and with it `.env`, which holds the encryption key) and install again while the data volumes are still there, setup stops before creating a new key and lists your choices: put the earlier `.env` back, adopt a key kept in the data, or delete the data. Inside the app container, Python programs see the `OPENWINGS_*` settings under the internal names the upstream code reads (you can see them if a Python program in the Terminal prints its environment); shells and all other programs see the `OPENWINGS_*` names. The sign-in cookie was renamed too: if you were signed in before the update you stay signed in, until you close the browser; tick "Remember me" when you next sign in.
+
+**Moving an existing install of the upstream project** into OpenWings: restore its `data/` into the `app-data` volume, then run `./scripts/adopt-key.sh --yes` to move its key file into `.env`.
 
 <a id="security"></a>
 ## Security model
 
-* **Encryption at rest**: provider and endpoint API keys, email passwords and OAuth tokens, CalDAV passwords, MCP server environment and OAuth tokens, and the per chat copies of endpoint keys are Fernet encrypted in the database. The key comes from `ODYSSEUS_APP_KEY` in `.env`, never from the data volume, so a stolen volume or backup cannot be decrypted. A wrong or mismatched key stops the container at start (exit code 78) with a clear message instead of silently losing credentials.
+* **Encryption at rest**: provider and endpoint API keys, email passwords and OAuth tokens, CalDAV passwords, MCP server environment and OAuth tokens, and the per chat copies of endpoint keys are Fernet encrypted in the database. The key comes from `OPENWINGS_APP_KEY` in `.env`, never from the data volume, so a stolen volume or backup cannot be decrypted. A wrong or mismatched key stops the container at start (exit code 78) with a clear message instead of silently losing credentials.
 * **Child processes**: the server is started by `wings.serve`, which moves the key into memory and drops the admin password before anything runs, so no child process inherits either. Third party MCP servers, Cookbook engines, pip installs and terminal sessions additionally get an environment without any secret looking variable (provider keys, OAuth client secrets, tokens). A process that lacks the key refuses to create a new key file.
 * **Network**: the app listens on loopback by default; SearXNG and ChromaDB have no host ports; HTTPS through Caddy with the proxy pinned to one trusted address (`FORWARDED_ALLOW_IPS`) so login rate limits see real client addresses.
 * **Email**: see [No email leaves without your click](#no-email-leaves-without-your-click).
@@ -409,7 +413,7 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 
 | Patch | Change |
 | --- | --- |
-| [0001](patches/0001-encryption-key-from-env.patch) | Encryption key from `ODYSSEUS_APP_KEY`; never written to the data volume; fail loudly on a mismatch |
+| [0001](patches/0001-encryption-key-from-env.patch) | Encryption key from `OPENWINGS_APP_KEY`; never written to the data volume; fail loudly on a mismatch |
 | [0002](patches/0002-scrub-secrets-from-child-processes.patch) | Secrets removed from the environment of third party MCP servers and Cookbook processes |
 | [0003](patches/0003-encrypt-session-headers-and-mcp-env.patch) | Encrypts endpoint keys that upstream copies in plaintext into each chat's headers, and MCP server env; stops logging an OAuth client secret |
 | [0004](patches/0004-email-send-requires-a-person.patch) | `WINGS_FORCE_EMAIL_CONFIRM`: server side "a person clicked Send" rule for every outbound email |
@@ -432,13 +436,15 @@ Not covered (upstream behaviour, documented rather than changed): web search API
 | [0021](patches/0021-openwings-connect.patch) | Connect your AI and your apps in one click (models on this computer, OpenRouter, a pasted key, Notion, Linear, Jira, Confluence); the upstream sign-ins that pose as another company's app are off unless `WINGS_ALLOW_UNOFFICIAL_SIGNIN=1` |
 | [0022](patches/0022-openwings-chatgpt-signin.patch) | Continue with ChatGPT: OpenAI's own sign-in lets a ChatGPT Plus or Pro plan power OpenWings |
 | [0023](patches/0023-openwings-lichen.patch) | Lichen is the default look, with its motion; the theme picker lists only the OpenWings looks and works from the keyboard; no upstream font, colour or sea-themed spinner under a look; the web search and sign-in result pages and the installed app wear the look |
-| [0024](patches/0024-openwings-wording.patch) | No upstream name or sea wording in what people see or receive, or in what the model is told about itself (except the short prompts sent only to upstream's own fine-tuned `odysseus-*` models, which keep the wording they were trained on); downloads named openwings; upstream's design test pages removed; window names that match the sidebar; the OpenWings version, icon and "page not found" page |
+| [0024](patches/0024-openwings-wording.patch) | No upstream name or sea wording in what people see or receive, or in what the model is told about itself (except the short prompts sent only to upstream's own fine-tuned models, which keep the wording they were trained on); downloads named openwings; upstream's design test pages removed; window names that match the sidebar; the OpenWings version, icon and "page not found" page |
+| [0026](patches/0026-openwings-assistant.patch) | The assistant knows it is OpenWings and which model it runs on, what this install can do for you and what is out of its reach; new chats start in Agent mode; retried answers are no longer glued together; Import from Hermes (Memory) brings in Hermes memories and chats, read only, with undo |
+| [0027](patches/0027-openwings-names.patch) | OpenWings names everywhere people look: session cookie, browser storage keys (moved once, nothing lost), response, mail and webhook headers (old ones still read), attachment references, agent plugin bundles, API paths in the API docs, service worker cache; the startup maps `OPENWINGS_*` settings (wings/names.py) |
 
-Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`ODYSSEUS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
+Configuration level fixes (in `docker-compose.yml`): agent tools inside Docker called the wrong internal port (`OPENWINGS_INTERNAL_BASE`); SearXNG crash looped on hosts without IPv6; Radicale and Caddy hardening; scheduled tasks no longer stall while a browser tab is open.
 
 Patches form a series: each is the diff of one commit on top of the pinned upstream commit, so later patches may touch files earlier ones changed (`scripts/dev/export-patches.sh` writes them from such a checkout).
 
-How the overlay works: `docker/odysseus/Dockerfile` starts `FROM` the upstream image pinned by digest, checks that each file it replaces is byte identical to the upstream version the patches were written for (`overlay/UPSTREAM_SHA256SUMS`), copies `overlay/app/` over `/app`, and runs a preflight (`overlay/app/wings/preflight.py`) before the upstream entrypoint. `patches/` is the source of truth; `scripts/dev/rebase-overlay.sh` regenerates `overlay/` from it.
+How the overlay works: `docker/openwings/Dockerfile` starts `FROM` the upstream image pinned by digest, checks that each file it replaces is byte identical to the upstream version the patches were written for (`overlay/UPSTREAM_SHA256SUMS`), copies `overlay/app/` over `/app`, and runs a preflight (`overlay/app/wings/preflight.py`) before the upstream entrypoint. `patches/` is the source of truth; `scripts/dev/rebase-overlay.sh` regenerates `overlay/` from it.
 
 <a id="verification"></a>
 ## What was verified, and what you must verify
@@ -455,7 +461,7 @@ Verified by running the real stack (with a stand in for the upstream image, buil
 
 Not verifiable here, verify on your server:
 
-1. **The real upstream image** (`ghcr.io/odysseus-dev/odysseus:1.0.3-9d0d372`): run `./scripts/setup.sh`; the build must pass the checksum guard. Then `./tests/unit/run.sh`.
+1. **The real upstream image** (the one pinned in `docker/openwings/Dockerfile`): run `./scripts/setup.sh`; the build must pass the checksum guard. Then `./tests/unit/run.sh`.
 2. **Real model providers**: add one in Settings, chat, switch models, run a Deep Research question and check that the citations open the cited pages.
 3. **Gmail** with an app password: read, summarize, draft; send one test mail to yourself by clicking Send; ask an agent to "email X" and confirm you get a draft, not a sent message.
 4. **iCloud (or your CalDAV) sync**: add the account, create an event in each direction.
@@ -471,7 +477,7 @@ To run the end to end suite on a **test** install (it creates test data): `./tes
 
 | Symptom | Fix |
 | --- | --- |
-| `ODYSSEUS_APP_KEY is not set` | Run `./scripts/setup.sh` |
+| `OPENWINGS_APP_KEY is not set` | Run `./scripts/setup.sh` |
 | Container restarts with "configuration error: .app_key exists and differs" | Data came from elsewhere: `./scripts/adopt-key.sh --yes` |
 | Container restarts with "does not decrypt data already stored" | `.env` is from another install: put back the matching `.env` (or see `--accept-key-loss` under Backup) |
 | Login works only on `localhost` | Add the exact URL you use to `ALLOWED_ORIGINS` in `.env` |
@@ -479,7 +485,7 @@ To run the end to end suite on a **test** install (it creates test data): `./tes
 | An agent says it cannot send email | Intended: open the draft it made and click Send |
 | Task or reminder emails are not delivered | List your address in `WINGS_EMAIL_SELF_ADDRESSES` |
 | Scheduled emails did not go out after a restart | Open the Email view once; upstream starts its scheduled-send worker there |
-| Local CalDAV server rejected | `ODYSSEUS_ALLOW_PRIVATE_CALDAV=1` |
+| Local CalDAV server rejected | `OPENWINGS_ALLOW_PRIVATE_CALDAV=1` |
 | No **Live browser** entry in the sidebar | Browser not enabled (`./scripts/setup.sh --with-browser`) or your account is not in `WINGS_BROWSER_USERS` |
 | Agent says "WINGS_BROWSER_TOKEN is not set" | Run `./scripts/setup.sh` once more (it adds the missing secret), then `docker compose up -d` |
 | Agent says "The browser service is not running" | `docker compose ps browser`; `docker compose logs --tail 50 browser` |
@@ -487,11 +493,12 @@ To run the end to end suite on a **test** install (it creates test data): `./tes
 | A site on your LAN is refused | `WINGS_BROWSER_ALLOW_PRIVATE=1` in `.env`, then `docker compose up -d` |
 | Slow or no answers from a local model | Use a smaller model, raise `OLLAMA_CONTEXT_LENGTH` carefully, or add a hosted provider |
 | Agent says "The code runner is not running" | `./scripts/setup.sh --with-runner`, or `docker compose ps runner` and `docker compose logs --tail 50 runner` |
-| Agent says "Process creation requires a sealed workspace" | The chat has no workspace: check `ODYSSEUS_WORKSPACE_DEFAULT` in `.env` (default `/workspaces/default`) and restart |
+| Agent says "Process creation requires a sealed workspace" | The chat has no workspace: check `OPENWINGS_WORKSPACE_DEFAULT` in `.env` (default `/workspaces/default`) and restart |
 | Code run "timed out" | Raise `WINGS_RUNNER_MAX_TIMEOUT` in `.env` (seconds), then `docker compose up -d` |
 | "Daily token limit reached" or "Run spend limit reached" | Intended: raise or empty the matching `WINGS_RUN_MAX_*` or `WINGS_DAY_MAX_*` setting in `.env`, then `docker compose up -d` |
 | Anything else | `docker compose ps`, `docker compose logs --tail 100 openwings` |
 
-## License
+<a id="credits-and-license"></a>
+## Credits and license
 
-Upstream Odysseus is AGPL-3.0-or-later; the patches and the overlay are derived from it and carry the same license. See [NOTICE.md](NOTICE.md).
+OpenWings is a modified version of Odysseus (https://github.com/odysseus-dev/odysseus), licensed under AGPL-3.0-or-later; OpenWings is under the same license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).

@@ -378,7 +378,7 @@ window.addEventListener('openwings:turn-mode', (e) => {
   const remove = () => n.remove();
   n.querySelector('.close-btn').addEventListener('click', remove);
   n.querySelector('[data-ow-use-agent]').addEventListener('click', () => {
-    try { (window.__odysseusSetChatMode || (() => document.getElementById('mode-agent-btn')?.click()))('agent'); } catch (_) {}
+    try { (window.__openwingsSetChatMode || (() => document.getElementById('mode-agent-btn')?.click()))('agent'); } catch (_) {}
     remove();
   });
   setTimeout(remove, 20000);

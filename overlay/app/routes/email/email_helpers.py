@@ -33,7 +33,7 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import Query, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from typing import Optional, List
 
 from src.auth_helpers import _auth_disabled, get_current_user
@@ -2176,8 +2176,12 @@ class SendEmailRequest(BaseModel):
     # Exact IMAP draft to remove after successful delivery.
     draft_uid: Optional[str] = None
     draft_folder: Optional[str] = None
-    # Internal marker for Odysseus-generated mail (e.g. reminder, scheduled).
-    odysseus_kind: Optional[str] = None
+    # Internal marker for app-generated mail (e.g. reminder, scheduled).
+    odysseus_kind: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("mail_kind", "odysseus_kind"),
+        title="Mail kind",
+    )
     # If true, /send waits for SMTP + Sent append and returns the sent UID.
     wait_for_delivery: bool = False
 

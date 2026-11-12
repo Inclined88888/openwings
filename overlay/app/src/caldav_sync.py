@@ -64,7 +64,7 @@ def _validate_caldav_address(addr: ipaddress._BaseAddress) -> None:
     ):
         raise ValueError("CalDAV URL host is not allowed")
     if addr.is_private and not _private_caldav_allowed():
-        raise ValueError("Private CalDAV IPs require ODYSSEUS_ALLOW_PRIVATE_CALDAV=1")
+        raise ValueError("Private CalDAV IPs require OPENWINGS_ALLOW_PRIVATE_CALDAV=1 in .env")
 
 
 def _validate_caldav_ip(host: str) -> None:

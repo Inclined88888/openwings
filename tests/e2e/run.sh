@@ -57,7 +57,7 @@ esac
 bind="$(env_get APP_BIND)"; [ -z "$bind" ] || [ "$bind" = "0.0.0.0" ] && bind=127.0.0.1
 port="$(env_get APP_PORT)"; port="${port:-7011}"
 origin="$(env_get ALLOWED_ORIGINS | cut -d, -f1)"; origin="${origin:-http://localhost:${port}}"
-user="$(env_get ODYSSEUS_ADMIN_USER)"; user="${user:-admin}"
+user="$(setting ADMIN_USER)"; user="${user:-admin}"
 case ",$(env_get COMPOSE_PROFILES)," in
   *,caldav,*)
     dav_port="$(env_get RADICALE_PORT)"
@@ -70,7 +70,7 @@ esac
 WINGS_URL="http://${bind}:${port}" \
 WINGS_ORIGIN="$origin" \
 WINGS_USER="$user" \
-WINGS_PASSWORD="$(env_get ODYSSEUS_ADMIN_PASSWORD)" \
+WINGS_PASSWORD="$(setting ADMIN_PASSWORD)" \
 COMPOSE_PROJECT_NAME="$project" \
 WINGS_APP_CONTAINER="$(container_id openwings)" \
   python3 "${WINGS_ROOT}/tests/e2e/wings_e2e.py"

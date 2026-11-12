@@ -36,7 +36,9 @@ logger = logging.getLogger("wings.browser.live")
 router = APIRouter()
 
 _STATIC = Path(__file__).with_name("static")
-_SESSION_COOKIE = "odysseus_session"
+# The session cookie, and the name it had before (still read; see
+# routes/auth_routes.py).
+_SESSION_COOKIES = ("openwings_session", "ody" "sseus_session")
 _ASSET_RE = re.compile(r"^(?:core|vendor)/[A-Za-z0-9_./-]{1,200}\.(js|mjs|json|css|svg|png)$")
 _TYPES = {"js": "text/javascript", "mjs": "text/javascript", "json": "application/json",
           "css": "text/css", "svg": "image/svg+xml", "png": "image/png"}
@@ -160,7 +162,7 @@ def _origin_ok(websocket: WebSocket) -> bool:
 @router.websocket("/wings/browser/websockify")
 async def novnc_socket(websocket: WebSocket):
     auth_manager = getattr(websocket.app.state, "auth_manager", None)
-    token = websocket.cookies.get(_SESSION_COOKIE)
+    token = next((websocket.cookies[c] for c in _SESSION_COOKIES if websocket.cookies.get(c)), None)
     user = None
     try:
         if auth_manager is not None and auth_manager.validate_token(token):

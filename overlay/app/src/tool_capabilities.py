@@ -573,7 +573,7 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
             except (TypeError, ValueError):
                 payload = None
         if isinstance(payload, Mapping) and re.fullmatch(
-            r'odysseus://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(payload.get('path') or '')
+            r'(?:openwings|odysseus)://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(payload.get('path') or '')
         ):
             return _capabilities(ToolEffect.READ_PRIVATE,
                                  result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)

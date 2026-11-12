@@ -3289,7 +3289,7 @@ def setup_chat_routes(
             image_attachment=any(str(a.get('mime') or '').startswith('image/') for a in (ctx.preprocessed.attachment_meta or [])),
         ) if _use_turn_contract else frozenset()
         if 'image_editing' in _turn_capabilities and ctx.preprocessed.attachment_meta:
-            image_refs = ['odysseus://attachment/' + str(a['id']) for a in ctx.preprocessed.attachment_meta
+            image_refs = ['openwings://attachment/' + str(a['id']) for a in ctx.preprocessed.attachment_meta
                           if a.get('id') and str(a.get('mime') or '').startswith('image/')]
             if image_refs:
                 image_edit_context = {'role': 'system', 'content':
@@ -5040,7 +5040,7 @@ def setup_chat_routes(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",
             headers={
-                "X-Odysseus-Run-Id": _detached_run.run_id,
+                "X-OpenWings-Run-Id": _detached_run.run_id,
                 "Cache-Control": "no-cache, no-transform",
                 "X-Accel-Buffering": "no",
             },
@@ -5060,7 +5060,7 @@ def setup_chat_routes(
             agent_runs.subscribe(session_id, _active_run),
             media_type="text/event-stream",
             headers={
-                "X-Odysseus-Run-Id": _active_run.run_id,
+                "X-OpenWings-Run-Id": _active_run.run_id,
                 "Cache-Control": "no-cache, no-transform",
                 "X-Accel-Buffering": "no",
             },
@@ -5073,7 +5073,7 @@ def setup_chat_routes(
     @router.post("/api/chat/stop/{session_id}")
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
-        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        _expected_run_id = (request.headers.get("X-OpenWings-Run-Id") or request.headers.get("X-Odysseus-Run-Id"))
         stopped = agent_runs.stop(session_id, _expected_run_id)
         return {"stopped": stopped}
 
@@ -5081,7 +5081,7 @@ def setup_chat_routes(
     async def chat_finish(request: Request, session_id: str) -> Dict[str, Any]:
         """Finish an editor run without discarding completed tools or review cards."""
         _verify_session_owner(request, session_id)
-        expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        expected_run_id = (request.headers.get("X-OpenWings-Run-Id") or request.headers.get("X-Odysseus-Run-Id"))
         accepted = agent_runs.request_finish(session_id, expected_run_id)
         return {"accepted": accepted}
 

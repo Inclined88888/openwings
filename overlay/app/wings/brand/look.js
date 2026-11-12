@@ -4,7 +4,7 @@
 // html[data-ow-skin=...]; with nothing saved, the default look (Lichen). An
 // upstream theme leaves the page plain.
 try {
-  const t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null');
+  const t = JSON.parse(localStorage.getItem('openwings-theme') || 'null');
   const n = (t && t.name) || 'ow-sage';
   if (/^ow-[a-z-]+$/.test(n)) document.documentElement.setAttribute('data-ow-skin', n);
 } catch (_) {}

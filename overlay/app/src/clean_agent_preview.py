@@ -2431,7 +2431,7 @@ def compact_schemas(schemas, *, model=None):
             )
         elif function.get('name') == 'edit_image':
             function['description'] = (
-                'Edit the previous image using its image_id from the tool result, or the supplied odysseus://attachment/ID for an upload. '
+                'Edit the previous image using its image_id from the tool result, or the supplied openwings://attachment/ID for an upload. '
                 'For adding objects or changing the scene, use action=prompt and prompt=the requested change. '
                 'Sends the actual source image to the configured image model, preserving the rest. '
                 'Use generate_image only for a new independent image, not edits. '
@@ -2562,7 +2562,7 @@ def compact_schemas(schemas, *, model=None):
         elif function.get('name') == 'extract_text':
             function['description'] = 'OCR exact text and numbers from an uploaded image reference or a confined native workspace image.'
             if 'path' in properties:
-                properties['path']['description'] = 'Use the supplied odysseus://attachment/ID reference in chat; native sessions can use /workspace/image.png.'
+                properties['path']['description'] = 'Use the supplied openwings://attachment/ID reference in chat; native sessions can use /workspace/image.png.'
         elif function.get('name') == 'inspect_media':
             # These semantics cannot be inferred from compact JSON shapes.
             # Without them models mistake ``query`` for semantic video search
@@ -3526,7 +3526,7 @@ def evaluate_preview_call(name, args, user_text='', *, allow_execute_code=False,
         # that executor so the model receives a recoverable tool error.
         return decision(True, 'allowed_external_runtime_contract')
     if bare == 'extract_text' and not allow_native_workspace and not re.fullmatch(
-        r'odysseus://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(args.get('path') or '')
+        r'(?:openwings|odysseus)://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(args.get('path') or '')
     ):
         return decision(False, 'uploaded_image_reference_required')
     if bare in SAFE_ACTIONS:
@@ -3742,7 +3742,7 @@ def _rehydrate_recent_image(message, metadata, owner, *, max_images=3, max_bytes
             continue
         image_mime = mime if mime.startswith('image/') else 'image/png'
         blocks.append({'type': 'image_url', 'image_url': {'url': f'data:{image_mime};base64,{encoded}'}})
-        blocks.append({'type': 'text', 'text': f'Uploaded image reference: odysseus://attachment/{upload_id}'})
+        blocks.append({'type': 'text', 'text': f'Uploaded image reference: openwings://attachment/{upload_id}'})
         used += size
     if len(blocks) > 1:
         message['content'] = blocks

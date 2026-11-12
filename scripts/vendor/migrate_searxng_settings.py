@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Vendored from odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+# Vendored from the upstream project (see NOTICE.md) at commit 9d0d3720f4ca181d87bef94da826d730acc6d483
 # path: scripts/migrate_searxng_settings.py (AGPL-3.0-or-later). Refresh with
 # scripts/dev/sync-vendor.sh when bumping the upstream pin.
 """Make retained SearXNG settings inherit defaults without replacing them."""
@@ -119,7 +119,7 @@ def migrate_settings(path: Path) -> bool:
     else:
         updated = _add_block_default_inheritance(contents, text, root)
     fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.odysseus-", dir=path.parent
+        prefix=f".{path.name}.openwings-", dir=path.parent
     )
     temporary = Path(temporary_name)
     try:

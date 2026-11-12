@@ -2,19 +2,19 @@
 # Regenerate overlay/ from patches/ against the pinned upstream commit.
 #
 #   scripts/dev/rebase-overlay.sh                 use upstream.lock
-#   ODYSSEUS_SRC=/path/to/odysseus scripts/dev/rebase-overlay.sh
+#   UPSTREAM_SRC=/path/to/upstream-checkout scripts/dev/rebase-overlay.sh
 #                                                 use an existing checkout
 #
 # patches/*.patch are the source of truth for every change to upstream files.
-# This script applies them to a clean checkout of ODYSSEUS_COMMIT, copies each
+# This script applies them to a clean checkout of UPSTREAM_COMMIT, copies each
 # patched file into overlay/app/<path>, and records the SHA-256 of the
 # unpatched upstream file in overlay/UPSTREAM_SHA256SUMS. The image build
 # refuses to run if the base image's copy of any of those files differs, so a
 # base-image bump without a rebase fails loudly instead of reverting fixes.
 #
 # To move to a new upstream release:
-#   1. edit ODYSSEUS_COMMIT / ODYSSEUS_IMAGE / ODYSSEUS_IMAGE_DIGEST in
-#      upstream.lock and the image reference in docker-compose.yml
+#   1. edit UPSTREAM_COMMIT / UPSTREAM_IMAGE / UPSTREAM_IMAGE_DIGEST in
+#      upstream.lock and the image reference in docker/openwings/Dockerfile
 #   2. run this script; fix any patch that no longer applies (git apply -3)
 #   3. rebuild and run tests/e2e
 #
@@ -28,15 +28,17 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-if [ -n "${ODYSSEUS_SRC:-}" ]; then
-  git -C "$ODYSSEUS_SRC" cat-file -e "${ODYSSEUS_COMMIT}^{commit}" \
-    || { echo "commit ${ODYSSEUS_COMMIT} not found in ${ODYSSEUS_SRC}" >&2; exit 1; }
-  git -C "$ODYSSEUS_SRC" worktree add --detach "$work/src" "$ODYSSEUS_COMMIT" >/dev/null
-  cleanup_worktree() { git -C "$ODYSSEUS_SRC" worktree remove --force "$work/src" >/dev/null 2>&1 || true; rm -rf "$work"; }
+# The variable's earlier name is still accepted.
+UPSTREAM_SRC="${UPSTREAM_SRC:-${ODYSSEUS_SRC:-}}"
+if [ -n "${UPSTREAM_SRC:-}" ]; then
+  git -C "$UPSTREAM_SRC" cat-file -e "${UPSTREAM_COMMIT}^{commit}" \
+    || { echo "commit ${UPSTREAM_COMMIT} not found in ${UPSTREAM_SRC}" >&2; exit 1; }
+  git -C "$UPSTREAM_SRC" worktree add --detach "$work/src" "$UPSTREAM_COMMIT" >/dev/null
+  cleanup_worktree() { git -C "$UPSTREAM_SRC" worktree remove --force "$work/src" >/dev/null 2>&1 || true; rm -rf "$work"; }
   trap cleanup_worktree EXIT
 else
   git init -q "$work/src"
-  git -C "$work/src" fetch -q --depth 1 "$ODYSSEUS_REPO" "$ODYSSEUS_COMMIT"
+  git -C "$work/src" fetch -q --depth 1 "$UPSTREAM_REPO" "$UPSTREAM_COMMIT"
   git -C "$work/src" checkout -q FETCH_HEAD
 fi
 src="$work/src"
@@ -86,7 +88,7 @@ done
 sort -k2 "$sums" > "$ROOT/overlay/UPSTREAM_SHA256SUMS"
 sort "$deleted" > "$ROOT/overlay/UPSTREAM_DELETED"
 
-echo "overlay regenerated for ${ODYSSEUS_COMMIT}:"
+echo "overlay regenerated for ${UPSTREAM_COMMIT}:"
 sed 's/^/  /' "$ROOT/overlay/UPSTREAM_SHA256SUMS"
 if [ -s "$ROOT/overlay/UPSTREAM_DELETED" ]; then
   echo "removed from the image:"

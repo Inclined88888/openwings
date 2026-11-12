@@ -482,7 +482,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         def convert():
             # Keep cleanup in the worker too: request cancellation must not
             # delete files while LibreOffice is still writing them.
-            with tempfile.TemporaryDirectory(prefix="odysseus-document-convert-") as temp:
+            with tempfile.TemporaryDirectory(prefix="openwings-document-convert-") as temp:
                 tmp_dir = Path(temp)
                 try:
                     proc = subprocess.run(

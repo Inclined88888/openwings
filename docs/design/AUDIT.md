@@ -191,13 +191,14 @@ again in the final app.
   welcome, tours, calendar examples, Deep Research, email drafts and reminders,
   Cookbook, notifications, downloads (`openwings_backup_<time>.json`,
   `openwings-contacts.csv`), and what the model is told about itself (except
-  the short prompts sent only to upstream's own odysseus-* fine-tuned models,
+  the short prompts sent only to upstream's own fine-tuned models,
   which keep the wording those models were trained on). The
-  built-in "Odysseus, king of Ithaca" persona is now "Strategist". Upstream's
+  built-in persona named after the upstream project's namesake is now "Strategist". Upstream's
   design test pages (a "ship on a wave" splash among them) are removed.
-  Identifiers other software depends on stay as they are (mail and webhook
-  header names, attachment references, Copilot headers, the companion's server
-  name, `ODYSSEUS_*` settings).
+  Identifiers other software depends on were renamed later, in patch 0027
+  (mail and webhook headers, attachment references, Copilot headers, the
+  companion's server name, `OPENWINGS_*` settings), with the earlier ones
+  still read.
 
 ## Second review
 
@@ -250,7 +251,7 @@ In the real app, on the new image, in a fresh browser with nothing saved:
   light and in dark mode.
 * **Wording.** A crawl of 70 surfaces (every sidebar window and its tabs, Chats,
   Email, every Settings panel, the welcome screen, a chat, the slash-command
-  menu, menus, login, Live browser, Workspace files) found no "Odysseus" or sea
+  menu, menus, login, Live browser, Workspace files) found no upstream name or sea
   word (voyage, sail, Ithaca, Penelope, crew, boat) in visible text, tooltips
   or labels, except in the raw server log under Settings > System (internal
   names, see below).
@@ -275,6 +276,6 @@ In the real app, on the new image, in a fresh browser with nothing saved:
   the scripted text-size sweep, and the phone crawl could not open Settings or
   Files & Docs (both are covered by the desktop scan).
 * **Internal names in the server log.** Settings > System shows the raw server
-  log to admins; it contains internal names such as `odysseus_rag` (stored
-  search collections) and `ODYSSEUS_*` setting names. Renaming them would
-  orphan stored data or break existing configurations.
+  log to admins. Since patch 0027 the log shows `OPENWINGS_*` setting names
+  and plain names for the stored search collections (the stored names are
+  unchanged, so no data is orphaned).

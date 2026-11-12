@@ -125,6 +125,9 @@ async def _create_bash_subprocess(
             cwd=cwd,
         )
     kwargs = {"cwd": cwd} if cwd is not None else {}
+    # OpenWings: the shell sees the settings under their OPENWINGS_* names.
+    from wings.names import public_environ
+    kwargs["env"] = public_environ()
     return await asyncio.create_subprocess_shell(command, **kwargs)
 
 
@@ -910,7 +913,7 @@ def _python_with_configured_import_paths(content: str, env: dict | None) -> str:
     paths = [item for item in raw.split(os.pathsep) if item and os.path.isabs(item)]
     if not paths:
         return content
-    return f"import site\n[site.addsitedir(path) for path in {paths!r}]\nexec(compile({content!r}, '<odysseus-python-tool>', 'exec'))"
+    return f"import site\n[site.addsitedir(path) for path in {paths!r}]\nexec(compile({content!r}, '<openwings-python-tool>', 'exec'))"
 
 
 class PythonTool:

@@ -345,7 +345,7 @@ function _getActiveEmailContext() {
 
 // Frontend reads via the global so chat.js doesn't need a separate import
 // path (emailLibrary loads lazily in some entry points).
-try { window.__odysseusGetActiveEmailContext = _getActiveEmailContext; } catch (_) {}
+try { window.__openwingsGetActiveEmailContext = _getActiveEmailContext; } catch (_) {}
 
 const _COPY_EMAIL_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 
@@ -1898,8 +1898,8 @@ function _initMobileEmailPullRefresh() {
 
 function _isChatInteractionBusy() {
   try {
-    if (window.__odysseusChatBusy) return true;
-    const until = Number(window.__odysseusChatBusyUntil || 0);
+    if (window.__openwingsChatBusy) return true;
+    const until = Number(window.__openwingsChatBusyUntil || 0);
     return until > Date.now();
   } catch (_) {
     return false;
@@ -2243,7 +2243,7 @@ export function _libCacheWriteBack() {
 // Expose the active account id to other modules (document.js uses this when sending).
 // Simple global rather than cross-module import to keep coupling minimal.
 export function _publishActiveAccount() {
-  try { window.__odysseusActiveEmailAccount = state._libAccountId || null; } catch (_) {}
+  try { window.__openwingsActiveEmailAccount = state._libAccountId || null; } catch (_) {}
   try {
     if (state._libAccountId) localStorage.setItem(_LIB_LAST_ACCOUNT_KEY, state._libAccountId);
   } catch (_) {}
@@ -2735,7 +2735,7 @@ export function openEmailLibrary(opts = {}) {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/api/email/odysseus/reminders?permanent=1${_acct()}`, {
+      const res = await fetch(`${API_BASE}/api/email/app/reminders?permanent=1${_acct()}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       });

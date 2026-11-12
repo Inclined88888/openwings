@@ -6,10 +6,10 @@
 #   ./scripts/backup.sh --include-models    also archive downloaded models (large)
 #
 # Safe while the app is running: SQLite databases are copied with SQLite's
-# backup API (upstream odysseus-backup), and ChromaDB / Radicale are paused for
+# backup API (the app's own backup tool), and ChromaDB / Radicale are paused for
 # the few seconds their archive takes unless --no-pause is given.
 #
-# NOT included on purpose: .env. It holds ODYSSEUS_APP_KEY, which decrypts the
+# NOT included on purpose: .env. It holds OPENWINGS_APP_KEY, which decrypts the
 # API keys and mail/calendar passwords inside the backup. Keep a copy of .env
 # somewhere separate and offline (password manager, encrypted USB). A backup
 # without its .env restores everything except stored credentials.
@@ -31,7 +31,12 @@ done
 
 require_docker
 [ -f "$ENV_FILE" ] || die "no .env found; nothing to back up (run ./scripts/setup.sh first)"
-[ -n "$(volume_name odysseus-data)" ] || die "the odysseus-data volume does not exist yet"
+migrate_env
+# Before the data volumes are copied to their new names (setup/upgrade), the
+# app data still lives under the earlier volume name.
+DATA_VOL="$(volume_name app-data)"
+[ -n "$DATA_VOL" ] || DATA_VOL="$(volume_name "${VOLUME_RENAMES%%:*}")"
+[ -n "$DATA_VOL" ] || die "the app data volume does not exist yet"
 
 umask 077
 mkdir -p "$OUT_ROOT"
@@ -45,7 +50,6 @@ HOST_UID="$(id -u)"; HOST_GID="$(id -g)"
 # One-off helper container from the OpenWings image itself (it has python, tar
 # and sha256sum), with the backup folder mounted at /backup.
 IMAGE="$(wings_image)"
-DATA_VOL="$(volume_name odysseus-data)"
 helper() {
   docker run --rm -i --network none --entrypoint sh -v "${DEST}:/backup:z" "$@"
 }
@@ -55,13 +59,18 @@ info "Backing up to ${DEST}"
 # 1. App data: database, settings, notes, tasks, memory, documents, uploads,
 #    skills, research reports, mail attachment cache. Mounted read-write on
 #    purpose: SQLite needs the -shm file to read a WAL database consistently.
-helper -v "${DATA_VOL}:/app/data" "$IMAGE" -c "umask 077 && python /app/scripts/odysseus-backup snapshot --out /backup/odysseus-data.tar.gz --include-research --include-attachments >/backup/odysseus-data.json && chown ${HOST_UID}:${HOST_GID} /backup/odysseus-data.tar.gz /backup/odysseus-data.json"
-ok "odysseus-data"
+# (The app's backup tool is /app/scripts/openwings-backup in current images;
+# its messages pass through public_output like the build output.)
+if ! helper -v "${DATA_VOL}:/app/data" "$IMAGE" -c "umask 077 && t=/app/scripts/openwings-backup && { [ -e \$t ] || t=/app/scripts/ody''sseus-backup; } && python \$t snapshot --out /backup/app-data.tar.gz --include-research --include-attachments >/backup/app-data.json && chown ${HOST_UID}:${HOST_GID} /backup/app-data.tar.gz /backup/app-data.json" 2>&1 | public_output >&2; then
+  die "backing up the app data failed (see above)"
+fi
+ok "app data"
 
 # 2. Plain-file volumes, archived with tar from a read-only mount.
 archive_volume() {
-  local short="$1" svc="${2:-}" vol was_running=0 cid
+  local short="$1" svc="${2:-}" earlier="${3:-}" vol was_running=0 cid
   vol="$(volume_name "$short")"
+  [ -n "$vol" ] || [ -z "$earlier" ] || vol="$(volume_name "$earlier")"
   if [ -z "$vol" ]; then
     return 0
   fi
@@ -80,14 +89,14 @@ archive_volume() {
   ok "$short"
 }
 
-archive_volume odysseus-ssh
+archive_volume app-ssh "" "ody""sseus-ssh"
 archive_volume agent-workspaces runner
 archive_volume chromadb-data chromadb
 archive_volume radicale-data radicale
 archive_volume caddy-data
 if [ "$INCLUDE_MODELS" -eq 1 ]; then
   archive_volume ollama-models ollama
-  archive_volume odysseus-hf-cache
+  archive_volume hf-cache "" "ody""sseus-hf-cache"
 fi
 
 # 3. The CalDAV account file lives outside the volumes.
@@ -104,7 +113,7 @@ fi
   echo "compose_project=$(project_name)"
   echo "image=$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 '^openwings:' || true)"
   echo "wings_git_commit=$(git -C "$WINGS_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  echo "app_key_fingerprint=$(env_get ODYSSEUS_APP_KEY | sha256_stdin_short)"
+  echo "app_key_fingerprint=$(setting APP_KEY | sha256_stdin_short)"
 } > "${DEST}/MANIFEST" 2>/dev/null || true
 (
   cd "$DEST"

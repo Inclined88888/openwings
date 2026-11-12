@@ -20,7 +20,7 @@ jobs:
 
       - name: Compose files
         run: |
-          printf 'ODYSSEUS_APP_KEY=%s\n' "$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')" > .env
+          printf 'OPENWINGS_APP_KEY=%s\n' "$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')" > .env
           docker compose config --quiet
           docker compose --profile ollama --profile caldav --profile https --profile browser config --quiet
           docker compose -f docker-compose.yml -f compose/ollama-nvidia.yml --profile ollama config --quiet

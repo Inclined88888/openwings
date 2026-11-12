@@ -54,13 +54,13 @@ export function initKeyboardShortcuts(modules) {
     _closeCompareIfActive, _deactivateIncognito, API_BASE
   } = modules;
 
-  window._odysseusKeybinds = { ..._defaultKeybinds };
+  window._openwingsKeybinds = { ..._defaultKeybinds };
 
   // Load saved keybinds
   getSettings()
     .then(s => {
       if (!s.keybinds) return;
-      window._odysseusKeybinds = { ..._defaultKeybinds, ...s.keybinds };
+      window._openwingsKeybinds = { ..._defaultKeybinds, ...s.keybinds };
       // Ctrl+B belongs to browser bookmarks. Migrate the former default when
       // encountered in saved settings instead of continuing to intercept it.
       if (window._odysseusKeybinds.toggle_sidebar === 'ctrl+b') {
@@ -150,7 +150,7 @@ export function initKeyboardShortcuts(modules) {
   };
 
   document.addEventListener('keydown', (e) => {
-    const kb = window._odysseusKeybinds;
+    const kb = window._openwingsKeybinds;
 
     if (_matchesCombo(e, kb.search)) {
       e.preventDefault();

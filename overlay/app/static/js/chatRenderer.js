@@ -1826,7 +1826,7 @@ function _activateEntityAnchor(e, forcedAnchor = null) {
   if (href === '#plan') {
     e.preventDefault();
     e.stopPropagation();
-    if (typeof window.__odysseusOpenPlanReview === 'function') window.__odysseusOpenPlanReview();
+    if (typeof window.__openwingsOpenPlanReview === 'function') window.__openwingsOpenPlanReview();
     return;
   }
   const barePanel = href.match(/^#(calendar|memory|notes|tasks|documents|skills|research)$/);

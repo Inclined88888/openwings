@@ -16,8 +16,8 @@ ENV_FILE="${ENV_FILE:?set ENV_FILE to the env file of the test stack}"
 PROJECT="${PROJECT:-owconnect}"
 net="${PROJECT}_wings"
 port="$(grep -E '^APP_PORT=' "$ENV_FILE" | cut -d= -f2)"
-user="$(grep -E '^ODYSSEUS_ADMIN_USER=' "$ENV_FILE" | cut -d= -f2)"
-pass="$(grep -E '^ODYSSEUS_ADMIN_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+user="$(grep -E '^OPENWINGS_ADMIN_USER=' "$ENV_FILE" | cut -d= -f2)"
+pass="$(grep -E '^OPENWINGS_ADMIN_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
 if [ "$(docker inspect -f '{{.State.Running}}' "${PROJECT}-mockllm" 2>/dev/null)" != "true" ]; then
   docker rm -f "${PROJECT}-mockllm" >/dev/null 2>&1 || true
   docker run -d --name "${PROJECT}-mockllm" --network "$net" --network-alias mockllm \

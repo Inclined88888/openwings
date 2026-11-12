@@ -29,10 +29,16 @@ done
 [ -n "$SRC" ] || die "usage: ./scripts/restore.sh <backup-folder> --yes"
 [ -d "$SRC" ] || die "no such folder: $SRC"
 SRC="$(cd "$SRC" && pwd)"
-[ -f "$SRC/odysseus-data.tar.gz" ] || die "$SRC has no odysseus-data.tar.gz; is it an OpenWings backup?"
+# Backups made before 1.0.3-w2 name the app data archive (and two volume
+# archives) after the earlier volume names; both are restored the same way.
+OLD_DATA="ody""sseus-data"
+if [ -f "$SRC/app-data.tar.gz" ]; then DATA_ARCHIVE="app-data.tar.gz"
+elif [ -f "$SRC/${OLD_DATA}.tar.gz" ]; then DATA_ARCHIVE="${OLD_DATA}.tar.gz"
+else die "$SRC has no app-data.tar.gz; is it an OpenWings backup?"; fi
 [ "$YES" -eq 1 ] || die "restore replaces your current data. Re-run with --yes to confirm."
 require_docker
 [ -f "$ENV_FILE" ] || die "no .env found. Put back the .env this backup was made with first."
+migrate_env
 
 # 1. Integrity --------------------------------------------------------------
 if [ -f "$SRC/SHA256SUMS" ]; then
@@ -47,10 +53,10 @@ fi
 
 if [ -f "$SRC/MANIFEST" ]; then
   want="$(sed -n 's/^app_key_fingerprint=//p' "$SRC/MANIFEST")"
-  have="$(env_get ODYSSEUS_APP_KEY | sha256_stdin_short)"
+  have="$(setting APP_KEY | sha256_stdin_short)"
   if [ -n "$want" ] && [ "$want" != "$have" ]; then
     if [ "$ACCEPT_KEY_LOSS" -ne 1 ]; then
-      die "ODYSSEUS_APP_KEY in .env differs from the key this backup was made with. Put back the matching .env and re-run (nothing was changed), or re-run with --accept-key-loss to restore everything except stored credentials."
+      die "OPENWINGS_APP_KEY in .env differs from the key this backup was made with. Put back the matching .env and re-run (nothing was changed), or re-run with --accept-key-loss to restore everything except stored credentials."
     fi
     warn "Restoring with a different key: stored API keys and mail/calendar passwords will be unreadable; re-enter them in Settings."
     env_set WINGS_ACCEPT_KEY_LOSS 1
@@ -60,14 +66,15 @@ fi
 IMAGE="$(wings_image)"
 helper() { docker run --rm -i --network none --entrypoint sh -v "${SRC}:/backup:ro,z" "$@"; }
 
-# Upstream's validator rejects absolute paths, '..', links and special files.
-helper "$IMAGE" -c "python /app/scripts/odysseus-backup verify /backup/odysseus-data.tar.gz >/dev/null" \
-  || die "odysseus-data.tar.gz failed the safety check"
-helper "$IMAGE" -c 'python - <<"PY"
+# The app's own validator rejects absolute paths, '..', links and special files.
+if ! helper "$IMAGE" -c "t=/app/scripts/openwings-backup && { [ -e \$t ] || t=/app/scripts/ody''sseus-backup; } && python \$t verify /backup/${DATA_ARCHIVE} >/dev/null" 2>&1 | public_output >&2; then
+  die "${DATA_ARCHIVE} failed the safety check"
+fi
+helper -e DATA_ARCHIVE="$DATA_ARCHIVE" "$IMAGE" -c 'python - <<"PY"
 import glob, os, tarfile
 from pathlib import PurePosixPath
 for path in sorted(glob.glob("/backup/*.tar.gz")):
-    if path.endswith("/odysseus-data.tar.gz"):
+    if os.path.basename(path) == os.environ["DATA_ARCHIVE"]:
         continue
     with tarfile.open(path, "r:gz") as tar:
         for m in tar.getmembers():
@@ -84,7 +91,7 @@ PY' || die "a volume archive failed the safety check"
 ok "archives are safe to extract"
 
 # 2. Safety backup of the current state -------------------------------------
-if [ "$SAFETY" -eq 1 ] && [ -n "$(volume_name odysseus-data)" ]; then
+if [ "$SAFETY" -eq 1 ] && { [ -n "$(volume_name app-data)" ] || [ -n "$(volume_name "$OLD_DATA")" ]; }; then
   info "Taking a safety backup of the current state first"
   "$WINGS_ROOT/scripts/backup.sh" --name "pre-restore-$(date +%Y%m%d-%H%M%S)"
 fi
@@ -102,6 +109,10 @@ if [ -f "$SRC/radicale-users" ]; then
   ok "restored radicale accounts"
 fi
 
+# Data from before 1.0.3-w2 moves to the current volume names first; the
+# restore then replaces it there (so no new, empty volume is created next to
+# an earlier one).
+migrate_volumes
 # Make sure every volume exists (fresh host: create without starting the apps).
 dc create >/dev/null 2>&1 || true
 
@@ -118,17 +129,18 @@ restore_into() {
   ok "restored ${short}"
 }
 
-# odysseus-data: members are data/...; extract only regular files and dirs,
+# App data: members are data/...; extract only regular files and dirs,
 # and skip SQLite -wal/-shm sidecars. The snapshot's .db files come from
 # SQLite's backup API and are complete on their own; replaying a live WAL
 # captured a moment later onto them can mix two points in time.
-vol="$(volume_name odysseus-data)"
-[ -n "$vol" ] || die "odysseus-data volume is missing"
-helper -v "${vol}:/dst" "$IMAGE" -c 'find /dst -mindepth 1 -delete && python - <<"PY"
+vol="$(volume_name app-data)"
+[ -n "$vol" ] || die "the app data volume is missing"
+helper -v "${vol}:/dst" -e DATA_ARCHIVE="$DATA_ARCHIVE" "$IMAGE" -c 'find /dst -mindepth 1 -delete && python - <<"PY"
 import shutil, tarfile
 from pathlib import Path, PurePosixPath
 dst = Path("/dst")
-with tarfile.open("/backup/odysseus-data.tar.gz", "r:gz") as tar:
+import os
+with tarfile.open("/backup/" + os.environ["DATA_ARCHIVE"], "r:gz") as tar:
     for m in tar.getmembers():
         parts = PurePosixPath(m.name).parts
         if not parts or parts[0] != "data" or ".." in parts or m.name.startswith("/"):
@@ -144,12 +156,17 @@ with tarfile.open("/backup/odysseus-data.tar.gz", "r:gz") as tar:
             with tar.extractfile(m) as src, open(target, "wb") as out:
                 shutil.copyfileobj(src, out)
 PY'
-ok "restored odysseus-data"
+ok "restored app data"
 
 for f in "$SRC"/*.tar.gz; do
   base="$(basename "$f" .tar.gz)"
-  [ "$base" = "odysseus-data" ] && continue
-  restore_into "$base" "${base}.tar.gz"
+  [ "${base}.tar.gz" = "$DATA_ARCHIVE" ] && continue
+  short="$base"
+  case "$base" in
+    "ody""sseus-ssh") short="app-ssh" ;;
+    "ody""sseus-hf-cache") short="hf-cache" ;;
+  esac
+  restore_into "$short" "${base}.tar.gz"
 done
 
 # 4. Start ------------------------------------------------------------------

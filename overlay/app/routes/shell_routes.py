@@ -463,8 +463,8 @@ dist_names={{
     'vllm':['vllm'],
     'llama_cpp':['llama-server'],
     'mflux':['mflux-generate-qwen', 'mflux-generate'],
-	    'mlx_lama_swift':['odysseus-mlx-inpaint', 'mlx-lama-serve'],
-	    'mlx_ddcolor_swift':['odysseus-mlx-colorize', 'mlx-ddcolor-serve'],
+	    'mlx_lama_swift':['mlx-lama-serve'],
+	    'mlx_ddcolor_swift':['mlx-ddcolor-serve'],
 	    'libreoffice':['soffice', 'libreoffice'],
 	    'tmux':['tmux'],
 	}}
@@ -648,6 +648,10 @@ async def _create_shell(command: str, **kwargs):
         bash = find_bash()
         if bash:
             return await asyncio.create_subprocess_exec(bash, "-c", command, **kwargs)
+    if "env" not in kwargs:
+        # OpenWings: the shell sees the settings under their OPENWINGS_* names.
+        from wings.names import public_environ
+        kwargs["env"] = public_environ()
     return await asyncio.create_subprocess_shell(command, **kwargs)
 
 
@@ -853,6 +857,7 @@ async def _generate_pty(cmd: str, timeout: int, request: Request):
     flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
     fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
+    from wings.names import public_environ
     proc = await asyncio.create_subprocess_shell(
         cmd,
         stdin=slave_fd,
@@ -860,6 +865,7 @@ async def _generate_pty(cmd: str, timeout: int, request: Request):
         stderr=slave_fd,
         cwd=str(Path.home()),
         preexec_fn=os.setsid,
+        env=public_environ(),
     )
     _bind_pty_spawn_identity(proc)
     os.close(slave_fd)  # parent doesn't need the slave side
@@ -1591,7 +1597,7 @@ def setup_shell_routes() -> APIRouter:
                 "desc": "Swift MLX runtime for LaMa / MI-GAN inpainting and object removal",
                 "category": "Image",
                 "target": "remote",
-                "install_hint": "Build an OpenWings-compatible mlx-lama-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-inpaint or mlx-lama-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable image-edit CLI.",
+                "install_hint": "Build an OpenWings-compatible mlx-lama-swift bridge on the selected Apple Silicon Mac and put mlx-lama-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable image-edit CLI.",
             },
             {
                 "name": "mlx_ddcolor_swift",
@@ -1599,7 +1605,7 @@ def setup_shell_routes() -> APIRouter:
                 "desc": "Swift MLX runtime for DDColor automatic image colorization",
                 "category": "Image",
                 "target": "remote",
-                "install_hint": "Build an OpenWings-compatible mlx-ddcolor-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-colorize or mlx-ddcolor-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable colorize CLI.",
+                "install_hint": "Build an OpenWings-compatible mlx-ddcolor-swift bridge on the selected Apple Silicon Mac and put mlx-ddcolor-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable colorize CLI.",
             },
             {
                 "name": "mlx_vlm",

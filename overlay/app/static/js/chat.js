@@ -364,7 +364,7 @@ import { invalidateSettings } from './appConfig.js';
     if (current) return current;
     const activeRowId = document.querySelector('.list-item.active-session[data-session-id], .session-item.active[data-session-id]')?.dataset?.sessionId || '';
     const hashId = _hashSessionCandidate();
-    const lastSelectedId = String(window.__odysseusLastSelectedSessionId || '').trim();
+    const lastSelectedId = String(window.__openwingsLastSelectedSessionId || '').trim();
     const targetId = activeRowId || hashId || lastSelectedId;
     if (!targetId) {
       // New chats are deliberately held in memory until the first prompt.
@@ -380,7 +380,7 @@ import { invalidateSettings } from './appConfig.js';
     }
     if (!adopt) return targetId;
     try {
-      window.__odysseusComposerUserEdited = true;
+      window.__openwingsComposerUserEdited = true;
       if (sm && sm.selectSession) {
         await sm.selectSession(targetId, { keepSidebar: true, showLoading: false });
       } else if (sm && sm.setCurrentSessionId) {
@@ -904,8 +904,8 @@ import { invalidateSettings } from './appConfig.js';
 
   function _setForegroundChatBusy(active) {
     try {
-      window.__odysseusChatBusy = !!active;
-      window.__odysseusChatBusyUntil = active ? Date.now() + 120000 : Date.now() + 1200;
+      window.__openwingsChatBusy = !!active;
+      window.__openwingsChatBusyUntil = active ? Date.now() + 120000 : Date.now() + 1200;
       window.dispatchEvent(new CustomEvent('odysseus:chat-busy-change', { detail: { active: !!active } }));
     } catch (_) {}
   }
@@ -972,11 +972,11 @@ import { invalidateSettings } from './appConfig.js';
     if (sessionModule.hasPendingChat && sessionModule.hasPendingChat()) return false;
     const activeRowId = document.querySelector('.list-item.active-session[data-session-id], .session-item.active[data-session-id]')?.dataset?.sessionId || '';
     const hashId = _hashSessionCandidate();
-    const lastSelectedId = String(window.__odysseusLastSelectedSessionId || '').trim();
+    const lastSelectedId = String(window.__openwingsLastSelectedSessionId || '').trim();
     const targetId = activeRowId || hashId || lastSelectedId;
     if (!targetId) return false;
     try {
-      window.__odysseusComposerUserEdited = true;
+      window.__openwingsComposerUserEdited = true;
       if (sessionModule.selectSession) {
         await sessionModule.selectSession(targetId, { keepSidebar: true, showLoading: false });
       } else if (sessionModule.setCurrentSessionId) {
@@ -1043,14 +1043,14 @@ import { invalidateSettings } from './appConfig.js';
       if (pending && pending.modelId) return pending.modelId;
     } catch (_) {}
     try {
-      const lastPicked = window.__odysseusLastPickedRoute || null;
+      const lastPicked = window.__openwingsLastPickedRoute || null;
       if (lastPicked && lastPicked.model && Date.now() - (lastPicked.picked_at || 0) < 10 * 60 * 1000) {
         return lastPicked.model;
       }
     } catch (_) {}
     if (routeSnapshot && routeSnapshot.model) return routeSnapshot.model;
     try {
-      const dc = window.__odysseusDefaultChat || JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
+      const dc = window.__openwingsDefaultChat || JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
       if (dc && dc.model) return dc.model;
     } catch (_) {}
     return '';
@@ -1257,7 +1257,7 @@ import { invalidateSettings } from './appConfig.js';
     fetch(`/api/chat/stop/${encodeURIComponent(sessionId)}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'X-Odysseus-Run-Id': runId },
+      headers: { 'X-OpenWings-Run-Id': runId },
     }).catch(() => {});
   }
 
@@ -1441,7 +1441,7 @@ import { invalidateSettings } from './appConfig.js';
       // Clear any pending transitions from + → arrow swap
       submitBtn.classList.remove('anim-spin', 'anim-spin-swap', 'anim-land', 'mic-mode', 'newchat-mode', 'newchat-expanded', 'recording');
       // Ensure arrow icon is showing before launch
-      var icons = window._odysseusBtnIcons;
+      var icons = window._openwingsBtnIcons;
       if (icons) submitBtn.innerHTML = icons.send;
       void submitBtn.offsetWidth;
       // Arrow launches up, then stop icon lands in
@@ -1479,7 +1479,7 @@ import { invalidateSettings } from './appConfig.js';
       if (window._updateSendBtnIcon) {
         setTimeout(window._updateSendBtnIcon, 50);
       } else {
-        var icons = window._odysseusBtnIcons;
+        var icons = window._openwingsBtnIcons;
         submitBtn.innerHTML = icons ? icons.send : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
         submitBtn.title = 'Send message';
         submitBtn.classList.remove('mic-mode', 'newchat-mode');
@@ -1689,8 +1689,8 @@ import { invalidateSettings } from './appConfig.js';
 	      if (!approved.trim()) return;
 	      _pendingApprovedPlan = approved;
 	      _wingsRememberPlan(approved);
-	      if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
-	      if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
+	      if (window.__openwingsSetPlanMode) window.__openwingsSetPlanMode(false);
+	      if (window.__openwingsSetChatMode) window.__openwingsSetChatMode('agent');
 	      _setComposerAndSend('Execute the approved plan.');
 	    });
 	    actions.querySelector('.plan-inline-clear')?.addEventListener('click', () => {
@@ -1740,8 +1740,8 @@ import { invalidateSettings } from './appConfig.js';
         _pendingApprovedPlan = approved;
         _wingsRememberPlan(approved);
         panel.remove();
-        if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
-        if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
+        if (window.__openwingsSetPlanMode) window.__openwingsSetPlanMode(false);
+        if (window.__openwingsSetChatMode) window.__openwingsSetChatMode('agent');
         _setComposerAndSend('Execute the approved plan.');
       });
       document.body.appendChild(panel);
@@ -1753,7 +1753,7 @@ import { invalidateSettings } from './appConfig.js';
   }
 
   // chatRenderer handles the #plan link without importing this module back.
-  window.__odysseusOpenPlanReview = _openPlanReview;
+  window.__openwingsOpenPlanReview = _openPlanReview;
 
   function _escapeQueueText(s) {
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1939,9 +1939,9 @@ import { invalidateSettings } from './appConfig.js';
     // If currently streaming, keyboard Enter can queue a non-empty composer.
     // Clicking the stop icon should still stop normally, even if text exists.
     if (isStreaming) {
-      const queueRequestedAt = Number(window.__odysseusQueueStreamingSubmit || 0);
+      const queueRequestedAt = Number(window.__openwingsQueueStreamingSubmit || 0);
       const shouldQueueStreamingSubmit = queueRequestedAt && Date.now() - queueRequestedAt < 1200;
-      window.__odysseusQueueStreamingSubmit = 0;
+      window.__openwingsQueueStreamingSubmit = 0;
       if (shouldQueueStreamingSubmit && queueStreamingComposerRequest()) {
         return;
       }
@@ -2144,7 +2144,7 @@ import { invalidateSettings } from './appConfig.js';
 
     const selectedRouteForSend = (() => {
       try {
-        const lastPicked = window.__odysseusLastPickedRoute || null;
+        const lastPicked = window.__openwingsLastPickedRoute || null;
         if (lastPicked && lastPicked.model
           && (lastPicked.session_id || null) === (sessionModule.getCurrentSessionId?.() || null)
           && Date.now() - (lastPicked.picked_at || 0) < 10 * 60 * 1000) {
@@ -2199,7 +2199,7 @@ import { invalidateSettings } from './appConfig.js';
       // Auto-create a session using default chat config. Always fetch fresh
       // so that a recent Settings change takes effect without a page reload.
       try {
-        let dc = (typeof window !== 'undefined' && window.__odysseusDefaultChat) || null;
+        let dc = (typeof window !== 'undefined' && window.__openwingsDefaultChat) || null;
         if (!dc || !dc.endpoint_url || !dc.model) {
           try {
             dc = JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
@@ -2213,13 +2213,13 @@ import { invalidateSettings } from './appConfig.js';
             _sendPerf.mark('default_chat_fetch_done');
             if (dc && dc.endpoint_url && dc.model) {
               try {
-                window.__odysseusDefaultChat = dc;
+                window.__openwingsDefaultChat = dc;
                 localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(dc));
               } catch (_) {}
             }
           }
         } catch (_) {
-          dc = (typeof window !== 'undefined' && window.__odysseusDefaultChat) || null;
+          dc = (typeof window !== 'undefined' && window.__openwingsDefaultChat) || null;
         }
         if (dc.endpoint_url && dc.model) {
           _sendPerf.mark('direct_chat_create_begin');
@@ -2293,7 +2293,7 @@ import { invalidateSettings } from './appConfig.js';
     _sendInFlight = false;
 
     try {
-      const pendingSwitch = window.__odysseusModelSwitchPromise;
+      const pendingSwitch = window.__openwingsModelSwitchPromise;
       if (pendingSwitch && typeof pendingSwitch.then === 'function') {
         await pendingSwitch;
       }
@@ -2698,7 +2698,7 @@ import { invalidateSettings } from './appConfig.js';
       // resolve to the email the user is actually looking at instead of
       // making the agent invent a new markdown draft with fake headers.
       try {
-        const getEmailCtx = window.__odysseusGetActiveEmailContext;
+        const getEmailCtx = window.__openwingsGetActiveEmailContext;
         const emCtx = typeof getEmailCtx === 'function' ? getEmailCtx() : null;
         if (activeEmailComposerCtx && activeEmailComposerCtx.sourceUid) {
           fd.append('active_email_uid', String(activeEmailComposerCtx.sourceUid));
@@ -2782,7 +2782,7 @@ import { invalidateSettings } from './appConfig.js';
         fd.append('preset_id', presetsModule.getSelectedPreset());
       }
       try {
-        const effort = window.__odysseusGetReasoningEffort ? window.__odysseusGetReasoningEffort() : null;
+        const effort = window.__openwingsGetReasoningEffort ? window.__openwingsGetReasoningEffort() : null;
         if (effort) {
           fd.append('reasoning_effort', effort);
         }
@@ -2993,7 +2993,7 @@ import { invalidateSettings } from './appConfig.js';
         enableResearchBtn();
         return;
       }
-      const streamRunId = res.headers.get('X-Odysseus-Run-Id') || '';
+      const streamRunId = res.headers.get('X-OpenWings-Run-Id') || '';
       if (streamRunId) _rememberStreamRunId(streamSessionId, streamRunId, streamGeneration);
 
       // Mark the chat log busy while streaming so screen readers wait for the
@@ -3038,7 +3038,7 @@ import { invalidateSettings } from './appConfig.js';
           try {
             const response = await fetch(`${API_BASE}/api/chat/finish/${encodeURIComponent(streamSessionId)}`, {
               method: 'POST', credentials: 'same-origin',
-              headers: { 'X-Odysseus-Run-Id': runId },
+              headers: { 'X-OpenWings-Run-Id': runId },
             });
             const result = await response.json();
             if (!response.ok || !result.accepted) throw new Error('The run has already finished or changed');
@@ -6476,7 +6476,7 @@ import { invalidateSettings } from './appConfig.js';
       return false;
     }
     if (!res.ok || !res.body) return false;
-    const resumeRunId = res.headers.get('X-Odysseus-Run-Id') || '';
+    const resumeRunId = res.headers.get('X-OpenWings-Run-Id') || '';
     if (resumeRunId) _streamRunIds.set(sessionId, resumeRunId);
 
     const box = document.getElementById('chat-history');
@@ -8341,7 +8341,7 @@ import { invalidateSettings } from './appConfig.js';
   // streaming, history-rendered, compare-mode, all of them. Re-attaching
   // per-node listeners on every innerHTML rewrite was the source of the
   // "needs many clicks" bug.
-  if (!window.__odysseus_thread_click_bound) {
+  if (!window.__openwings_thread_click_bound) {
 	    document.body.addEventListener('click', (e) => {
 	      const browserFrame = e.target.closest('.private-browser-preview-frame');
 	      if (browserFrame && browserFrame.querySelector('.private-browser-preview-img[src]')) {
@@ -8388,7 +8388,7 @@ import { invalidateSettings } from './appConfig.js';
         }
       }
     });
-    window.__odysseus_thread_click_bound = true;
+    window.__openwings_thread_click_bound = true;
   }
 
   export default chatModule;

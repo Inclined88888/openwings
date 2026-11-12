@@ -1,7 +1,7 @@
 """OpenWings preflight: fail fast on encryption-key misconfiguration.
 
-Runs as the container starts, before Odysseus itself, so a bad
-ODYSSEUS_APP_KEY stops the container with a clear message instead of
+Runs as the container starts, before the app itself, so a bad
+OPENWINGS_APP_KEY stops the container with a clear message instead of
 surfacing later as secrets that silently decrypt to nothing.
 Exit code 78 (EX_CONFIG) means the configuration must be fixed.
 
@@ -18,7 +18,13 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-ENV_KEY_VAR = "ODYSSEUS_APP_KEY"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from wings import names  # noqa: E402  (standalone module, imports nothing else)
+
+# What .env and every message call the key; the app reads it under the
+# internal name (wings/names.py maps it before this runs).
+ENV_KEY_VAR = "OPENWINGS_APP_KEY"
+_ENV_KEY_INTERNAL = names.internal_name(ENV_KEY_VAR)
 KEY_FILES = (".app_key", ".key")
 EX_CONFIG = 78
 
@@ -49,7 +55,8 @@ def _key_fails_existing_data(data_dir: Path, key: bytes, require_sample: bool = 
     """Return a description of the first stored secret the key cannot decrypt.
 
     Reads app.db read-only and immutable (no locks, no -shm/-wal writes), so it
-    is safe while running as root before privileges drop. Any error reading
+    is safe while running as root before privileges drop. When app.db-wal holds
+    changes not yet written back, both are read from a scratch copy instead. Any error reading
     the database is not treated as a key problem. With require_sample=True,
     finding no encrypted value at all counts as "cannot tell" (a failure), so
     callers never treat an empty database as proof that a key is right."""
@@ -61,9 +68,29 @@ def _key_fails_existing_data(data_dir: Path, key: bytes, require_sample: bool = 
         return "no database" if require_sample else ""
     fernet = Fernet(key)
     checked = 0
+    scratch = None
     try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True)
-    except sqlite3.Error:
+        wal = db.with_name(db.name + "-wal")
+        if wal.exists() and wal.stat().st_size > 0:
+            # Changes not yet written back into app.db (the app was stopped
+            # without a checkpoint) live in the write-ahead log, which an
+            # immutable open ignores. Read both from a private scratch copy,
+            # so nothing in the data volume is written or locked.
+            import shutil
+            import tempfile
+
+            scratch = tempfile.mkdtemp(prefix="openwings-preflight-")
+            copy = Path(scratch) / "app.db"
+            shutil.copyfile(db, copy)
+            shutil.copyfile(wal, Path(scratch) / "app.db-wal")
+            conn = sqlite3.connect(str(copy))
+        else:
+            conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True)
+    except (sqlite3.Error, OSError):
+        if scratch:
+            import shutil
+
+            shutil.rmtree(scratch, ignore_errors=True)
         return "unreadable database" if require_sample else ""
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -87,6 +114,10 @@ def _key_fails_existing_data(data_dir: Path, key: bytes, require_sample: bool = 
         return "unreadable database" if require_sample else ""
     finally:
         conn.close()
+        if scratch:
+            import shutil
+
+            shutil.rmtree(scratch, ignore_errors=True)
     if require_sample and not checked:
         return "no encrypted values to test"
     return ""
@@ -114,10 +145,10 @@ def _migrate_scheduled_emails(data_dir: Path) -> None:
 
 
 def _prepare_workspace() -> None:
-    """Create the default agent workspace (ODYSSEUS_WORKSPACE_DEFAULT) on the
+    """Create the default agent workspace (OPENWINGS_WORKSPACE_DEFAULT) on the
     agent-workspaces volume, owned by the user the app runs as, so the web UI
     can bind it to chats. Only acts on paths under /workspaces."""
-    target = os.environ.get("ODYSSEUS_WORKSPACE_DEFAULT", "").strip()
+    target = os.environ.get(names.internal_name("OPENWINGS_WORKSPACE_DEFAULT"), "").strip()
     if not target.startswith("/workspaces/") or ".." in target.split("/"):
         return
     try:
@@ -133,13 +164,14 @@ def _prepare_workspace() -> None:
 
 
 def main() -> int:
+    names.apply()
     _prepare_workspace()
-    data_dir = Path(os.environ.get("ODYSSEUS_DATA_DIR") or "/app/data")
-    raw = os.environ.get(ENV_KEY_VAR, "").strip()
+    data_dir = Path(os.environ.get(names.internal_name("OPENWINGS_DATA_DIR")) or "/app/data")
+    raw = os.environ.get(_ENV_KEY_INTERNAL, "").strip()
     if not raw:
         print(
             f"wings: {ENV_KEY_VAR} is not set; encryption keys will be kept inside "
-            "the data volume (upstream default). Run ./scripts/setup.sh to move "
+            "the data volume. Run ./scripts/setup.sh to move "
             "the key into .env.",
             file=sys.stderr,
         )
@@ -169,7 +201,7 @@ def main() -> int:
                 # quarantine the file instead of refusing to start.
                 stray = path.with_name(f"{name}.stray-{int(time.time())}")
                 path.rename(stray)
-                print(f"wings: moved stray key file {path} to {stray}; ODYSSEUS_APP_KEY "
+                print(f"wings: moved stray key file {path} to {stray}; {ENV_KEY_VAR} "
                       "decrypts the stored data.", file=sys.stderr)
                 continue
             print(

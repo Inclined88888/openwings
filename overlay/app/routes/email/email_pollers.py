@@ -1651,9 +1651,9 @@ def _scheduled_poll_once() -> dict:
                     outer["Cc"] = r[2]
                 outer["Subject"] = r[4] or ""
                 outer["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
-                outer["X-Odysseus-Origin"] = "odysseus-ui"
-                outer["X-Odysseus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", odysseus_kind or "scheduled")[:64]
-                outer["X-Odysseus-Ref"] = sid
+                outer["X-OpenWings-Origin"] = "openwings"
+                outer["X-OpenWings-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", odysseus_kind or "scheduled")[:64]
+                outer["X-OpenWings-Ref"] = sid
                 if r[6]:
                     outer["In-Reply-To"] = r[6]
                 if r[7]:

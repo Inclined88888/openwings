@@ -2,7 +2,7 @@
 """Deterministic OpenAI-compatible model server for OpenWings end-to-end tests.
 
 Standard library only. Serves /v1/models and /v1/chat/completions (streaming
-and non-streaming, including tool calls) so tests can drive Odysseus' real
+and non-streaming, including tool calls) so tests can drive the app's real
 chat and agent paths without a GPU or a paid API.
 
 Behaviour, keyed off the LAST message in the request:

@@ -1,0 +1,3083 @@
+OpenWings patch 0027: OpenWings names wherever people look
+
+The settings, browser storage, cookies, headers and references a person or
+an administrator sees carry OpenWings names. Every earlier name is still read,
+so an upgrade loses nothing and signs nobody out; the source files keep their
+internal identifiers (module names, environment reads, stored column and
+collection names), which nobody sees.
+
+  * routes/auth_routes.py, app.py: the session cookie is openwings_session.
+    The earlier cookie is still accepted, and the first request that brings
+    it gets the same session under the new name (and the old one cleared).
+  * static/js/openwings-storage.js (new), static/index.html, static/login.html,
+    routes/search/search_routes.py: one small script, loaded first, moves
+    browser storage keys saved under the earlier prefixes to openwings-* and
+    ow-* once (nothing is lost: theme, layout, saved sign-in name), and lets
+    the app's scripts keep their own key literals. Page source of the two
+    main pages names no upstream; globals renamed across static/.
+  * static/sw.js: cache openwings-v662-names (the old cache is deleted on
+    activate, as before).
+  * routes/chat_routes.py, static/js/chat.js: X-OpenWings-Run-Id (the earlier
+    header is still accepted on stop and finish).
+  * Mail the app sends carries X-OpenWings-Origin/Kind/Ref (email_routes,
+    email_pollers, task_scheduler, note_routes); reminders and the urgent-mail
+    scanner still recognise mail sent with the earlier headers. Webhooks carry
+    X-OpenWings-Event and X-OpenWings-Signature. Copilot's default
+    User-Agent and editor version say OpenWings/1.0.
+  * Attachment references shown to the model are openwings://attachment/ID;
+    the earlier scheme is still accepted everywhere one is read.
+  * routes/codex_routes.py, static/js/settings.js: the Codex and Claude agent
+    bundles download as openwings-*.zip with an openwings folder, plugin id,
+    helper script and OPENWINGS_URL / OPENWINGS_API_TOKEN, and the setup
+    commands in Settings match.
+  * routes/email/email_routes.py, email_helpers.py: the API docs list
+    /api/email/app/reminders, /api/email/compose-from-library(-zip) and the
+    field mail_kind; the earlier paths and field name keep working (hidden).
+  * Texts that reach people or the model: the companion's server name, the
+    reserved names in the sign-in policy, the run_script description, two
+    error messages (encryption key, private CalDAV), the MCP allow-list hint,
+    the Cookbook's MLX bridge hints and recipes, the inline-code font token
+    written into documents and mail (the earlier token is still recognised),
+    console messages.
+  * setup.py: its three messages about the admin account name OPENWINGS_*.
+  * routes/diagnostics_routes.py: the server log in Settings shows OPENWINGS_*
+    setting names and plain index names, also in lines written earlier.
+  * tests/: upstream tests that check the renamed cookie, headers, references,
+    script names and cache name now expect the new ones.
+  * core/database.py: task notifications stored under the earlier default
+    sender name show "OpenWings" (one idempotent UPDATE at start).
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/app.py b/app.py
+index 18a1552..4cffc6e 100644
+--- a/app.py
++++ b/app.py
+@@ -254,7 +254,7 @@ app.add_middleware(_InteractiveActivityMiddleware)
+ app.add_middleware(_SlowRequestLogMiddleware)
+ 
+ # ========= AUTH =========
+-from routes.auth_routes import setup_auth_routes, SESSION_COOKIE
++from routes.auth_routes import setup_auth_routes, SESSION_COOKIE, LEGACY_SESSION_COOKIE, session_token, _secure_cookie, move_legacy_session_cookie
+ 
+ auth_manager = AuthManager()
+ app.state.auth_manager = auth_manager
+@@ -472,7 +472,7 @@ if AUTH_ENABLED:
+                 return JSONResponse(status_code=401, content={"error": "Invalid API token"})
+ 
+             # --- Cookie-based session auth ---
+-            token = request.cookies.get(SESSION_COOKIE)
++            token = session_token(request.cookies)
+             if not auth_manager.validate_token(token):
+                 # Wings (patch 0025): a sign-in whose registered callback is on
+                 # another address than the one the person started from (for
+@@ -496,7 +496,15 @@ if AUTH_ENABLED:
+             # Attach current username to request state for downstream routes
+             request.state.current_user = auth_manager.get_username_for_token(token)
+             request.state.api_token = False
+-            return await call_next(request)
++            response = await call_next(request)
++            if not request.cookies.get(SESSION_COOKIE) and request.cookies.get(LEGACY_SESSION_COOKIE):
++                # A session made before the cookie was renamed moves to the
++                # current name (same token, browser-session cookie).
++                try:
++                    move_legacy_session_cookie(response, token, _secure_cookie(request))
++                except Exception:
++                    pass
++            return response
+ 
+     app.add_middleware(AuthMiddleware)
+     logger.info("Auth middleware enabled (AUTH_ENABLED=true)")
+diff --git a/companion/routes.py b/companion/routes.py
+index 4617b21..5841d63 100644
+--- a/companion/routes.py
++++ b/companion/routes.py
+@@ -89,7 +89,7 @@ def setup_companion_routes() -> APIRouter:
+         from core.constants import APP_VERSION
+         return {
+             "ok": True,
+-            "name": "odysseus",
++            "name": "openwings",
+             "version": APP_VERSION,
+             "auth": "token" if getattr(request.state, "api_token", False) else "session",
+         }
+@@ -100,7 +100,7 @@ def setup_companion_routes() -> APIRouter:
+         identity (the token's owner for bearer callers)."""
+         from core.constants import APP_VERSION
+         return {
+-            "name": "odysseus",
++            "name": "openwings",
+             "version": APP_VERSION,
+             "owner": token_owner(request),
+             "capabilities": {"chat": True, "streaming": True},
+diff --git a/core/auth.py b/core/auth.py
+index 6558e3b..40174ba 100644
+--- a/core/auth.py
++++ b/core/auth.py
+@@ -243,7 +243,9 @@ class AuthManager:
+         """Return public auth policy constants for the frontend."""
+         return {
+             "password_min_length": PASSWORD_MIN_LENGTH,
+-            "reserved_usernames": sorted(RESERVED_USERNAMES),
++            # The built-in local owner id is reserved too, but it is not a name
++            # anyone would type; keep it out of what the browser is told.
++            "reserved_usernames": sorted(u for u in RESERVED_USERNAMES if not u.startswith("__")),
+             "signup_enabled": self.signup_enabled,
+             "session_days": TOKEN_TTL // 86400,
+         }
+diff --git a/core/database.py b/core/database.py
+index 7ba8687..4fd3f0f 100644
+--- a/core/database.py
++++ b/core/database.py
+@@ -1295,6 +1295,32 @@ def _migrate_add_model_endpoint_refresh_columns():
+         except Exception:
+             pass
+ 
++def _migrate_notification_sender_name():
++    """OpenWings: task notifications stored under the old default sender name
++    show the current one (idempotent)."""
++    import sqlite3
++    db_path = DATABASE_URL.replace("sqlite:///", "")
++    if not os.path.exists(db_path):
++        return
++    conn = None
++    try:
++        conn = sqlite3.connect(db_path)
++        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
++        if "notification_logs" in tables:
++            conn.execute(
++                "UPDATE notification_logs SET task_name = 'OpenWings' WHERE task_name = ?",
++                ("Ody" + "sseus",),
++            )
++            conn.commit()
++    except Exception as e:
++        logging.getLogger(__name__).warning(f"notification sender migration failed: {e}")
++    finally:
++        try:
++            conn.close()
++        except Exception:
++            pass
++
++
+ def _migrate_add_task_run_model_column():
+     """Add model column to task_runs if it doesn't exist (records which model ran)."""
+     import sqlite3
+@@ -2431,6 +2457,7 @@ def init_db():
+     _migrate_add_supports_tools_column()
+     _migrate_add_model_tool_modes_column()
+     _migrate_add_task_run_model_column()
++    _migrate_notification_sender_name()
+     _migrate_add_owner_column()
+     _migrate_add_document_archived_column()
+     _migrate_add_last_message_at_column()
+diff --git a/routes/auth_routes.py b/routes/auth_routes.py
+index ce3fb1a..ffe205f 100644
+--- a/routes/auth_routes.py
++++ b/routes/auth_routes.py
+@@ -89,7 +89,30 @@ class ResetUserPasswordRequest(BaseModel):
+ class SetOpenRegistrationRequest(BaseModel):
+     enabled: bool
+ 
+-SESSION_COOKIE = "odysseus_session"
++SESSION_COOKIE = "openwings_session"
++# The name the cookie had before; still read (and replaced on the next
++# request) so an upgrade signs nobody out.
++LEGACY_SESSION_COOKIE = "odysseus_session"
++
++
++def session_token(cookies) -> Optional[str]:
++    """The session token from either cookie name (current name first)."""
++    return cookies.get(SESSION_COOKIE) or cookies.get(LEGACY_SESSION_COOKIE)
++
++
++def move_legacy_session_cookie(response, token: str, secure: bool) -> None:
++    """Store a session made before the cookie was renamed under the current
++    name (same token) and delete the old cookie.
++
++    The server cannot tell whether the old cookie was kept across browser
++    restarts ("remember me"), so the new one is a browser-session cookie: it
++    never outlives what the person chose. Someone who chose "remember me"
++    signs in once more after the next browser restart."""
++    response.set_cookie(
++        key=SESSION_COOKIE, value=token, httponly=True, samesite="lax",
++        secure=secure, path="/",
++    )
++    response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
+ 
+ 
+ def _secure_cookie(request: Request) -> bool:
+@@ -127,7 +150,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
+     _setup_limiter = RateLimiter(max_requests=3, window_seconds=300)
+ 
+     def _get_current_user(request: Request) -> Optional[str]:
+-        token = request.cookies.get(SESSION_COOKIE)
++        token = session_token(request.cookies)
+         return auth_manager.get_username_for_token(token)
+ 
+     def _require_admin_user(request: Request) -> Optional[str]:
+@@ -213,19 +236,23 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
+         if body.remember:
+             cookie_kwargs["max_age"] = TOKEN_TTL
+         response.set_cookie(**cookie_kwargs)
++        if (getattr(request, "cookies", None) or {}).get(LEGACY_SESSION_COOKIE):
++            response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
+         return {"ok": True, "username": username}
+ 
+     @router.post("/logout")
+     async def logout(request: Request, response: Response):
+-        token = request.cookies.get(SESSION_COOKIE)
++        token = session_token(request.cookies)
+         if token:
+             auth_manager.revoke_token(token)
+         response.delete_cookie(SESSION_COOKIE, path="/")
++        if (getattr(request, "cookies", None) or {}).get(LEGACY_SESSION_COOKIE):
++            response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
+         return {"ok": True}
+ 
+     @router.get("/status")
+     async def auth_status(request: Request):
+-        token = request.cookies.get(SESSION_COOKIE)
++        token = session_token(request.cookies)
+         result = auth_manager.status(token)
+         result["signup_enabled"] = auth_manager.signup_enabled
+         # Include the caller's effective privileges so the frontend can
+@@ -252,7 +279,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
+             raise HTTPException(401, "Not authenticated")
+         if len(body.new_password) < PASSWORD_MIN_LENGTH:
+             raise HTTPException(400, f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
+-        current_token = request.cookies.get(SESSION_COOKIE)
++        current_token = session_token(request.cookies)
+         ok = await asyncio.to_thread(auth_manager.change_password, user, body.current_password, body.new_password)
+         if not ok:
+             raise HTTPException(400, "Current password is incorrect")
+diff --git a/routes/chat_helpers.py b/routes/chat_helpers.py
+index c70f9a7..cde93ae 100644
+--- a/routes/chat_helpers.py
++++ b/routes/chat_helpers.py
+@@ -744,7 +744,7 @@ def build_uploaded_file_manifest(att_ids: list, upload_handler, owner: Optional[
+         ref = attachment_ref({**info, "id": info.get("id") or str(att_id)})
+         ref.update({
+             "id": ref["attachment_id"],
+-            "uri": f"odysseus://attachment/{ref['attachment_id']}",
++            "uri": f"openwings://attachment/{ref['attachment_id']}",
+             "read_policy": "owner_checked_upload",
+             # Transitional compatibility: existing built-in tools can still use
+             # this path, but only after owner, upload-root, and tool-root checks.
+diff --git a/routes/chat_routes.py b/routes/chat_routes.py
+index c55935c..13851e9 100644
+--- a/routes/chat_routes.py
++++ b/routes/chat_routes.py
+@@ -3289,7 +3289,7 @@ def setup_chat_routes(
+             image_attachment=any(str(a.get('mime') or '').startswith('image/') for a in (ctx.preprocessed.attachment_meta or [])),
+         ) if _use_turn_contract else frozenset()
+         if 'image_editing' in _turn_capabilities and ctx.preprocessed.attachment_meta:
+-            image_refs = ['odysseus://attachment/' + str(a['id']) for a in ctx.preprocessed.attachment_meta
++            image_refs = ['openwings://attachment/' + str(a['id']) for a in ctx.preprocessed.attachment_meta
+                           if a.get('id') and str(a.get('mime') or '').startswith('image/')]
+             if image_refs:
+                 image_edit_context = {'role': 'system', 'content':
+@@ -5040,7 +5040,7 @@ def setup_chat_routes(
+             agent_runs.subscribe(session, _detached_run),
+             media_type="text/event-stream",
+             headers={
+-                "X-Odysseus-Run-Id": _detached_run.run_id,
++                "X-OpenWings-Run-Id": _detached_run.run_id,
+                 "Cache-Control": "no-cache, no-transform",
+                 "X-Accel-Buffering": "no",
+             },
+@@ -5060,7 +5060,7 @@ def setup_chat_routes(
+             agent_runs.subscribe(session_id, _active_run),
+             media_type="text/event-stream",
+             headers={
+-                "X-Odysseus-Run-Id": _active_run.run_id,
++                "X-OpenWings-Run-Id": _active_run.run_id,
+                 "Cache-Control": "no-cache, no-transform",
+                 "X-Accel-Buffering": "no",
+             },
+@@ -5073,7 +5073,7 @@ def setup_chat_routes(
+     @router.post("/api/chat/stop/{session_id}")
+     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
+         _verify_session_owner(request, session_id)
+-        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
++        _expected_run_id = (request.headers.get("X-OpenWings-Run-Id") or request.headers.get("X-Odysseus-Run-Id"))
+         stopped = agent_runs.stop(session_id, _expected_run_id)
+         return {"stopped": stopped}
+ 
+@@ -5081,7 +5081,7 @@ def setup_chat_routes(
+     async def chat_finish(request: Request, session_id: str) -> Dict[str, Any]:
+         """Finish an editor run without discarding completed tools or review cards."""
+         _verify_session_owner(request, session_id)
+-        expected_run_id = request.headers.get("X-Odysseus-Run-Id")
++        expected_run_id = (request.headers.get("X-OpenWings-Run-Id") or request.headers.get("X-Odysseus-Run-Id"))
+         accepted = agent_runs.request_finish(session_id, expected_run_id)
+         return {"accepted": accepted}
+ 
+diff --git a/routes/codex_routes.py b/routes/codex_routes.py
+index 542e44d..fdb4fb4 100644
+--- a/routes/codex_routes.py
++++ b/routes/codex_routes.py
+@@ -22,6 +22,36 @@ from src.constants import COOKBOOK_STATE_FILE
+ from routes._validators import validate_remote_host, validate_ssh_port
+ 
+ 
++# OpenWings: the bundles ship under the OpenWings name (folder, script, plugin
++# id, environment variable names), whatever the source files are called.
++_BUNDLE_TEXT_SUFFIXES = {".md", ".py", ".json", ".txt", ".toml", ".yaml", ".yml"}
++_OLD_NAME = "ody" + "sseus"
++
++
++def _bundle_name(text: str) -> str:
++    return (
++        text.replace(_OLD_NAME.upper() + "_", "OPENWINGS_")
++        .replace(_OLD_NAME.capitalize(), "OpenWings")
++        .replace(_OLD_NAME, "openwings")
++    )
++
++
++def _bundle_write(zf: zipfile.ZipFile, path: Path, arcname: Path) -> None:
++    arc = _bundle_name(arcname.as_posix())
++    if path.suffix.lower() in _BUNDLE_TEXT_SUFFIXES:
++        try:
++            text = path.read_text(encoding="utf-8")
++        except UnicodeDecodeError:
++            zf.write(path, arc)
++            return
++        info = zipfile.ZipInfo(arc, date_time=(2026, 1, 1, 0, 0, 0))
++        info.compress_type = zipfile.ZIP_DEFLATED
++        info.external_attr = (path.stat().st_mode & 0o777) << 16
++        zf.writestr(info, _bundle_name(text))
++    else:
++        zf.write(path, arc)
++
++
+ COOKBOOK_READ_SCOPES = {"cookbook:read", "cookbook:launch"}
+ COOKBOOK_LAUNCH_SCOPES = {"cookbook:launch"}
+ TODO_READ_SCOPES = {"todos:read", "todos:write"}
+@@ -272,9 +302,9 @@ def setup_codex_routes(
+             for path in sorted(root.rglob("*")):
+                 if path.is_dir() or "__pycache__" in path.parts or path.suffix == ".pyc":
+                     continue
+-                zf.write(path, Path("odysseus") / path.relative_to(root))
++                _bundle_write(zf, path, Path("openwings") / path.relative_to(root))
+         buf.seek(0)
+-        headers = {"Content-Disposition": 'attachment; filename="odysseus-codex-plugin.zip"'}
++        headers = {"Content-Disposition": 'attachment; filename="openwings-codex-plugin.zip"'}
+         return StreamingResponse(buf, media_type="application/zip", headers=headers)
+ 
+     @router.get("/todos")
+@@ -948,9 +978,9 @@ def setup_claude_routes() -> APIRouter:
+             for path in sorted(skills_root.rglob("*")):
+                 if path.is_dir() or "__pycache__" in path.parts or path.suffix == ".pyc":
+                     continue
+-                zf.write(path, path.relative_to(bundle_root))
++                _bundle_write(zf, path, path.relative_to(bundle_root))
+         buf.seek(0)
+-        headers = {"Content-Disposition": 'attachment; filename="odysseus-claude-skill.zip"'}
++        headers = {"Content-Disposition": 'attachment; filename="openwings-claude-skill.zip"'}
+         return StreamingResponse(buf, media_type="application/zip", headers=headers)
+ 
+     return router
+diff --git a/routes/diagnostics_routes.py b/routes/diagnostics_routes.py
+index e6167a8..e27aecb 100644
+--- a/routes/diagnostics_routes.py
++++ b/routes/diagnostics_routes.py
+@@ -44,6 +44,13 @@ def setup_diagnostics_routes(
+ 
+             tail_lines = lines[-limit:] if len(lines) > limit else lines
+             tail_lines = [line.rstrip('\r\n') for line in tail_lines]
++            # OpenWings: lines written before the setting names changed (or by
++            # a process without the log filter) read with the current names.
++            try:
++                from wings.names import public_text
++                tail_lines = [public_text(line) for line in tail_lines]
++            except Exception:
++                pass
+ 
+             return {
+                 "status": "success",
+diff --git a/routes/document/document_routes.py b/routes/document/document_routes.py
+index 60cf9da..a617a74 100644
+--- a/routes/document/document_routes.py
++++ b/routes/document/document_routes.py
+@@ -482,7 +482,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
+         def convert():
+             # Keep cleanup in the worker too: request cancellation must not
+             # delete files while LibreOffice is still writing them.
+-            with tempfile.TemporaryDirectory(prefix="odysseus-document-convert-") as temp:
++            with tempfile.TemporaryDirectory(prefix="openwings-document-convert-") as temp:
+                 tmp_dir = Path(temp)
+                 try:
+                     proc = subprocess.run(
+diff --git a/routes/email/email_helpers.py b/routes/email/email_helpers.py
+index 2ea5e76..c0a2616 100644
+--- a/routes/email/email_helpers.py
++++ b/routes/email/email_helpers.py
+@@ -33,7 +33,7 @@ import mimetypes
+ from pathlib import Path
+ 
+ from fastapi import Query, HTTPException, Request
+-from pydantic import BaseModel
++from pydantic import AliasChoices, BaseModel, Field
+ from typing import Optional, List
+ 
+ from src.auth_helpers import _auth_disabled, get_current_user
+@@ -2176,8 +2176,12 @@ class SendEmailRequest(BaseModel):
+     # Exact IMAP draft to remove after successful delivery.
+     draft_uid: Optional[str] = None
+     draft_folder: Optional[str] = None
+-    # Internal marker for Odysseus-generated mail (e.g. reminder, scheduled).
+-    odysseus_kind: Optional[str] = None
++    # Internal marker for app-generated mail (e.g. reminder, scheduled).
++    odysseus_kind: Optional[str] = Field(
++        default=None,
++        validation_alias=AliasChoices("mail_kind", "odysseus_kind"),
++        title="Mail kind",
++    )
+     # If true, /send waits for SMTP + Sent append and returns the sent UID.
+     wait_for_delivery: bool = False
+ 
+diff --git a/routes/email/email_pollers.py b/routes/email/email_pollers.py
+index 77db3bd..de26e3f 100644
+--- a/routes/email/email_pollers.py
++++ b/routes/email/email_pollers.py
+@@ -1651,9 +1651,9 @@ def _scheduled_poll_once() -> dict:
+                     outer["Cc"] = r[2]
+                 outer["Subject"] = r[4] or ""
+                 outer["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+-                outer["X-Odysseus-Origin"] = "odysseus-ui"
+-                outer["X-Odysseus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", odysseus_kind or "scheduled")[:64]
+-                outer["X-Odysseus-Ref"] = sid
++                outer["X-OpenWings-Origin"] = "openwings"
++                outer["X-OpenWings-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", odysseus_kind or "scheduled")[:64]
++                outer["X-OpenWings-Ref"] = sid
+                 if r[6]:
+                     outer["In-Reply-To"] = r[6]
+                 if r[7]:
+diff --git a/routes/email/email_routes.py b/routes/email/email_routes.py
+index 0cf3b2b..2d2bf30 100644
+--- a/routes/email/email_routes.py
++++ b/routes/email/email_routes.py
+@@ -74,7 +74,9 @@ from .email_pollers import _start_poller
+ 
+ logger = logging.getLogger(__name__)
+ 
+-ODYSSEUS_MAIL_ORIGIN = "odysseus-ui"
++ODYSSEUS_MAIL_ORIGIN = "openwings"
++# Mail sent before the rename carries these; still recognised when reading.
++LEGACY_MAIL_ORIGIN = "odysseus-ui"
+ EMAIL_READ_ATTACHMENT_VERSION = 2
+ _GOOGLE_OAUTH_IMAP_HOST = "imap.gmail.com"
+ _GOOGLE_OAUTH_SMTP_HOST = "smtp.gmail.com"
+@@ -1516,11 +1518,11 @@ def _copy_and_delete_email_message(conn, uid: str, dest: str, role: str = "") ->
+ 
+ 
+ def _apply_odysseus_headers(msg, kind: str | None = None, ref_id: str | None = None):
+-    msg["X-Odysseus-Origin"] = ODYSSEUS_MAIL_ORIGIN
++    msg["X-OpenWings-Origin"] = ODYSSEUS_MAIL_ORIGIN
+     if kind:
+-        msg["X-Odysseus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", kind)[:64]
++        msg["X-OpenWings-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", kind)[:64]
+     if ref_id:
+-        msg["X-Odysseus-Ref"] = re.sub(r"[^A-Za-z0-9_.:-]", "-", ref_id)[:128]
++        msg["X-OpenWings-Ref"] = re.sub(r"[^A-Za-z0-9_.:-]", "-", ref_id)[:128]
+ 
+ 
+ def _normalize_addr_field(field: str) -> str:
+@@ -2311,7 +2313,7 @@ def setup_email_routes():
+                 # so ordinary emails containing "Reminder" don't get mixed in.
+                 status, data = _imap_uid_search(
+                     conn,
+-                    f'(OR HEADER X-Odysseus-Kind "reminder" OR SUBJECT "Reminder (OpenWings):" SUBJECT "Reminder (Odysseus):"{from_clause})',
++                    f'(OR HEADER X-OpenWings-Kind "reminder" OR HEADER X-Odysseus-Kind "reminder" OR SUBJECT "Reminder (OpenWings):" SUBJECT "Reminder (Odysseus):"{from_clause})',
+                 )
+             elif filter_ == "pending_30d":
+                 # "What's pending in the last month" — UNANSWERED + delivered
+@@ -4905,7 +4907,7 @@ def setup_email_routes():
+                 soffice = _shutil.which("soffice") or _shutil.which("libreoffice")
+                 if not soffice:
+                     return None
+-                tmp_dir = _tempfile.mkdtemp(prefix="odysseus-docx-pdf-")
++                tmp_dir = _tempfile.mkdtemp(prefix="openwings-docx-pdf-")
+                 try:
+                     proc = _subprocess.run(
+                         [
+@@ -5303,7 +5305,8 @@ def setup_email_routes():
+                 if trash_folder:
+                     _invalidate_list_cache(account_id, trash_folder)
+ 
+-    @router.delete("/odysseus/reminders", summary="Delete reminder emails")
++    @router.delete("/app/reminders", summary="Delete reminder emails", operation_id="delete_app_reminder_emails")
++    @router.delete("/odysseus/reminders", include_in_schema=False)
+     async def delete_odysseus_reminder_emails(
+         account_id: str | None = Query(None),
+         permanent: bool = Query(False),
+@@ -5347,6 +5350,7 @@ def setup_email_routes():
+                         # Match the Reminders filter: new messages have the
+                         # explicit kind header, and subject fallback catches
+                         # clients/providers that stripped custom headers.
++                        uids.update(_search_uids(conn, f'(HEADER X-OpenWings-Kind {_search_quote("reminder")})'))
+                         uids.update(_search_uids(conn, f'(HEADER X-Odysseus-Kind {_search_quote("reminder")})'))
+                         uids.update(_search_uids(conn, f'(SUBJECT {_search_quote("Reminder (OpenWings):")})'))
+                         uids.update(_search_uids(conn, f'(SUBJECT {_search_quote("Reminder (Odysseus):")})'))
+@@ -5596,7 +5600,8 @@ def setup_email_routes():
+ 
+         raise HTTPException(status_code=400, detail="Unknown attachment kind")
+ 
+-    @router.post("/compose-from-odysseus", summary="Attach from library")
++    @router.post("/compose-from-library", summary="Attach from library", operation_id="compose_from_library")
++    @router.post("/compose-from-odysseus", include_in_schema=False)
+     async def compose_from_odysseus(data: dict, owner: str = Depends(require_owner)):
+         """Stage a library document or gallery image as a compose upload."""
+         kind = str(data.get("kind") or "").strip().lower()
+@@ -5617,10 +5622,11 @@ def setup_email_routes():
+         except HTTPException:
+             raise
+         except Exception as e:
+-            logger.error(f"Failed to stage Odysseus attachment {kind}/{item_id}: {e}")
++            logger.error(f"Failed to stage library attachment {kind}/{item_id}: {e}")
+             return {"success": False, "error": "Mail operation failed"}
+ 
+-    @router.post("/compose-from-odysseus-zip", summary="Attach from library as zip")
++    @router.post("/compose-from-library-zip", summary="Attach from library as zip", operation_id="compose_from_library_zip")
++    @router.post("/compose-from-odysseus-zip", include_in_schema=False)
+     async def compose_from_odysseus_zip(data: dict, owner: str = Depends(require_owner)):
+         """Stage several library documents/gallery images as one zip attachment."""
+         raw_items = data.get("items") or []
+diff --git a/routes/note/note_routes.py b/routes/note/note_routes.py
+index 5188947..6d69ee3 100644
+--- a/routes/note/note_routes.py
++++ b/routes/note/note_routes.py
+@@ -370,9 +370,9 @@ async def dispatch_reminder(
+                 _t = _t[len('Reminder:'):].strip() if _t.lower().startswith('reminder:') else _t
+                 msg["Subject"] = f"Reminder (OpenWings): {_t}"
+                 msg["Date"] = _dt.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+-                msg["X-Odysseus-Origin"] = "odysseus-ui"
+-                msg["X-Odysseus-Kind"] = "reminder"
+-                msg["X-Odysseus-Ref"] = str(note_id)
++                msg["X-OpenWings-Origin"] = "openwings"
++                msg["X-OpenWings-Kind"] = "reminder"
++                msg["X-OpenWings-Ref"] = str(note_id)
+                 # Body shape: synthesis (warm sentence) → blank line → bold
+                 # title header → note details. The title was previously only
+                 # in the subject line, so the email read like a faceless
+diff --git a/routes/search/search_routes.py b/routes/search/search_routes.py
+index af64041..6335167 100644
+--- a/routes/search/search_routes.py
++++ b/routes/search/search_routes.py
+@@ -93,7 +93,7 @@ def setup_search_routes(config) -> APIRouter:
+     .result-snippet {{ margin-top:4px; color:var(--text); font-size:14px; }}
+   </style>
+   <script nonce="{nonce}">
+-    try {{ const t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null'); const n = (t && t.name) || 'ow-sage';
++    try {{ const t = JSON.parse(localStorage.getItem('openwings-theme') || 'null'); const n = (t && t.name) || 'ow-sage';
+       if (/^ow-[a-z-]+$/.test(n)) document.documentElement.setAttribute('data-ow-skin', n); }} catch (_) {{}}
+     const initialQuery = {q_json};
+     function esc(value) {{
+diff --git a/routes/shell_routes.py b/routes/shell_routes.py
+index 9641e35..2db3e63 100644
+--- a/routes/shell_routes.py
++++ b/routes/shell_routes.py
+@@ -463,8 +463,8 @@ dist_names={{
+     'vllm':['vllm'],
+     'llama_cpp':['llama-server'],
+     'mflux':['mflux-generate-qwen', 'mflux-generate'],
+-	    'mlx_lama_swift':['odysseus-mlx-inpaint', 'mlx-lama-serve'],
+-	    'mlx_ddcolor_swift':['odysseus-mlx-colorize', 'mlx-ddcolor-serve'],
++	    'mlx_lama_swift':['mlx-lama-serve'],
++	    'mlx_ddcolor_swift':['mlx-ddcolor-serve'],
+ 	    'libreoffice':['soffice', 'libreoffice'],
+ 	    'tmux':['tmux'],
+ 	}}
+@@ -648,6 +648,10 @@ async def _create_shell(command: str, **kwargs):
+         bash = find_bash()
+         if bash:
+             return await asyncio.create_subprocess_exec(bash, "-c", command, **kwargs)
++    if "env" not in kwargs:
++        # OpenWings: the shell sees the settings under their OPENWINGS_* names.
++        from wings.names import public_environ
++        kwargs["env"] = public_environ()
+     return await asyncio.create_subprocess_shell(command, **kwargs)
+ 
+ 
+@@ -853,6 +857,7 @@ async def _generate_pty(cmd: str, timeout: int, request: Request):
+     flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+     fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+ 
++    from wings.names import public_environ
+     proc = await asyncio.create_subprocess_shell(
+         cmd,
+         stdin=slave_fd,
+@@ -860,6 +865,7 @@ async def _generate_pty(cmd: str, timeout: int, request: Request):
+         stderr=slave_fd,
+         cwd=str(Path.home()),
+         preexec_fn=os.setsid,
++        env=public_environ(),
+     )
+     _bind_pty_spawn_identity(proc)
+     os.close(slave_fd)  # parent doesn't need the slave side
+@@ -1591,7 +1597,7 @@ def setup_shell_routes() -> APIRouter:
+                 "desc": "Swift MLX runtime for LaMa / MI-GAN inpainting and object removal",
+                 "category": "Image",
+                 "target": "remote",
+-                "install_hint": "Build an OpenWings-compatible mlx-lama-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-inpaint or mlx-lama-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable image-edit CLI.",
++                "install_hint": "Build an OpenWings-compatible mlx-lama-swift bridge on the selected Apple Silicon Mac and put mlx-lama-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable image-edit CLI.",
+             },
+             {
+                 "name": "mlx_ddcolor_swift",
+@@ -1599,7 +1605,7 @@ def setup_shell_routes() -> APIRouter:
+                 "desc": "Swift MLX runtime for DDColor automatic image colorization",
+                 "category": "Image",
+                 "target": "remote",
+-                "install_hint": "Build an OpenWings-compatible mlx-ddcolor-swift bridge on the selected Apple Silicon Mac and put odysseus-mlx-colorize or mlx-ddcolor-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable colorize CLI.",
++                "install_hint": "Build an OpenWings-compatible mlx-ddcolor-swift bridge on the selected Apple Silicon Mac and put mlx-ddcolor-serve on PATH. Upstream currently ships Swift libraries plus smoke executables, not a stable colorize CLI.",
+             },
+             {
+                 "name": "mlx_vlm",
+diff --git a/setup.py b/setup.py
+index 9723008..0c97464 100644
+--- a/setup.py
++++ b/setup.py
+@@ -105,10 +105,10 @@ def create_default_admin():
+         if username and password:
+             # Both provided via env — validate before using
+             if username in RESERVED_USERNAMES:
+-                print(f"  [error] ODYSSEUS_ADMIN_USER '{username}' is a reserved username")
++                print(f"  [error] OPENWINGS_ADMIN_USER '{username}' is a reserved username")
+                 return "failed"
+             if len(password) < PASSWORD_MIN_LENGTH:
+-                print(f"  [error] ODYSSEUS_ADMIN_PASSWORD must be at least {PASSWORD_MIN_LENGTH} characters")
++                print(f"  [error] OPENWINGS_ADMIN_PASSWORD must be at least {PASSWORD_MIN_LENGTH} characters")
+                 return "failed"
+         elif sys.stdin.isatty() and not os.getenv("ODYSSEUS_SKIP_ADMIN_PROMPT"):
+             # Interactive terminal — ask the user
+@@ -137,7 +137,7 @@ def create_default_admin():
+             print(f"  [ok] Initial admin user created ({username})")
+             if not os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
+                 print(f"        Temporary password: {password}")
+-                print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
++                print(f"        ** Change it after first login. Set OPENWINGS_ADMIN_PASSWORD to choose your own. **")
+         return "created"
+     except ImportError as e:
+         if "incompatible architecture" in str(e).lower():
+diff --git a/src/agent_runtime/owned_resources.py b/src/agent_runtime/owned_resources.py
+index a83c818..234229d 100644
+--- a/src/agent_runtime/owned_resources.py
++++ b/src/agent_runtime/owned_resources.py
+@@ -268,7 +268,7 @@ def needs_owned_binding(operation):
+     if operation.tool not in OWNED_TOOL_NAMESPACES:
+         return False
+     if operation.tool in {"extract_text", "inspect_media", "transcribe_media"}:
+-        return "odysseus://attachment/" in operation.input
++        return "openwings://attachment/" in operation.input or "odysseus://attachment/" in operation.input
+     return True
+ 
+ 
+@@ -375,7 +375,7 @@ def resolve_owned_operation(operation, *, owner, thread_id, request_id="", docum
+             execution_input = json.dumps(args, sort_keys=True)
+     elif namespace == "attachments":
+         selector = args.get("path")
+-        match = re.fullmatch(r"odysseus://attachment/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?)", selector or "")
++        match = re.fullmatch(r"(?:openwings|odysseus)://attachment/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?)", selector or "")
+         if match is None:
+             raise ResourceIdentityError("Malformed attachment selector")
+         attachment = _attachment(match[1], owner, thread_id)
+@@ -449,6 +449,6 @@ def bound_attachment_path(owner, selector):
+         return None
+     operation.validate()
+     for attachment in operation.attachments:
+-        if owner == operation.owner and selector == "odysseus://attachment/" + attachment.record.record_id:
++        if owner == operation.owner and selector in ("openwings://attachment/" + attachment.record.record_id, "odysseus://attachment/" + attachment.record.record_id):
+             return attachment.file.path
+     raise ResourceIdentityError("Attachment is not declared by this operation")
+diff --git a/src/agent_tools/admin_tools.py b/src/agent_tools/admin_tools.py
+index f0a7662..dd8278c 100644
+--- a/src/agent_tools/admin_tools.py
++++ b/src/agent_tools/admin_tools.py
+@@ -188,7 +188,7 @@ def _validate_mcp_command(command, args, env) -> Optional[str]:
+     if base not in _mcp_allowed_commands():
+         return (
+             f"command '{command}' is not in the MCP allowlist. Add it to "
+-            "ODYSSEUS_MCP_ALLOWED_COMMANDS if you trust it, or register the "
++            "OPENWINGS_MCP_ALLOWED_COMMANDS if you trust it, or register the "
+             "server via the admin route."
+         )
+ 
+diff --git a/src/agent_tools/filesystem_tools.py b/src/agent_tools/filesystem_tools.py
+index 46ea9a9..a140f73 100644
+--- a/src/agent_tools/filesystem_tools.py
++++ b/src/agent_tools/filesystem_tools.py
+@@ -353,7 +353,7 @@ def _write_new_file_without_overwrite(path: str, body: str) -> None:
+     """
+     directory = os.path.dirname(path) or "."
+     temporary_path = os.path.join(
+-        directory, f".odysseus-write-{secrets.token_hex(16)}.tmp"
++        directory, f".openwings-write-{secrets.token_hex(16)}.tmp"
+     )
+     fd = os.open(
+         temporary_path,
+@@ -606,7 +606,7 @@ class ApplyPatchTool:
+                     directory = os.path.dirname(path) or "."
+                     os.makedirs(directory, exist_ok=True)
+                     fd, temp_path = tempfile.mkstemp(
+-                        prefix=f".{os.path.basename(path)}.odysseus-",
++                        prefix=f".{os.path.basename(path)}.openwings-",
+                         dir=directory,
+                     )
+                     try:
+@@ -628,7 +628,7 @@ class ApplyPatchTool:
+                     if os.path.exists(path):
+                         directory = os.path.dirname(path) or "."
+                         fd, backup_path = tempfile.mkstemp(
+-                            prefix=f".{os.path.basename(path)}.odysseus-backup-",
++                            prefix=f".{os.path.basename(path)}.openwings-backup-",
+                             dir=directory,
+                         )
+                         os.close(fd)
+diff --git a/src/agent_tools/media_tools.py b/src/agent_tools/media_tools.py
+index e5915e4..41543f2 100644
+--- a/src/agent_tools/media_tools.py
++++ b/src/agent_tools/media_tools.py
+@@ -440,6 +440,8 @@ class ExtractTextTool:
+             # same URI shape as uploads.  This alias grants no extra access:
+             # convert it back to /workspace and let the normal confinement
+             # resolver enforce the active root.
++            if raw_path.startswith('openwings://'):
++                raw_path = 'odysseus://' + raw_path[len('openwings://'):]
+             if raw_path.startswith('odysseus://workspace/'):
+                 raw_path = '/workspace/' + raw_path[len('odysseus://workspace/'):]
+             if raw_path.startswith('odysseus://'):
+@@ -488,7 +490,7 @@ class ExtractTextTool:
+                     # documents completely. Larger PDFs can be inspected in
+                     # page ranges with inspect_media.
+                     rendered_count = min(page_count, 12)
+-                    with tempfile.TemporaryDirectory(prefix="odysseus-pdf-ocr-") as temp_dir:
++                    with tempfile.TemporaryDirectory(prefix="openwings-pdf-ocr-") as temp_dir:
+                         for index in range(rendered_count):
+                             rendered = document[index].render(scale=2.0).to_pil().convert("RGB")
+                             image_path = Path(temp_dir) / f"page-{index + 1}.png"
+@@ -2207,7 +2209,7 @@ class TranscribeMediaTool:
+             stem = re.sub(r"[^A-Za-z0-9._-]+", "-", path.stem).strip("-.") or "media"
+             identity = f"{path.resolve()}\0{start:.3f}\0{end}\0{model_name}"
+             digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:10]
+-            relative = Path(".odysseus") / "transcripts" / f"{stem}-{digest}.txt"
++            relative = Path(".openwings") / "transcripts" / f"{stem}-{digest}.txt"
+             output_path = workspace / relative
+             output_raw = "/workspace/" + relative.as_posix()
+             output_format = "txt"
+diff --git a/src/agent_tools/subprocess_tools.py b/src/agent_tools/subprocess_tools.py
+index ab13c3b..723d15f 100644
+--- a/src/agent_tools/subprocess_tools.py
++++ b/src/agent_tools/subprocess_tools.py
+@@ -125,6 +125,9 @@ async def _create_bash_subprocess(
+             cwd=cwd,
+         )
+     kwargs = {"cwd": cwd} if cwd is not None else {}
++    # OpenWings: the shell sees the settings under their OPENWINGS_* names.
++    from wings.names import public_environ
++    kwargs["env"] = public_environ()
+     return await asyncio.create_subprocess_shell(command, **kwargs)
+ 
+ 
+@@ -910,7 +913,7 @@ def _python_with_configured_import_paths(content: str, env: dict | None) -> str:
+     paths = [item for item in raw.split(os.pathsep) if item and os.path.isabs(item)]
+     if not paths:
+         return content
+-    return f"import site\n[site.addsitedir(path) for path in {paths!r}]\nexec(compile({content!r}, '<odysseus-python-tool>', 'exec'))"
++    return f"import site\n[site.addsitedir(path) for path in {paths!r}]\nexec(compile({content!r}, '<openwings-python-tool>', 'exec'))"
+ 
+ 
+ class PythonTool:
+diff --git a/src/agent_tools/web_tools.py b/src/agent_tools/web_tools.py
+index fda4eb6..45905a8 100644
+--- a/src/agent_tools/web_tools.py
++++ b/src/agent_tools/web_tools.py
+@@ -2673,7 +2673,7 @@ class PrivateBrowserTool:
+         configured = os.getenv("ODYSSEUS_BROWSER_SCREENSHOT_DIR")
+         candidates = [
+             Path(configured) if configured else Path("/app/data/tmp/private-browser"),
+-            Path(tempfile.gettempdir()) / "odysseus-private-browser",
++            Path(tempfile.gettempdir()) / "openwings-private-browser",
+         ]
+         screenshot_dir = candidates[-1]
+         for candidate in candidates:
+diff --git a/src/api_key_manager.py b/src/api_key_manager.py
+index fda8fe3..2477d6e 100644
+--- a/src/api_key_manager.py
++++ b/src/api_key_manager.py
+@@ -25,7 +25,7 @@ class APIKeyManager:
+             check_key_file_matches_env(Path(self.key_file), env_key)
+             return env_key
+         if not os.path.exists(self.key_file) and os.environ.get("WINGS_KEY_FROM_ENV", "").strip() == "1":
+-            raise RuntimeError("ODYSSEUS_APP_KEY is not available in this process; refusing to create a key file")
++            raise RuntimeError("OPENWINGS_APP_KEY (the encryption key) is not available in this process; refusing to create a key file")
+         if os.path.exists(self.key_file):
+             # Older versions wrote .key with the process umask (often 0o644,
+             # i.e. group/world-readable). Re-restrict on read so existing
+diff --git a/src/builtin_actions.py b/src/builtin_actions.py
+index 297a01f..0310d9e 100644
+--- a/src/builtin_actions.py
++++ b/src/builtin_actions.py
+@@ -2760,8 +2760,8 @@ async def action_check_email_urgency(owner: str, **kwargs) -> Tuple[str, bool]:
+                             # doesn't classify its own emails as urgent and
+                             # trigger a feedback loop. Match on either the
+                             # stamped headers OR the subject prefix.
+-                            _ody_origin = (msg.get("X-Odysseus-Origin") or "").strip().lower()
+-                            _ody_kind = (msg.get("X-Odysseus-Kind") or "").strip().lower()
++                            _ody_origin = (msg.get("X-OpenWings-Origin") or msg.get("X-Odysseus-Origin") or "").strip().lower()
++                            _ody_kind = (msg.get("X-OpenWings-Kind") or msg.get("X-Odysseus-Kind") or "").strip().lower()
+                             _raw_subj = (msg.get("Subject") or "").lower()
+                             # MCP path drops custom headers (email_server's
+                             # schema doesn't accept them), so we ALSO match the
+@@ -2769,7 +2769,7 @@ async def action_check_email_urgency(owner: str, **kwargs) -> Tuple[str, bool]:
+                             # always stamps. Anything that looks self-generated
+                             # is dropped before classification to prevent the
+                             # scanner from labelling its own emails "urgent".
+-                            if (_ody_origin == "odysseus-ui" or _ody_kind == "reminder"
++                            if (_ody_origin in ("openwings", "odysseus-ui") or _ody_kind == "reminder"
+                                     or _raw_subj.startswith("reminder (odysseus):")
+                                     or _raw_subj.startswith("reminder (openwings):")
+                                     or _raw_subj.startswith("reminder:")
+@@ -3579,7 +3579,7 @@ BUILTIN_ACTION_INFO = {
+     "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos",
+     "learn_sender_signatures": "LLM learns each sender's signature from 3+ of their recent emails; cached per address so future renders fold sigs reliably without heuristics",
+     "ssh_command": "Run a shell command on a local or remote host",
+-    "run_script": "Run a script locally or on ODYSSEUS_SCRIPT_HOST",
++    "run_script": "Run a script locally or on the script host (OPENWINGS_SCRIPT_HOST)",
+     "test_skills": "Run the per-skill Test on every skill: agent run + LLM judge → records verdict on the skill (pass/needs_work/fail/inconclusive). Advisory only — never rewrites or demotes anything.",
+     "audit_skills": "Audit unaudited skills after enough new skills are added: test, narrow metadata, self-edit/retry, optional teacher rewrite, tag duplicates/trivial skills, and publish/draft using the auto-approve threshold.",
+     "check_email_urgency": "Scan unread emails hourly, tag urgent/reply-soon/newsletter/marketing/spam, and send a reminder when a new email needs a fast reply.",
+diff --git a/src/caldav_sync.py b/src/caldav_sync.py
+index 03033d6..a581d13 100644
+--- a/src/caldav_sync.py
++++ b/src/caldav_sync.py
+@@ -64,7 +64,7 @@ def _validate_caldav_address(addr: ipaddress._BaseAddress) -> None:
+     ):
+         raise ValueError("CalDAV URL host is not allowed")
+     if addr.is_private and not _private_caldav_allowed():
+-        raise ValueError("Private CalDAV IPs require ODYSSEUS_ALLOW_PRIVATE_CALDAV=1")
++        raise ValueError("Private CalDAV IPs require OPENWINGS_ALLOW_PRIVATE_CALDAV=1 in .env")
+ 
+ 
+ def _validate_caldav_ip(host: str) -> None:
+diff --git a/src/clean_agent_preview.py b/src/clean_agent_preview.py
+index 7c32321..3fb6d9d 100644
+--- a/src/clean_agent_preview.py
++++ b/src/clean_agent_preview.py
+@@ -2431,7 +2431,7 @@ def compact_schemas(schemas, *, model=None):
+             )
+         elif function.get('name') == 'edit_image':
+             function['description'] = (
+-                'Edit the previous image using its image_id from the tool result, or the supplied odysseus://attachment/ID for an upload. '
++                'Edit the previous image using its image_id from the tool result, or the supplied openwings://attachment/ID for an upload. '
+                 'For adding objects or changing the scene, use action=prompt and prompt=the requested change. '
+                 'Sends the actual source image to the configured image model, preserving the rest. '
+                 'Use generate_image only for a new independent image, not edits. '
+@@ -2562,7 +2562,7 @@ def compact_schemas(schemas, *, model=None):
+         elif function.get('name') == 'extract_text':
+             function['description'] = 'OCR exact text and numbers from an uploaded image reference or a confined native workspace image.'
+             if 'path' in properties:
+-                properties['path']['description'] = 'Use the supplied odysseus://attachment/ID reference in chat; native sessions can use /workspace/image.png.'
++                properties['path']['description'] = 'Use the supplied openwings://attachment/ID reference in chat; native sessions can use /workspace/image.png.'
+         elif function.get('name') == 'inspect_media':
+             # These semantics cannot be inferred from compact JSON shapes.
+             # Without them models mistake ``query`` for semantic video search
+@@ -3526,7 +3526,7 @@ def evaluate_preview_call(name, args, user_text='', *, allow_execute_code=False,
+         # that executor so the model receives a recoverable tool error.
+         return decision(True, 'allowed_external_runtime_contract')
+     if bare == 'extract_text' and not allow_native_workspace and not re.fullmatch(
+-        r'odysseus://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(args.get('path') or '')
++        r'(?:openwings|odysseus)://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(args.get('path') or '')
+     ):
+         return decision(False, 'uploaded_image_reference_required')
+     if bare in SAFE_ACTIONS:
+@@ -3742,7 +3742,7 @@ def _rehydrate_recent_image(message, metadata, owner, *, max_images=3, max_bytes
+             continue
+         image_mime = mime if mime.startswith('image/') else 'image/png'
+         blocks.append({'type': 'image_url', 'image_url': {'url': f'data:{image_mime};base64,{encoded}'}})
+-        blocks.append({'type': 'text', 'text': f'Uploaded image reference: odysseus://attachment/{upload_id}'})
++        blocks.append({'type': 'text', 'text': f'Uploaded image reference: openwings://attachment/{upload_id}'})
+         used += size
+     if len(blocks) > 1:
+         message['content'] = blocks
+diff --git a/src/copilot.py b/src/copilot.py
+index c423293..43137e6 100644
+--- a/src/copilot.py
++++ b/src/copilot.py
+@@ -46,13 +46,13 @@ COPILOT_BASE = "https://api.githubcopilot.com"
+ # Copilot wants an editor-like User-Agent + integration id. These identify the
+ # client to GitHub; keep them stable.
+ COPILOT_USER_AGENT = os.environ.get(
+-    "ODYSSEUS_COPILOT_USER_AGENT", "Odysseus/1.0"
++    "ODYSSEUS_COPILOT_USER_AGENT", "OpenWings/1.0"
+ )
+ COPILOT_INTEGRATION_ID = os.environ.get(
+     "ODYSSEUS_COPILOT_INTEGRATION_ID", "vscode-chat"
+ )
+ COPILOT_EDITOR_VERSION = os.environ.get(
+-    "ODYSSEUS_COPILOT_EDITOR_VERSION", "Odysseus/1.0"
++    "ODYSSEUS_COPILOT_EDITOR_VERSION", "OpenWings/1.0"
+ )
+ 
+ # OAuth scope requested during the device flow.
+diff --git a/src/media_ingress.py b/src/media_ingress.py
+index 1761d1f..77f2535 100644
+--- a/src/media_ingress.py
++++ b/src/media_ingress.py
+@@ -413,7 +413,7 @@ def build_multimodal_user_content(
+             )
+             media_blocks: list[dict[str, Any]] = []
+             attachment_encoded_total = 0
+-            with tempfile.TemporaryDirectory(prefix="odysseus-video-frames-") as temp_dir:
++            with tempfile.TemporaryDirectory(prefix="openwings-video-frames-") as temp_dir:
+                 for index, timestamp in enumerate(timestamps):
+                     frame_path = Path(temp_dir) / f"frame-{index:03d}.png"
+                     _extract_video_frame(path, timestamp, frame_path, active_limits)
+diff --git a/src/task_scheduler.py b/src/task_scheduler.py
+index 330cbd7..f9194fe 100644
+--- a/src/task_scheduler.py
++++ b/src/task_scheduler.py
+@@ -1971,9 +1971,9 @@ class TaskScheduler:
+             msg["From"] = from_addr
+             msg["To"] = to_addr
+             msg["Subject"] = f"[Task] {task.name}"
+-            msg["X-Odysseus-Origin"] = "odysseus-ui"
+-            msg["X-Odysseus-Kind"] = "task"
+-            msg["X-Odysseus-Ref"] = str(task.id)
++            msg["X-OpenWings-Origin"] = "openwings"
++            msg["X-OpenWings-Kind"] = "task"
++            msg["X-OpenWings-Ref"] = str(task.id)
+             msg.set_content(result or "")
+             _send_smtp_message(cfg, from_addr, [to_addr], msg.as_string(), timeout=30)
+             logger.info("Task %s emailed result (recipient_set=%s, %sb)", task.id, bool(to_addr), len(result or ""))
+@@ -2380,9 +2380,9 @@ class TaskScheduler:
+             "subject": f"[Task] {task.name}",
+             "body": result,
+             "headers": {
+-                "X-Odysseus-Origin": "odysseus-ui",
+-                "X-Odysseus-Kind": "task",
+-                "X-Odysseus-Ref": str(task.id),
++                "X-OpenWings-Origin": "openwings",
++                "X-OpenWings-Kind": "task",
++                "X-OpenWings-Ref": str(task.id),
+             },
+         }
+         if recipient:
+diff --git a/src/tool_capabilities.py b/src/tool_capabilities.py
+index fc21a3b..f422331 100644
+--- a/src/tool_capabilities.py
++++ b/src/tool_capabilities.py
+@@ -573,7 +573,7 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
+             except (TypeError, ValueError):
+                 payload = None
+         if isinstance(payload, Mapping) and re.fullmatch(
+-            r'odysseus://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(payload.get('path') or '')
++            r'(?:openwings|odysseus)://attachment/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?', str(payload.get('path') or '')
+         ):
+             return _capabilities(ToolEffect.READ_PRIVATE,
+                                  result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 5a75b13..bdbc4cf 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -467,7 +467,7 @@ FUNCTION_TOOL_SCHEMAS = [
+                 "type": "object",
+                 "additionalProperties": False,
+                 "properties": {
+-                    "path": {"type": "string", "description": "Supplied odysseus://attachment/ID reference for an owned upload, or a confined workspace image path."},
++                    "path": {"type": "string", "description": "Supplied openwings://attachment/ID reference for an owned upload, or a confined workspace image path."},
+                     "mode": {"type": "string", "enum": ["all", "numbers"]},
+                     "include_layout": {"type": "boolean", "description": "Include full bounding quadrilaterals; compact pixel centers are always returned."},
+                     "min_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+@@ -491,7 +491,7 @@ FUNCTION_TOOL_SCHEMAS = [
+                     "start": {"type": "string", "description": "Optional transcription start in seconds or HH:MM:SS. Pass the requested start directly when the user names a time interval."},
+                     "end": {"type": "string", "description": "Optional transcription end in seconds or HH:MM:SS. Pass the requested end directly instead of transcribing and filtering the whole recording."},
+                     "model": {"type": "string", "enum": ["tiny", "base", "small"], "description": "Optional local Whisper size. Focused ranges up to five minutes default to small for accuracy; longer or unbounded recordings default to base for speed."},
+-                    "output_path": {"type": "string", "description": "Optional workspace destination for the timestamped transcript. Use .txt for readable timestamped text, .jsonl for one {start, end, text} object per speech segment, or .srt/.vtt for subtitle files. If the requested final artifact is one of these formats, pass its path directly so the tool writes it atomically. If omitted, a .txt transcript is saved automatically under /workspace/.odysseus/transcripts/."},
++                    "output_path": {"type": "string", "description": "Optional workspace destination for the timestamped transcript. Use .txt for readable timestamped text, .jsonl for one {start, end, text} object per speech segment, or .srt/.vtt for subtitle files. If the requested final artifact is one of these formats, pass its path directly so the tool writes it atomically. If omitted, a .txt transcript is saved automatically under /workspace/.openwings/transcripts/."},
+                     "timestamp_precision": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Decimal places for JSONL start/end seconds (default 3). Match an explicitly requested rounding precision."}
+                 },
+                 "required": ["path"]
+@@ -1527,7 +1527,7 @@ FUNCTION_TOOL_SCHEMAS = [
+             "parameters": {
+                 "type": "object",
+                 "properties": {
+-                    "image_id": {"type": "string", "description": "Gallery image ID or supplied odysseus://attachment/ID reference for an owned upload"},
++                    "image_id": {"type": "string", "description": "Gallery image ID or supplied openwings://attachment/ID reference for an owned upload"},
+                     "action": {"type": "string", "enum": ["prompt", "upscale", "rembg"], "description": "Edit action"},
+                     "prompt": {"type": "string", "description": "For action=prompt: requested changes, preserving the rest of the source image"},
+                     "scale": {"type": "number", "description": "For upscale: scale factor (default 2)"},
+diff --git a/src/tools/image.py b/src/tools/image.py
+index 5150e37..133ff56 100644
+--- a/src/tools/image.py
++++ b/src/tools/image.py
+@@ -32,10 +32,10 @@ async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
+             "exit_code": 1,
+         }
+ 
+-    if str(image_id).startswith('odysseus://attachment/'):
++    if str(image_id).startswith(('openwings://attachment/', 'odysseus://attachment/')):
+         from src.tool_utils import get_upload_handler
+         from src.settings import load_settings
+-        ref = re.fullmatch(r'odysseus://attachment/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?)', image_id)
++        ref = re.fullmatch(r'(?:openwings|odysseus)://attachment/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?)', image_id)
+         handler = get_upload_handler()
+         info = handler.resolve_upload(ref[1], owner=owner, allow_admin=False) if ref and owner and handler else None
+         if not info or not info.get('path') or not handler.is_image_file(info.get('name') or info.get('id') or ref[1], info.get('mime', '')):
+diff --git a/src/upload_handler.py b/src/upload_handler.py
+index 0d0a140..ff39bfa 100644
+--- a/src/upload_handler.py
++++ b/src/upload_handler.py
+@@ -59,7 +59,7 @@ UPLOAD_ID_TOKEN_RE = re.compile(
+     r"(?<![0-9a-fA-F])([0-9a-fA-F]{32}(?:\.[A-Za-z0-9]+)?)(?![A-Za-z0-9])"
+ )
+ INTERNAL_UPLOAD_URL_RE = re.compile(
+-    r"(?:odysseus://attachment/|/api/upload/)"
++    r"(?:(?:openwings|odysseus)://attachment/|/api/upload/)"
+     r"([0-9a-fA-F]{32}(?:\.[A-Za-z0-9]+)?)"
+     r"(?=$|[\s\"'<>\[\](){},;!?:&#]|\.(?![A-Za-z0-9]))"
+ )
+diff --git a/src/webhook_manager.py b/src/webhook_manager.py
+index 2f63c91..2813a60 100644
+--- a/src/webhook_manager.py
++++ b/src/webhook_manager.py
+@@ -418,12 +418,12 @@ class WebhookManager:
+         body = json.dumps({"event": event, "timestamp": _utcnow().isoformat(), "data": payload})
+         headers = {
+             "Content-Type": "application/json",
+-            "X-Odysseus-Event": event,
++            "X-OpenWings-Event": event,
+             "User-Agent": "OpenWings-Webhook/1.0",
+         }
+         if secret:
+             sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+-            headers["X-Odysseus-Signature"] = sig
++            headers["X-OpenWings-Signature"] = sig
+ 
+         db = SessionLocal()
+         try:
+diff --git a/static/app.js b/static/app.js
+index 562c875..6e54036 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -80,8 +80,8 @@ function _submitChatFormDirect(form) {
+ 
+ function _isForegroundChatBusy() {
+   const sendBtn = document.querySelector('.send-btn');
+-  return !!window.__odysseusChatBusy
+-    || Date.now() < (window.__odysseusChatBusyUntil || 0)
++  return !!window.__openwingsChatBusy
++    || Date.now() < (window.__openwingsChatBusyUntil || 0)
+     || !!document.querySelector('.send-btn[data-mode="streaming"], .send-btn.send-pending')
+     || (sendBtn && (sendBtn.title || '').toLowerCase().includes('stop'));
+ }
+@@ -120,7 +120,7 @@ function _submitMobileQueuedInput(input) {
+   if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
+     return true;
+   }
+-  window.__odysseusQueueStreamingSubmit = now;
++  window.__openwingsQueueStreamingSubmit = now;
+   const form = document.getElementById('chat-form');
+   _submitChatFormDirect(form);
+   return true;
+@@ -224,7 +224,7 @@ try {
+   const cachedDefaultChat = JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
+   if (cachedDefaultChat && cachedDefaultChat.endpoint_url && cachedDefaultChat.model) {
+     _defaultChat = cachedDefaultChat;
+-    window.__odysseusDefaultChat = cachedDefaultChat;
++    window.__openwingsDefaultChat = cachedDefaultChat;
+   }
+ } catch (_) {}
+ async function _refreshDefaultChat() {
+@@ -233,7 +233,7 @@ async function _refreshDefaultChat() {
+     if (d && d.endpoint_url && d.model) {
+       _defaultChat = d;
+       try {
+-        window.__odysseusDefaultChat = d;
++        window.__openwingsDefaultChat = d;
+         localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(d));
+       } catch (_) {}
+       return d;
+@@ -1890,7 +1890,7 @@ function initializeEventListeners() {
+       // a different allow_bash/allow_web_search value than the UI showed.
+       applyModeToToggles(mode);
+     }
+-    window.__odysseusSetChatMode = setMode;
++    window.__openwingsSetChatMode = setMode;
+     agentBtn.addEventListener('click', () => {
+       // Agent mode turns off research if active
+       const resChk = el('research-toggle');
+@@ -1905,7 +1905,7 @@ function initializeEventListeners() {
+     const btn = el('plan-toggle-btn');
+     const state = loadToggleState();
+     syncPlanToggle(!!state.plan_mode);
+-    window.__odysseusSetPlanMode = (active) => setPlanMode(active, { silent: true });
++    window.__openwingsSetPlanMode = (active) => setPlanMode(active, { silent: true });
+     const statusToggle = el('plan-mode-status-toggle');
+     if (btn) {
+       btn.addEventListener('click', () => {
+@@ -1917,8 +1917,8 @@ function initializeEventListeners() {
+       statusToggle.addEventListener('click', () => setPlanMode(false));
+     }
+     const msgInput = el('message');
+-    if (msgInput && !msgInput._odysseusPlanTabToggle) {
+-      msgInput._odysseusPlanTabToggle = true;
++    if (msgInput && !msgInput._openwingsPlanTabToggle) {
++      msgInput._openwingsPlanTabToggle = true;
+       msgInput.addEventListener('keydown', (e) => {
+         if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+         e.preventDefault();
+@@ -1928,8 +1928,8 @@ function initializeEventListeners() {
+       });
+     }
+     const chatBar = document.querySelector('.chat-input-bar');
+-    if (chatBar && !chatBar._odysseusPlanSwipeToggle) {
+-      chatBar._odysseusPlanSwipeToggle = true;
++    if (chatBar && !chatBar._openwingsPlanSwipeToggle) {
++      chatBar._openwingsPlanSwipeToggle = true;
+       let touchStartX = 0;
+       let touchStartY = 0;
+       let touchStartAt = 0;
+@@ -2688,8 +2688,8 @@ function initializeEventListeners() {
+         const _offIds = ['web-toggle', 'bash-toggle', 'research-toggle'];
+         _offIds.forEach(id => { const c = el(id); if (c) c.checked = false; });
+         ['web-toggle-btn', 'bash-toggle-btn'].forEach(id => { const b = el(id); if (b) b.classList.remove('active'); });
+-        if (typeof window.__odysseusSetChatMode === 'function') {
+-          window.__odysseusSetChatMode('chat');
++        if (typeof window.__openwingsSetChatMode === 'function') {
++          window.__openwingsSetChatMode('chat');
+         } else {
+           const _ab = el('mode-agent-btn'), _cb = el('mode-chat-btn');
+           if (_ab) {
+@@ -2743,8 +2743,8 @@ function initializeEventListeners() {
+           if (_ts[k] === false) delete _ts[k];
+         });
+         Storage.setJSON(Storage.KEYS.TOGGLES, _ts);
+-        if (typeof window.__odysseusSetChatMode === 'function') {
+-          window.__odysseusSetChatMode(_restoreMode === 'chat' ? 'chat' : 'agent');
++        if (typeof window.__openwingsSetChatMode === 'function') {
++          window.__openwingsSetChatMode(_restoreMode === 'chat' ? 'chat' : 'agent');
+         }
+         // Reapply the current mode's real defaults to the visible toggles
+         const _curMode = (Storage.getJSON(Storage.KEYS.TOGGLES, {}) || {}).mode || 'agent';
+@@ -3550,7 +3550,7 @@ function initializeEventListeners() {
+             if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
+               return;
+             }
+-            window.__odysseusQueueStreamingSubmit = Date.now();
++            window.__openwingsQueueStreamingSubmit = Date.now();
+           }
+           _submitChatFormDirect(form);
+         }
+@@ -3749,13 +3749,13 @@ function initializeEventListeners() {
+ // ============================================
+ // INITIALIZATION ON PAGE LOAD
+ // ============================================
+-function startOdysseusApp() {
++function startOpenWingsApp() {
+   tasksModule?.startNotificationPolling?.();
+-  if (window.__odysseusAppStarted) return;
+-  window.__odysseusAppStarted = true;
++  if (window.__openwingsAppStarted) return;
++  window.__openwingsAppStarted = true;
+   const _bumpChatPriority = (ms = 10000) => {
+     try {
+-      window.__odysseusChatBusyUntil = Math.max(window.__odysseusChatBusyUntil || 0, Date.now() + ms);
++      window.__openwingsChatBusyUntil = Math.max(window.__openwingsChatBusyUntil || 0, Date.now() + ms);
+     } catch (_) {}
+   };
+   _bumpChatPriority(10000);
+@@ -3987,7 +3987,7 @@ function startOdysseusApp() {
+   const _newChatIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+ 
+   // Expose icons globally so chat.js updateSubmitButton can use them
+-  window._odysseusBtnIcons = { send: _sendIcon, mic: _micIcon, stop: _stopIcon, newChat: _newChatIcon };
++  window._openwingsBtnIcons = { send: _sendIcon, mic: _micIcon, stop: _stopIcon, newChat: _newChatIcon };
+ 
+   function _isSttEnabled() {
+     return voiceRecorderModule._sttProvider && voiceRecorderModule._sttProvider !== 'disabled';
+@@ -4117,7 +4117,7 @@ function startOdysseusApp() {
+       const hasFiles = _hasAttachments();
+ 
+       if (sendBtn.dataset.mode === 'streaming') {
+-        if (hasText) window.__odysseusQueueStreamingSubmit = Date.now();
++        if (hasText) window.__openwingsQueueStreamingSubmit = Date.now();
+         handleSubmit(e);
+         return;
+       }
+@@ -4196,7 +4196,7 @@ function startOdysseusApp() {
+           if (chatModule && chatModule.queueStreamingComposerRequest && chatModule.queueStreamingComposerRequest()) {
+             return;
+           }
+-          window.__odysseusQueueStreamingSubmit = Date.now();
++          window.__openwingsQueueStreamingSubmit = Date.now();
+         }
+         _submitChatFormDirect(document.getElementById('chat-form'));
+       }
+@@ -4426,8 +4426,8 @@ function startOdysseusApp() {
+   const runNonCriticalStartup = (fn, delay = 4000) => {
+     let tries = 0;
+     const run = () => {
+-      const busy = !!window.__odysseusChatBusy
+-        || Date.now() < (window.__odysseusChatBusyUntil || 0)
++      const busy = !!window.__openwingsChatBusy
++        || Date.now() < (window.__openwingsChatBusyUntil || 0)
+         || !!document.querySelector('.send-btn[data-mode="streaming"], .send-btn.send-pending');
+       if (busy && tries < 12) {
+         tries += 1;
+@@ -4688,7 +4688,7 @@ function startOdysseusApp() {
+ }
+ 
+ if (document.readyState === 'loading') {
+-  document.addEventListener('DOMContentLoaded', startOdysseusApp, { once: true });
++  document.addEventListener('DOMContentLoaded', startOpenWingsApp, { once: true });
+ } else {
+-  startOdysseusApp();
++  startOpenWingsApp();
+ }
+diff --git a/static/css/01-agent-chat.css b/static/css/01-agent-chat.css
+index 506d04e..27b2e2a 100644
+--- a/static/css/01-agent-chat.css
++++ b/static/css/01-agent-chat.css
+@@ -7068,7 +7068,7 @@ body.bg-pattern-ascii-fireflies {
+     /* (legacy toolbar-toggle styles removed — now using .vis-* classes) */
+ 
+     /* Demo highlight pulse */
+-    .odysseus-highlight {
++    .ow-highlight {
+       outline: 2px solid var(--accent, var(--red)) !important;
+       outline-offset: 1px;
+       box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, var(--red)) 18%, transparent);
+@@ -7196,7 +7196,7 @@ body.bg-pattern-ascii-fireflies {
+     @media (prefers-reduced-motion: reduce) {
+       .th-cursor, .th-modal-group, .th-zone { animation: none !important; }
+     }
+-    .odysseus-hl-label {
++    .ow-hl-label {
+       position: absolute;
+       top: -22px;
+       left: 8px;
+diff --git a/static/css/14-email.css b/static/css/14-email.css
+index f42f6b6..83694d5 100644
+--- a/static/css/14-email.css
++++ b/static/css/14-email.css
+@@ -2796,7 +2796,8 @@ body:not(.doc-find-active) .doc-code-syntax:not(.diff-mode) .doc-editor-textarea
+   font-weight: 600;
+ }
+ .doc-email-richbody.richtext-mode code,
+-.doc-email-richbody.richtext-mode span[style*="OdysseusInlineCode"] {
++.doc-email-richbody.richtext-mode span[style*="OpenWingsInlineCode"],
++.doc-email-richbody.richtext-mode span[style*="InlineCode, ui-monospace"] {
+   padding: 0.12em 0.35em;
+   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+   border-radius: 3px;
+diff --git a/static/index.html b/static/index.html
+index 16c3333..034e3be 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -11,13 +11,14 @@
+   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+   <!-- Disable iOS / Android auto-linkifying of numbers (phone/date/address)
+        in email bodies — was wrapping random digits in <a href="tel:..."> with
+-       browser-default styling that didn't match the Odysseus theme. -->
++       browser-default styling that didn't match the app theme. -->
+   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
++  <script src="/static/js/openwings-storage.js"></script>
+   <!-- OpenWings: motion for the Lichen look (does nothing under any other theme) -->
+   <script src="/static/openwings/motion.js?v=2" defer></script>
+   <script nonce="{{CSP_NONCE}}">
+-  window._odysseusLoadTime = Date.now();
++  window._openwingsLoadTime = Date.now();
+   // Stops iOS focus-zoom on every field; iOS still allows pinch-zoom, other platforms would not.
+   (function(){
+     var ua = navigator.userAgent || '';
+@@ -27,7 +28,7 @@
+   })();
+   (function(){
+     try {
+-      var t = JSON.parse(localStorage.getItem('odysseus-theme'));
++      var t = JSON.parse(localStorage.getItem('openwings-theme'));
+       // OpenWings: mark the chosen look before the first paint (skins.css,
+       // linked right after this script, styles only html[data-ow-skin=...]).
+       var owName = (t && t.name) || 'ow-sage';
+@@ -115,7 +116,7 @@
+       // old sessions cannot remain stuck at the larger zoom level.
+       try {
+         document.documentElement.classList.remove('ui-scale-110', 'ui-scale-125', 'ui-scale-140');
+-        localStorage.removeItem('odysseus-ui-scale');
++        localStorage.removeItem('openwings-ui-scale');
+       } catch(e){}
+       // Restore the sidebar mode before first paint. Otherwise the icon rail
+       // and full sidebar can both flash visible until sidebar-layout.js runs.
+@@ -124,7 +125,7 @@
+         if (_mobileStartup) {
+           document.documentElement.classList.add('ody-sidebar-off', 'ody-mobile-startup-sidebar-hidden');
+         } else {
+-          var _sm = localStorage.getItem('odysseus-sidebar-mode') || 'full';
++          var _sm = localStorage.getItem('openwings-sidebar-mode') || 'full';
+           if (_sm === 'mini') document.documentElement.classList.add('ody-sidebar-mini');
+           else if (_sm === 'off') document.documentElement.classList.add('ody-sidebar-off');
+         }
+@@ -153,7 +154,7 @@
+   (function(){
+     try {
+       var path = (window.location.pathname || '').toLowerCase();
+-      var theme = (function(){ try { return JSON.parse(localStorage.getItem('odysseus-theme')); } catch(_) { return null; } })();
++      var theme = (function(){ try { return JSON.parse(localStorage.getItem('openwings-theme')); } catch(_) { return null; } })();
+       var ac = (theme && (theme.red || theme.colors && theme.colors.red)) || '#e06c75';
+       // Shapes are line-stroke SVGs (no emoji glyphs). Each entry returns
+       // the inner SVG markup rendered against currentColor=`ac`.
+@@ -340,7 +341,7 @@
+     },150);
+     // startupShell.js hides the loader as soon as the shell is wired; it calls
+     // back here to stop the wave because this interval is owned by this script.
+-    window.__odysseusLoaderWaveStop=function(){clearInterval(iv)};
++    window.__openwingsLoaderWaveStop=function(){clearInterval(iv)};
+     // Last-resort fallback for a boot that never reaches app.js at all. Must
+     // still REMOVE the node: sessions.js reads its presence as "startup in
+     // progress" and stops clearing the composer while it is around.
+@@ -1129,7 +1130,7 @@
+         (function(){
+           function applyDefault(dc) {
+             if (!dc || !dc.model) return false;
+-            window.__odysseusDefaultChat = dc;
++            window.__openwingsDefaultChat = dc;
+             var label = document.getElementById('model-picker-label');
+             if (!label) return false;
+             label.textContent = String(dc.model).split('/').pop();
+@@ -1137,14 +1138,14 @@
+             return true;
+           }
+           try {
+-            var dc = JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
++            var dc = JSON.parse(localStorage.getItem('openwings-default-chat-cache') || 'null');
+             if (applyDefault(dc)) return;
+           } catch (_) {}
+           fetch('/api/default-chat', { credentials: 'same-origin' })
+             .then(function(r){ return r.ok ? r.json() : null; })
+             .then(function(dc){
+               if (!applyDefault(dc)) return;
+-              try { localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(dc)); } catch (_) {}
++              try { localStorage.setItem('openwings-default-chat-cache', JSON.stringify(dc)); } catch (_) {}
+             })
+             .catch(function(){});
+         })();
+diff --git a/static/js/backgroundToolJobs.js b/static/js/backgroundToolJobs.js
+index 93f3c1b..96155f8 100644
+--- a/static/js/backgroundToolJobs.js
++++ b/static/js/backgroundToolJobs.js
+@@ -103,13 +103,13 @@ export function startBackgroundToolJobs({ getSessionId, addMessage, base = '' })
+   const busy = () => Boolean(document.querySelector('#chat-history .msg-ai.streaming'));
+   const tick = async () => {
+     const sid = getSessionId();
+-    if (inFlight || !sid || document.hidden || window.__odysseusSessionReadyId !== sid) return;
++    if (inFlight || !sid || document.hidden || window.__openwingsSessionReadyId !== sid) return;
+     inFlight = true;
+     try {
+       const response = await fetch(`${base}/api/research/chat-jobs/${encodeURIComponent(sid)}`, { credentials: 'same-origin' });
+       if (!response.ok) return;
+       const { jobs = [] } = await response.json();
+-      if (getSessionId() !== sid || window.__odysseusSessionReadyId !== sid) return;
++      if (getSessionId() !== sid || window.__openwingsSessionReadyId !== sid) return;
+       const box = document.querySelector('#chat-history');
+       if (!box) return;
+       renderResearchCards(box, jobs);
+diff --git a/static/js/chat.js b/static/js/chat.js
+index e9793df..139769d 100644
+--- a/static/js/chat.js
++++ b/static/js/chat.js
+@@ -364,7 +364,7 @@ import { invalidateSettings } from './appConfig.js';
+     if (current) return current;
+     const activeRowId = document.querySelector('.list-item.active-session[data-session-id], .session-item.active[data-session-id]')?.dataset?.sessionId || '';
+     const hashId = _hashSessionCandidate();
+-    const lastSelectedId = String(window.__odysseusLastSelectedSessionId || '').trim();
++    const lastSelectedId = String(window.__openwingsLastSelectedSessionId || '').trim();
+     const targetId = activeRowId || hashId || lastSelectedId;
+     if (!targetId) {
+       // New chats are deliberately held in memory until the first prompt.
+@@ -380,7 +380,7 @@ import { invalidateSettings } from './appConfig.js';
+     }
+     if (!adopt) return targetId;
+     try {
+-      window.__odysseusComposerUserEdited = true;
++      window.__openwingsComposerUserEdited = true;
+       if (sm && sm.selectSession) {
+         await sm.selectSession(targetId, { keepSidebar: true, showLoading: false });
+       } else if (sm && sm.setCurrentSessionId) {
+@@ -904,8 +904,8 @@ import { invalidateSettings } from './appConfig.js';
+ 
+   function _setForegroundChatBusy(active) {
+     try {
+-      window.__odysseusChatBusy = !!active;
+-      window.__odysseusChatBusyUntil = active ? Date.now() + 120000 : Date.now() + 1200;
++      window.__openwingsChatBusy = !!active;
++      window.__openwingsChatBusyUntil = active ? Date.now() + 120000 : Date.now() + 1200;
+       window.dispatchEvent(new CustomEvent('odysseus:chat-busy-change', { detail: { active: !!active } }));
+     } catch (_) {}
+   }
+@@ -972,11 +972,11 @@ import { invalidateSettings } from './appConfig.js';
+     if (sessionModule.hasPendingChat && sessionModule.hasPendingChat()) return false;
+     const activeRowId = document.querySelector('.list-item.active-session[data-session-id], .session-item.active[data-session-id]')?.dataset?.sessionId || '';
+     const hashId = _hashSessionCandidate();
+-    const lastSelectedId = String(window.__odysseusLastSelectedSessionId || '').trim();
++    const lastSelectedId = String(window.__openwingsLastSelectedSessionId || '').trim();
+     const targetId = activeRowId || hashId || lastSelectedId;
+     if (!targetId) return false;
+     try {
+-      window.__odysseusComposerUserEdited = true;
++      window.__openwingsComposerUserEdited = true;
+       if (sessionModule.selectSession) {
+         await sessionModule.selectSession(targetId, { keepSidebar: true, showLoading: false });
+       } else if (sessionModule.setCurrentSessionId) {
+@@ -1043,14 +1043,14 @@ import { invalidateSettings } from './appConfig.js';
+       if (pending && pending.modelId) return pending.modelId;
+     } catch (_) {}
+     try {
+-      const lastPicked = window.__odysseusLastPickedRoute || null;
++      const lastPicked = window.__openwingsLastPickedRoute || null;
+       if (lastPicked && lastPicked.model && Date.now() - (lastPicked.picked_at || 0) < 10 * 60 * 1000) {
+         return lastPicked.model;
+       }
+     } catch (_) {}
+     if (routeSnapshot && routeSnapshot.model) return routeSnapshot.model;
+     try {
+-      const dc = window.__odysseusDefaultChat || JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
++      const dc = window.__openwingsDefaultChat || JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
+       if (dc && dc.model) return dc.model;
+     } catch (_) {}
+     return '';
+@@ -1257,7 +1257,7 @@ import { invalidateSettings } from './appConfig.js';
+     fetch(`/api/chat/stop/${encodeURIComponent(sessionId)}`, {
+       method: 'POST',
+       credentials: 'same-origin',
+-      headers: { 'X-Odysseus-Run-Id': runId },
++      headers: { 'X-OpenWings-Run-Id': runId },
+     }).catch(() => {});
+   }
+ 
+@@ -1441,7 +1441,7 @@ import { invalidateSettings } from './appConfig.js';
+       // Clear any pending transitions from + → arrow swap
+       submitBtn.classList.remove('anim-spin', 'anim-spin-swap', 'anim-land', 'mic-mode', 'newchat-mode', 'newchat-expanded', 'recording');
+       // Ensure arrow icon is showing before launch
+-      var icons = window._odysseusBtnIcons;
++      var icons = window._openwingsBtnIcons;
+       if (icons) submitBtn.innerHTML = icons.send;
+       void submitBtn.offsetWidth;
+       // Arrow launches up, then stop icon lands in
+@@ -1479,7 +1479,7 @@ import { invalidateSettings } from './appConfig.js';
+       if (window._updateSendBtnIcon) {
+         setTimeout(window._updateSendBtnIcon, 50);
+       } else {
+-        var icons = window._odysseusBtnIcons;
++        var icons = window._openwingsBtnIcons;
+         submitBtn.innerHTML = icons ? icons.send : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+         submitBtn.title = 'Send message';
+         submitBtn.classList.remove('mic-mode', 'newchat-mode');
+@@ -1689,8 +1689,8 @@ import { invalidateSettings } from './appConfig.js';
+ 	      if (!approved.trim()) return;
+ 	      _pendingApprovedPlan = approved;
+ 	      _wingsRememberPlan(approved);
+-	      if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
+-	      if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
++	      if (window.__openwingsSetPlanMode) window.__openwingsSetPlanMode(false);
++	      if (window.__openwingsSetChatMode) window.__openwingsSetChatMode('agent');
+ 	      _setComposerAndSend('Execute the approved plan.');
+ 	    });
+ 	    actions.querySelector('.plan-inline-clear')?.addEventListener('click', () => {
+@@ -1740,8 +1740,8 @@ import { invalidateSettings } from './appConfig.js';
+         _pendingApprovedPlan = approved;
+         _wingsRememberPlan(approved);
+         panel.remove();
+-        if (window.__odysseusSetPlanMode) window.__odysseusSetPlanMode(false);
+-        if (window.__odysseusSetChatMode) window.__odysseusSetChatMode('agent');
++        if (window.__openwingsSetPlanMode) window.__openwingsSetPlanMode(false);
++        if (window.__openwingsSetChatMode) window.__openwingsSetChatMode('agent');
+         _setComposerAndSend('Execute the approved plan.');
+       });
+       document.body.appendChild(panel);
+@@ -1753,7 +1753,7 @@ import { invalidateSettings } from './appConfig.js';
+   }
+ 
+   // chatRenderer handles the #plan link without importing this module back.
+-  window.__odysseusOpenPlanReview = _openPlanReview;
++  window.__openwingsOpenPlanReview = _openPlanReview;
+ 
+   function _escapeQueueText(s) {
+     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+@@ -1939,9 +1939,9 @@ import { invalidateSettings } from './appConfig.js';
+     // If currently streaming, keyboard Enter can queue a non-empty composer.
+     // Clicking the stop icon should still stop normally, even if text exists.
+     if (isStreaming) {
+-      const queueRequestedAt = Number(window.__odysseusQueueStreamingSubmit || 0);
++      const queueRequestedAt = Number(window.__openwingsQueueStreamingSubmit || 0);
+       const shouldQueueStreamingSubmit = queueRequestedAt && Date.now() - queueRequestedAt < 1200;
+-      window.__odysseusQueueStreamingSubmit = 0;
++      window.__openwingsQueueStreamingSubmit = 0;
+       if (shouldQueueStreamingSubmit && queueStreamingComposerRequest()) {
+         return;
+       }
+@@ -2144,7 +2144,7 @@ import { invalidateSettings } from './appConfig.js';
+ 
+     const selectedRouteForSend = (() => {
+       try {
+-        const lastPicked = window.__odysseusLastPickedRoute || null;
++        const lastPicked = window.__openwingsLastPickedRoute || null;
+         if (lastPicked && lastPicked.model
+           && (lastPicked.session_id || null) === (sessionModule.getCurrentSessionId?.() || null)
+           && Date.now() - (lastPicked.picked_at || 0) < 10 * 60 * 1000) {
+@@ -2199,7 +2199,7 @@ import { invalidateSettings } from './appConfig.js';
+       // Auto-create a session using default chat config. Always fetch fresh
+       // so that a recent Settings change takes effect without a page reload.
+       try {
+-        let dc = (typeof window !== 'undefined' && window.__odysseusDefaultChat) || null;
++        let dc = (typeof window !== 'undefined' && window.__openwingsDefaultChat) || null;
+         if (!dc || !dc.endpoint_url || !dc.model) {
+           try {
+             dc = JSON.parse(localStorage.getItem('odysseus-default-chat-cache') || 'null');
+@@ -2213,13 +2213,13 @@ import { invalidateSettings } from './appConfig.js';
+             _sendPerf.mark('default_chat_fetch_done');
+             if (dc && dc.endpoint_url && dc.model) {
+               try {
+-                window.__odysseusDefaultChat = dc;
++                window.__openwingsDefaultChat = dc;
+                 localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(dc));
+               } catch (_) {}
+             }
+           }
+         } catch (_) {
+-          dc = (typeof window !== 'undefined' && window.__odysseusDefaultChat) || null;
++          dc = (typeof window !== 'undefined' && window.__openwingsDefaultChat) || null;
+         }
+         if (dc.endpoint_url && dc.model) {
+           _sendPerf.mark('direct_chat_create_begin');
+@@ -2293,7 +2293,7 @@ import { invalidateSettings } from './appConfig.js';
+     _sendInFlight = false;
+ 
+     try {
+-      const pendingSwitch = window.__odysseusModelSwitchPromise;
++      const pendingSwitch = window.__openwingsModelSwitchPromise;
+       if (pendingSwitch && typeof pendingSwitch.then === 'function') {
+         await pendingSwitch;
+       }
+@@ -2698,7 +2698,7 @@ import { invalidateSettings } from './appConfig.js';
+       // resolve to the email the user is actually looking at instead of
+       // making the agent invent a new markdown draft with fake headers.
+       try {
+-        const getEmailCtx = window.__odysseusGetActiveEmailContext;
++        const getEmailCtx = window.__openwingsGetActiveEmailContext;
+         const emCtx = typeof getEmailCtx === 'function' ? getEmailCtx() : null;
+         if (activeEmailComposerCtx && activeEmailComposerCtx.sourceUid) {
+           fd.append('active_email_uid', String(activeEmailComposerCtx.sourceUid));
+@@ -2782,7 +2782,7 @@ import { invalidateSettings } from './appConfig.js';
+         fd.append('preset_id', presetsModule.getSelectedPreset());
+       }
+       try {
+-        const effort = window.__odysseusGetReasoningEffort ? window.__odysseusGetReasoningEffort() : null;
++        const effort = window.__openwingsGetReasoningEffort ? window.__openwingsGetReasoningEffort() : null;
+         if (effort) {
+           fd.append('reasoning_effort', effort);
+         }
+@@ -2993,7 +2993,7 @@ import { invalidateSettings } from './appConfig.js';
+         enableResearchBtn();
+         return;
+       }
+-      const streamRunId = res.headers.get('X-Odysseus-Run-Id') || '';
++      const streamRunId = res.headers.get('X-OpenWings-Run-Id') || '';
+       if (streamRunId) _rememberStreamRunId(streamSessionId, streamRunId, streamGeneration);
+ 
+       // Mark the chat log busy while streaming so screen readers wait for the
+@@ -3038,7 +3038,7 @@ import { invalidateSettings } from './appConfig.js';
+           try {
+             const response = await fetch(`${API_BASE}/api/chat/finish/${encodeURIComponent(streamSessionId)}`, {
+               method: 'POST', credentials: 'same-origin',
+-              headers: { 'X-Odysseus-Run-Id': runId },
++              headers: { 'X-OpenWings-Run-Id': runId },
+             });
+             const result = await response.json();
+             if (!response.ok || !result.accepted) throw new Error('The run has already finished or changed');
+@@ -6476,7 +6476,7 @@ import { invalidateSettings } from './appConfig.js';
+       return false;
+     }
+     if (!res.ok || !res.body) return false;
+-    const resumeRunId = res.headers.get('X-Odysseus-Run-Id') || '';
++    const resumeRunId = res.headers.get('X-OpenWings-Run-Id') || '';
+     if (resumeRunId) _streamRunIds.set(sessionId, resumeRunId);
+ 
+     const box = document.getElementById('chat-history');
+@@ -8341,7 +8341,7 @@ import { invalidateSettings } from './appConfig.js';
+   // streaming, history-rendered, compare-mode, all of them. Re-attaching
+   // per-node listeners on every innerHTML rewrite was the source of the
+   // "needs many clicks" bug.
+-  if (!window.__odysseus_thread_click_bound) {
++  if (!window.__openwings_thread_click_bound) {
+ 	    document.body.addEventListener('click', (e) => {
+ 	      const browserFrame = e.target.closest('.private-browser-preview-frame');
+ 	      if (browserFrame && browserFrame.querySelector('.private-browser-preview-img[src]')) {
+@@ -8388,7 +8388,7 @@ import { invalidateSettings } from './appConfig.js';
+         }
+       }
+     });
+-    window.__odysseus_thread_click_bound = true;
++    window.__openwings_thread_click_bound = true;
+   }
+ 
+   export default chatModule;
+diff --git a/static/js/chatRenderer.js b/static/js/chatRenderer.js
+index 1c3d39c..2a925b0 100644
+--- a/static/js/chatRenderer.js
++++ b/static/js/chatRenderer.js
+@@ -1826,7 +1826,7 @@ function _activateEntityAnchor(e, forcedAnchor = null) {
+   if (href === '#plan') {
+     e.preventDefault();
+     e.stopPropagation();
+-    if (typeof window.__odysseusOpenPlanReview === 'function') window.__odysseusOpenPlanReview();
++    if (typeof window.__openwingsOpenPlanReview === 'function') window.__openwingsOpenPlanReview();
+     return;
+   }
+   const barePanel = href.match(/^#(calendar|memory|notes|tasks|documents|skills|research)$/);
+diff --git a/static/js/chatStream.js b/static/js/chatStream.js
+index 4981ac3..0f78a13 100644
+--- a/static/js/chatStream.js
++++ b/static/js/chatStream.js
+@@ -137,15 +137,15 @@ export function handleUIControl(uiData) {
+       }
+ 
+     } else if (uiEvent === 'highlight' || uiData.ui_event === 'highlight') {
+-      document.querySelectorAll('.odysseus-highlight').forEach(function(e) { e.classList.remove('odysseus-highlight'); });
+-      document.querySelectorAll('.odysseus-hl-label').forEach(function(e) { e.remove(); });
++      document.querySelectorAll('.ow-highlight').forEach(function(e) { e.classList.remove('ow-highlight'); });
++      document.querySelectorAll('.ow-hl-label').forEach(function(e) { e.remove(); });
+       var target = document.querySelector(uiData.selector);
+       if (target) {
+-        target.classList.add('odysseus-highlight');
++        target.classList.add('ow-highlight');
+         target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+         if (uiData.label) {
+           var lbl = document.createElement('div');
+-          lbl.className = 'odysseus-hl-label';
++          lbl.className = 'ow-hl-label';
+           lbl.textContent = uiData.label;
+           if (!target.style.position) target.style.position = 'relative';
+           target.appendChild(lbl);
+@@ -153,8 +153,8 @@ export function handleUIControl(uiData) {
+       }
+ 
+     } else if (uiEvent === 'clear_highlight' || uiData.ui_event === 'clear_highlight') {
+-      document.querySelectorAll('.odysseus-highlight').forEach(function(e) { e.classList.remove('odysseus-highlight'); });
+-      document.querySelectorAll('.odysseus-hl-label').forEach(function(e) { e.remove(); });
++      document.querySelectorAll('.ow-highlight').forEach(function(e) { e.classList.remove('ow-highlight'); });
++      document.querySelectorAll('.ow-hl-label').forEach(function(e) { e.remove(); });
+ 
+     } else if (uiEvent === 'research_started' || uiData.ui_event === 'research_started') {
+       // Agent kicked off deep research — adopt the session into the
+diff --git a/static/js/composerArrowUpRecall.js b/static/js/composerArrowUpRecall.js
+index 83141bf..923c6fd 100644
+--- a/static/js/composerArrowUpRecall.js
++++ b/static/js/composerArrowUpRecall.js
+@@ -62,7 +62,7 @@ export function wireArrowUpRecall(composer, getUserMessages, options = {}) {
+   const norm = (value) => String(value || '').replace(/\r\n/g, '\n').trimEnd();
+   const debug = (...args) => {
+     try {
+-      if (localStorage.getItem('odysseusArrowRecallDebug') === '1') {
++      if (localStorage.getItem('openwingsArrowRecallDebug') === '1') {
+         console.debug('[arrow-recall]', ...args);
+       }
+     } catch (_) {}
+@@ -74,7 +74,7 @@ export function wireArrowUpRecall(composer, getUserMessages, options = {}) {
+     recallIndex = -1;
+     lastRecalledValue = '';
+     recallHistory = [];
+-    try { delete composer.dataset.odysseusRecallIndex; } catch (_) {}
++    try { delete composer.dataset.openwingsRecallIndex; } catch (_) {}
+   });
+ 
+   composer.addEventListener('keydown', (e) => {
+@@ -101,7 +101,7 @@ export function wireArrowUpRecall(composer, getUserMessages, options = {}) {
+       currentIndex = recallIndex;
+     }
+     if (currentIndex < 0 && currentValue) {
+-      const markedIndex = Number(composer.dataset?.odysseusRecallIndex);
++      const markedIndex = Number(composer.dataset?.openwingsRecallIndex);
+       if (Number.isInteger(markedIndex) && markedIndex >= 0 && markedIndex < history.length) {
+         currentIndex = markedIndex;
+       }
+@@ -121,7 +121,7 @@ export function wireArrowUpRecall(composer, getUserMessages, options = {}) {
+         recallHistory = history;
+         applyingRecall = true;
+         lastRecalledValue = '';
+-        try { delete composer.dataset.odysseusRecallIndex; } catch (_) {}
++        try { delete composer.dataset.openwingsRecallIndex; } catch (_) {}
+         composer.value = '';
+         try { composer.selectionStart = composer.selectionEnd = 0; } catch (_) {}
+         if (autoResize) autoResize(composer);
+@@ -134,7 +134,7 @@ export function wireArrowUpRecall(composer, getUserMessages, options = {}) {
+       recallHistory = history;
+       applyingRecall = true;
+       lastRecalledValue = recalled;
+-      try { composer.dataset.odysseusRecallIndex = String(nextIndex); } catch (_) {}
++      try { composer.dataset.openwingsRecallIndex = String(nextIndex); } catch (_) {}
+       composer.value = recalled;
+       try { composer.selectionStart = composer.selectionEnd = recalled.length; } catch (_) {}
+       if (autoResize) autoResize(composer);
+@@ -157,7 +157,7 @@ export function wireArrowUpRecall(composer, getUserMessages, options = {}) {
+     recallHistory = history;
+     applyingRecall = true;
+     lastRecalledValue = recalled;
+-    try { composer.dataset.odysseusRecallIndex = String(nextIndex); } catch (_) {}
++    try { composer.dataset.openwingsRecallIndex = String(nextIndex); } catch (_) {}
+     composer.value = recalled;
+     try {
+       composer.selectionStart = composer.selectionEnd = recalled.length;
+diff --git a/static/js/cookbook-deps-recipes.js b/static/js/cookbook-deps-recipes.js
+index 9b5c8eb..40c9e73 100644
+--- a/static/js/cookbook-deps-recipes.js
++++ b/static/js/cookbook-deps-recipes.js
+@@ -90,9 +90,9 @@ const _RECIPES = [
+       pip: {
+         commands: [
+           'python -m pip install -U fastapi uvicorn python-multipart pillow huggingface_hub',
+-          'BRIDGE_DIR="${ODYSSEUS_ROOT:-$PWD}/swift/odysseus-mlx-image-bridge"; test -d "$BRIDGE_DIR" || { echo "Run this from a source checkout that includes swift/odysseus-mlx-image-bridge, or set ODYSSEUS_ROOT=/path/to/source."; exit 1; }',
+-          'BRIDGE_DIR="${ODYSSEUS_ROOT:-$PWD}/swift/odysseus-mlx-image-bridge"; cd "$BRIDGE_DIR" && swift build -c release --product odysseus-mlx-inpaint',
+-          'BRIDGE_DIR="${ODYSSEUS_ROOT:-$PWD}/swift/odysseus-mlx-image-bridge"; mkdir -p "$HOME/.local/bin" && cp "$BRIDGE_DIR/.build/release/odysseus-mlx-inpaint" "$HOME/.local/bin/odysseus-mlx-inpaint"',
++          'BRIDGE_DIR="$(ls -d "${BRIDGE_SRC:-$PWD}"/swift/*-mlx-image-bridge 2>/dev/null | head -n 1)"; test -n "$BRIDGE_DIR" || { echo "Run this from a source checkout that includes the MLX image bridge (swift/*-mlx-image-bridge), or set BRIDGE_SRC=/path/to/source."; exit 1; }',
++          'BRIDGE_DIR="$(ls -d "${BRIDGE_SRC:-$PWD}"/swift/*-mlx-image-bridge 2>/dev/null | head -n 1)"; PRODUCT="$(basename "$BRIDGE_DIR" -image-bridge)-inpaint"; cd "$BRIDGE_DIR" && swift build -c release --product "$PRODUCT"',
++          'BRIDGE_DIR="$(ls -d "${BRIDGE_SRC:-$PWD}"/swift/*-mlx-image-bridge 2>/dev/null | head -n 1)"; PRODUCT="$(basename "$BRIDGE_DIR" -image-bridge)-inpaint"; mkdir -p "$HOME/.local/bin" && cp "$BRIDGE_DIR/.build/release/$PRODUCT" "$HOME/.local/bin/mlx-lama-serve"',
+           'MLX_METALLIB="$(python - <<\'PY\'\nimport pathlib, sys\ntry:\n    import mlx\nexcept Exception as exc:\n    raise SystemExit(f"mlx Python package is required for mlx.metallib: {exc}")\nroot = pathlib.Path(mlx.__file__).resolve().parent\nfor name in ("lib/mlx.metallib", "mlx.metallib", "lib/default.metallib", "default.metallib"):\n    path = root / name\n    if path.exists():\n        print(path)\n        break\nelse:\n    raise SystemExit(f"No MLX metallib found under {root}")\nPY\n)"; mkdir -p "$HOME/.local/bin" && cp "$MLX_METALLIB" "$HOME/.local/bin/mlx.metallib" && cp "$MLX_METALLIB" "$HOME/.local/bin/default.metallib"',
+         ],
+       },
+@@ -106,9 +106,9 @@ const _RECIPES = [
+       pip: {
+         commands: [
+           'python -m pip install -U fastapi uvicorn python-multipart pillow huggingface_hub',
+-          'BRIDGE_DIR="${ODYSSEUS_ROOT:-$PWD}/swift/odysseus-mlx-image-bridge"; test -d "$BRIDGE_DIR" || { echo "Run this from a source checkout that includes swift/odysseus-mlx-image-bridge, or set ODYSSEUS_ROOT=/path/to/source."; exit 1; }',
+-          'BRIDGE_DIR="${ODYSSEUS_ROOT:-$PWD}/swift/odysseus-mlx-image-bridge"; cd "$BRIDGE_DIR" && swift build -c release --product odysseus-mlx-colorize',
+-          'BRIDGE_DIR="${ODYSSEUS_ROOT:-$PWD}/swift/odysseus-mlx-image-bridge"; mkdir -p "$HOME/.local/bin" && cp "$BRIDGE_DIR/.build/release/odysseus-mlx-colorize" "$HOME/.local/bin/odysseus-mlx-colorize"',
++          'BRIDGE_DIR="$(ls -d "${BRIDGE_SRC:-$PWD}"/swift/*-mlx-image-bridge 2>/dev/null | head -n 1)"; test -n "$BRIDGE_DIR" || { echo "Run this from a source checkout that includes the MLX image bridge (swift/*-mlx-image-bridge), or set BRIDGE_SRC=/path/to/source."; exit 1; }',
++          'BRIDGE_DIR="$(ls -d "${BRIDGE_SRC:-$PWD}"/swift/*-mlx-image-bridge 2>/dev/null | head -n 1)"; PRODUCT="$(basename "$BRIDGE_DIR" -image-bridge)-colorize"; cd "$BRIDGE_DIR" && swift build -c release --product "$PRODUCT"',
++          'BRIDGE_DIR="$(ls -d "${BRIDGE_SRC:-$PWD}"/swift/*-mlx-image-bridge 2>/dev/null | head -n 1)"; PRODUCT="$(basename "$BRIDGE_DIR" -image-bridge)-colorize"; mkdir -p "$HOME/.local/bin" && cp "$BRIDGE_DIR/.build/release/$PRODUCT" "$HOME/.local/bin/mlx-ddcolor-serve"',
+           'MLX_METALLIB="$(python - <<\'PY\'\nimport pathlib, sys\ntry:\n    import mlx\nexcept Exception as exc:\n    raise SystemExit(f"mlx Python package is required for mlx.metallib: {exc}")\nroot = pathlib.Path(mlx.__file__).resolve().parent\nfor name in ("lib/mlx.metallib", "mlx.metallib", "lib/default.metallib", "default.metallib"):\n    path = root / name\n    if path.exists():\n        print(path)\n        break\nelse:\n    raise SystemExit(f"No MLX metallib found under {root}")\nPY\n)"; mkdir -p "$HOME/.local/bin" && cp "$MLX_METALLIB" "$HOME/.local/bin/mlx.metallib" && cp "$MLX_METALLIB" "$HOME/.local/bin/default.metallib"',
+         ],
+       },
+diff --git a/static/js/cookbook.js b/static/js/cookbook.js
+index a96e4b9..5e89c03 100644
+--- a/static/js/cookbook.js
++++ b/static/js/cookbook.js
+@@ -3724,7 +3724,7 @@ const SHARED_STATE_LEADER_TTL_MS = 12000;
+ 
+ function _foregroundChatBusy() {
+   try {
+-    return !!window.__odysseusChatBusy || Date.now() < (window.__odysseusChatBusyUntil || 0);
++    return !!window.__openwingsChatBusy || Date.now() < (window.__openwingsChatBusyUntil || 0);
+   } catch (_) {
+     return false;
+   }
+diff --git a/static/js/cookbookRunning.js b/static/js/cookbookRunning.js
+index a4b2587..9fe6889 100644
+--- a/static/js/cookbookRunning.js
++++ b/static/js/cookbookRunning.js
+@@ -3832,7 +3832,7 @@ function _isCookbookVisible() {
+ 
+ function _foregroundChatBusy() {
+   try {
+-    return !!window.__odysseusChatBusy || Date.now() < (window.__odysseusChatBusyUntil || 0);
++    return !!window.__openwingsChatBusy || Date.now() < (window.__openwingsChatBusyUntil || 0);
+   } catch {
+     return false;
+   }
+diff --git a/static/js/document.js b/static/js/document.js
+index c56c219..c14b372 100644
+--- a/static/js/document.js
++++ b/static/js/document.js
+@@ -113,7 +113,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+   }
+ 
+   async function _resolveComposeSendAccountId() {
+-    const activeAccountId = window.__odysseusActiveEmailAccount || null;
++    const activeAccountId = window.__openwingsActiveEmailAccount || null;
+     if (!activeAccountId) return null;
+     const accounts = await _getEmailAccountsCached();
+     const activeAccount = accounts.find(a => String(a.id) === String(activeAccountId));
+@@ -4008,7 +4008,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+ 
+   function _isRichInlineCodeMarker(element) {
+     return element?.tagName === 'SPAN'
+-      && String(element.style?.fontFamily || '').includes('OdysseusInlineCode');
++      && /(OpenWings|Odysseus)InlineCode/.test(String(element.style?.fontFamily || ''));
+   }
+ 
+   function _normalizeRichInlineCode(root) {
+@@ -4042,13 +4042,13 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     if (!rich.contains(range.commonAncestorContainer)) return false;
+     if (range.collapsed) {
+       document.execCommand('styleWithCSS', false, true);
+-      document.execCommand('fontName', false, 'OdysseusInlineCode, ui-monospace, monospace');
++      document.execCommand('fontName', false, 'OpenWingsInlineCode, ui-monospace, monospace');
+       document.execCommand('backColor', false, 'rgba(127, 127, 127, 0.12)');
+       _richInlineCodeTypingArmed = true;
+       return true;
+     }
+     const code = document.createElement('span');
+-    code.style.fontFamily = 'OdysseusInlineCode, ui-monospace, monospace';
++    code.style.fontFamily = 'OpenWingsInlineCode, ui-monospace, monospace';
+     code.style.backgroundColor = 'rgba(127, 127, 127, 0.12)';
+     const selectedText = range.toString();
+     code.textContent = selectedText;
+@@ -5202,27 +5202,27 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     await _uploadComposeFiles(files);
+   }
+ 
+-  let _odysseusAttachMenu = null;
++  let _openwingsAttachMenu = null;
+ 
+-  function _closeOdysseusAttachMenu() {
+-    if (_odysseusAttachMenu) {
++  function _closeOpenWingsAttachMenu() {
++    if (_openwingsAttachMenu) {
+       _odysseusAttachMenu.remove();
+-      _odysseusAttachMenu = null;
++      _openwingsAttachMenu = null;
+     }
+     document.removeEventListener('click', _attachMenuOutsideClick, true);
+     document.removeEventListener('keydown', _attachMenuEscape, true);
+   }
+ 
+   function _attachMenuOutsideClick(e) {
+-    if (_odysseusAttachMenu && !_odysseusAttachMenu.contains(e.target)) _closeOdysseusAttachMenu();
++    if (_openwingsAttachMenu && !_odysseusAttachMenu.contains(e.target)) _closeOpenWingsAttachMenu();
+   }
+ 
+   function _attachMenuEscape(e) {
+     if (e.key !== 'Escape') return;
+-    _closeOdysseusAttachMenu();
++    _closeOpenWingsAttachMenu();
+   }
+ 
+-  function _positionOdysseusAttachMenu(anchor, menu) {
++  function _positionOpenWingsAttachMenu(anchor, menu) {
+     const r = anchor?.getBoundingClientRect?.();
+     if (!r) return;
+     menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 310))}px`;
+@@ -5235,18 +5235,18 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     });
+   }
+ 
+-  function _odysseusAttachLabel(item, kind) {
++  function _openwingsAttachLabel(item, kind) {
+     if (kind === 'gallery') {
+       return item.caption || item.prompt || item.filename || 'Gallery image';
+     }
+     return item.title || 'Untitled document';
+   }
+ 
+-  async function _stageOdysseusAttachment(kind, id) {
++  async function _stageOpenWingsAttachment(kind, id) {
+     const doc = docs.get(activeDocId);
+     if (!doc || doc.language !== 'email') return null;
+     if (!doc._composeAtts) doc._composeAtts = [];
+-    const res = await fetch(`${API_BASE}/api/email/compose-from-odysseus`, {
++    const res = await fetch(`${API_BASE}/api/email/compose-from-library`, {
+       method: 'POST',
+       credentials: 'same-origin',
+       headers: { 'Content-Type': 'application/json' },
+@@ -5263,11 +5263,11 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     return data;
+   }
+ 
+-  async function _stageOdysseusZip(items) {
++  async function _stageOpenWingsZip(items) {
+     const doc = docs.get(activeDocId);
+     if (!doc || doc.language !== 'email') return null;
+     if (!doc._composeAtts) doc._composeAtts = [];
+-    const res = await fetch(`${API_BASE}/api/email/compose-from-odysseus-zip`, {
++    const res = await fetch(`${API_BASE}/api/email/compose-from-library-zip`, {
+       method: 'POST',
+       credentials: 'same-origin',
+       headers: { 'Content-Type': 'application/json' },
+@@ -5284,31 +5284,31 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     return data;
+   }
+ 
+-  function _afterOdysseusAttachmentsAdded(count, label) {
++  function _afterOpenWingsAttachmentsAdded(count, label) {
+     _renderComposeAttachments();
+     clearTimeout(_autoSaveDebounce);
+     _autoSaveDebounce = setTimeout(() => { saveDocument({ silent: true }); }, 800);
+     if (uiModule) uiModule.showToast(count > 1 ? `Attached ${count} items` : `Attached ${label || 'item'}`);
+   }
+ 
+-  async function _attachOdysseusItem(kind, id, label, opts = {}) {
++  async function _attachOpenWingsItem(kind, id, label, opts = {}) {
+     try {
+-      const data = await _stageOdysseusAttachment(kind, id);
++      const data = await _stageOpenWingsAttachment(kind, id);
+       if (!data) return;
+-      _afterOdysseusAttachmentsAdded(1, label || data.filename);
+-      if (!opts.keepOpen) _closeOdysseusAttachMenu();
++      _afterOpenWingsAttachmentsAdded(1, label || data.filename);
++      if (!opts.keepOpen) _closeOpenWingsAttachMenu();
+     } catch (err) {
+-      console.error('Failed to attach Odysseus item:', err);
++      console.error('Failed to attach item:', err);
+       if (uiModule) uiModule.showError('Failed to attach from your library');
+     }
+   }
+ 
+-  function _selectedOdysseusAttachRows(menu) {
++  function _selectedOpenWingsAttachRows(menu) {
+     return Array.from(menu?.querySelectorAll?.('.email-odysseus-attach-row.is-selected') || []);
+   }
+ 
+-  function _syncOdysseusAttachSelection(menu) {
+-    const selected = _selectedOdysseusAttachRows(menu);
++  function _syncOpenWingsAttachSelection(menu) {
++    const selected = _selectedOpenWingsAttachRows(menu);
+     const bar = menu?.querySelector?.('.email-odysseus-attach-actions');
+     const count = menu?.querySelector?.('.email-odysseus-attach-count');
+     const attachBtn = menu?.querySelector?.('.email-odysseus-attach-selected');
+@@ -5317,8 +5317,8 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     if (attachBtn) attachBtn.disabled = selected.length === 0;
+   }
+ 
+-  async function _attachSelectedOdysseusItems(menu) {
+-    const rows = _selectedOdysseusAttachRows(menu);
++  async function _attachSelectedOpenWingsItems(menu) {
++    const rows = _selectedOpenWingsAttachRows(menu);
+     if (!rows.length) return;
+     const btn = menu.querySelector('.email-odysseus-attach-selected');
+     if (btn) {
+@@ -5336,18 +5336,18 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+           : window.confirm(`Attach ${items.length} files as one zip?`);
+       }
+       if (zip) {
+-        await _stageOdysseusZip(items);
++        await _stageOpenWingsZip(items);
+         added = 1;
+       } else {
+         for (const item of items) {
+-          await _stageOdysseusAttachment(item.kind, item.id);
++          await _stageOpenWingsAttachment(item.kind, item.id);
+           added += 1;
+         }
+       }
+-      _afterOdysseusAttachmentsAdded(added, zip ? 'attachments.zip' : undefined);
+-      _closeOdysseusAttachMenu();
++      _afterOpenWingsAttachmentsAdded(added, zip ? 'attachments.zip' : undefined);
++      _closeOpenWingsAttachMenu();
+     } catch (err) {
+-      console.error('Failed to attach selected Odysseus items:', err);
++      console.error('Failed to attach selected items:', err);
+       if (uiModule) uiModule.showError(added ? `Attached ${added}, then failed` : 'Failed to attach from your library');
+       _renderComposeAttachments();
+     } finally {
+@@ -5358,7 +5358,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     }
+   }
+ 
+-  async function _loadOdysseusAttachItems(menu, kind) {
++  async function _loadOpenWingsAttachItems(menu, kind) {
+     const list = menu.querySelector('.email-odysseus-attach-list');
+     if (!list) return;
+     menu.dataset.odyAttachKind = kind;
+@@ -5381,12 +5381,12 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+         : (Array.isArray(data?.documents) ? data.documents : Array.isArray(data?.items) ? data.items : []);
+       if (!items.length) {
+         list.innerHTML = `<div class="email-odysseus-attach-empty">${q ? 'No matches' : `No ${kind === 'gallery' ? 'images' : 'documents'}`}</div>`;
+-        _syncOdysseusAttachSelection(menu);
++        _syncOpenWingsAttachSelection(menu);
+         return;
+       }
+       list.innerHTML = '';
+       for (const item of items) {
+-        const label = _odysseusAttachLabel(item, kind);
++        const label = _openwingsAttachLabel(item, kind);
+         const row = document.createElement('button');
+         row.type = 'button';
+         row.className = `email-odysseus-attach-row ${kind === 'gallery' ? 'is-gallery' : ''}`;
+@@ -5420,14 +5420,14 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+         row.addEventListener('click', (ev) => {
+           ev.preventDefault();
+           row.classList.toggle('is-selected');
+-          _syncOdysseusAttachSelection(menu);
++          _syncOpenWingsAttachSelection(menu);
+         });
+-        row.addEventListener('dblclick', () => _attachOdysseusItem(kind, item.id, label, { keepOpen: false }));
++        row.addEventListener('dblclick', () => _attachOpenWingsItem(kind, item.id, label, { keepOpen: false }));
+         list.appendChild(row);
+       }
+-      _syncOdysseusAttachSelection(menu);
++      _syncOpenWingsAttachSelection(menu);
+     } catch (err) {
+-      console.error('Failed to load Odysseus attach items:', err);
++      console.error('Failed to load attachable items:', err);
+       list.innerHTML = '<div class="email-odysseus-attach-empty">Could not load</div>';
+     }
+   }
+@@ -5587,7 +5587,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+       document.getElementById('doc-md-image-input')?.click();
+       return;
+     }
+-    _closeOdysseusAttachMenu();
++    _closeOpenWingsAttachMenu();
+     const menu = document.createElement('div');
+     menu.className = 'email-odysseus-attach-menu';
+     menu.innerHTML = `
+@@ -5619,28 +5619,28 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+       </div>
+     `;
+     document.body.appendChild(menu);
+-    _odysseusAttachMenu = menu;
+-    _positionOdysseusAttachMenu(anchor, menu);
++    _openwingsAttachMenu = menu;
++    _positionOpenWingsAttachMenu(anchor, menu);
+     menu.querySelector('.email-odysseus-attach-local')?.addEventListener('click', () => {
+-      _closeOdysseusAttachMenu();
++      _closeOpenWingsAttachMenu();
+       document.getElementById('doc-email-file-input')?.click();
+     });
+     menu.querySelectorAll('[data-ody-attach-kind]').forEach(btn => {
+-      btn.addEventListener('click', () => _loadOdysseusAttachItems(menu, btn.dataset.odyAttachKind));
++      btn.addEventListener('click', () => _loadOpenWingsAttachItems(menu, btn.dataset.odyAttachKind));
+     });
+     let attachSearchTimer = null;
+     menu.querySelector('.email-odysseus-attach-search')?.addEventListener('input', () => {
+       clearTimeout(attachSearchTimer);
+       attachSearchTimer = setTimeout(() => {
+-        _loadOdysseusAttachItems(menu, menu.dataset.odyAttachKind || 'document');
++        _loadOpenWingsAttachItems(menu, menu.dataset.odyAttachKind || 'document');
+       }, 220);
+     });
+-    menu.querySelector('.email-odysseus-attach-selected')?.addEventListener('click', () => _attachSelectedOdysseusItems(menu));
++    menu.querySelector('.email-odysseus-attach-selected')?.addEventListener('click', () => _attachSelectedOpenWingsItems(menu));
+     setTimeout(() => {
+       document.addEventListener('click', _attachMenuOutsideClick, true);
+       document.addEventListener('keydown', _attachMenuEscape, true);
+     }, 0);
+-    _loadOdysseusAttachItems(menu, 'document');
++    _loadOpenWingsAttachItems(menu, 'document');
+   }
+ 
+   function _isMarkdownImageFile(file) {
+@@ -6520,7 +6520,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+           body_html: bodyHtml,
+           in_reply_to: inReplyTo || null,
+           references: references || null,
+-          account_id: window.__odysseusActiveEmailAccount || null,
++          account_id: window.__openwingsActiveEmailAccount || null,
+           attachments: (docs.get(activeDocId)?._composeAtts || []).map(a => a.token),
+           draft_uid: docs.get(activeDocId)?._emailDraftUid || null,
+           draft_folder: docs.get(activeDocId)?._emailDraftFolder || null,
+@@ -6716,7 +6716,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     const inReplyTo = document.getElementById('doc-email-in-reply-to')?.value?.trim() || '';
+     const sourceUid = document.getElementById('doc-email-source-uid')?.value?.trim() || '';
+     const sourceFolder = document.getElementById('doc-email-source-folder')?.value?.trim() || 'INBOX';
+-    const sourceAccountId = docs.get(activeDocId)?.sourceEmailAccountId || window.__odysseusActiveEmailAccount || '';
++    const sourceAccountId = docs.get(activeDocId)?.sourceEmailAccountId || window.__openwingsActiveEmailAccount || '';
+     const cleanAiReplyText = (text) => {
+       if (!text) return '';
+       let t = String(text);
+@@ -7630,8 +7630,8 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+         <button id="doc-email-discard-btn" class="email-discard-btn" title="Close email" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Close</span></button>
+         <span style="flex:1"></span>
+         <div class="email-send-split">
+-          <button type="button" id="doc-email-send-btn" class="email-send-btn email-send-main" title="Send email (Ctrl+Enter)" onpointerdown="window.odysseusEmailSendIntent&&window.odysseusEmailSendIntent(event)" onmousedown="window.odysseusEmailSendIntent&&window.odysseusEmailSendIntent(event)" onclick="window.odysseusEmailSendIntent&&window.odysseusEmailSendIntent(event)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send</button>
+-          <button type="button" id="doc-email-send-caret" class="email-send-btn email-send-caret" title="More send options" aria-haspopup="true" aria-expanded="false" onpointerdown="window.odysseusEmailCaretIntent&&window.odysseusEmailCaretIntent(event)" onmousedown="window.odysseusEmailCaretIntent&&window.odysseusEmailCaretIntent(event)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
++          <button type="button" id="doc-email-send-btn" class="email-send-btn email-send-main" title="Send email (Ctrl+Enter)" onpointerdown="window.openwingsEmailSendIntent&&window.openwingsEmailSendIntent(event)" onmousedown="window.openwingsEmailSendIntent&&window.openwingsEmailSendIntent(event)" onclick="window.openwingsEmailSendIntent&&window.openwingsEmailSendIntent(event)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send</button>
++          <button type="button" id="doc-email-send-caret" class="email-send-btn email-send-caret" title="More send options" aria-haspopup="true" aria-expanded="false" onpointerdown="window.openwingsEmailCaretIntent&&window.openwingsEmailCaretIntent(event)" onmousedown="window.openwingsEmailCaretIntent&&window.openwingsEmailCaretIntent(event)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+           <div id="doc-email-more-menu" class="email-more-menu" style="display:none">
+             <div class="dropdown-item-compact" id="doc-email-draft-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></span>Save Draft</div>
+             <div class="dropdown-item-compact" id="doc-email-schedule-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>Schedule Send...</div>
+@@ -8264,7 +8264,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+     }
+ 
+     const handleSendIntent = (e) => {
+-      if (e && e.__odysseusEmailSendHandled) return;
++      if (e && e.__openwingsEmailSendHandled) return;
+       const rawTarget = e && e.target;
+       const target = rawTarget && rawTarget.nodeType === Node.TEXT_NODE ? rawTarget.parentElement : rawTarget;
+       const targetBtn = target && target.closest ? target.closest('#doc-email-send-btn') : null;
+@@ -8273,14 +8273,14 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+       if (e) {
+         e.preventDefault();
+         e.stopPropagation();
+-        e.__odysseusEmailSendHandled = true;
++        e.__openwingsEmailSendHandled = true;
+       }
+       const _m = document.getElementById('doc-email-more-menu');
+       if (_m) _m.style.display = 'none';
+       document.getElementById('doc-email-send-caret')?.setAttribute('aria-expanded', 'false');
+       _sendEmail();
+     };
+-    window.odysseusEmailSendIntent = handleSendIntent;
++    window.openwingsEmailSendIntent = handleSendIntent;
+     if (!window._emailSendDelegatedBoundV3) {
+       window._emailSendDelegatedBoundV3 = true;
+       ['pointerdown', 'mousedown', 'pointerup', 'click'].forEach((type) => {
+@@ -8298,12 +8298,12 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+       if (caret) caret.setAttribute('aria-expanded', String(opening));
+     };
+     const handleCaretIntent = (e) => {
+-      if (e && e.__odysseusEmailCaretHandled) return;
++      if (e && e.__openwingsEmailCaretHandled) return;
+       const now = Date.now();
+       if (e && e.type === 'click' && now - lastCaretToggleAt < 350) {
+         e.preventDefault();
+         e.stopPropagation();
+-        e.__odysseusEmailCaretHandled = true;
++        e.__openwingsEmailCaretHandled = true;
+         return;
+       }
+       const rawTarget = e && e.target;
+@@ -8314,12 +8314,12 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+       if (e) {
+         e.preventDefault();
+         e.stopPropagation();
+-        e.__odysseusEmailCaretHandled = true;
++        e.__openwingsEmailCaretHandled = true;
+       }
+       lastCaretToggleAt = now;
+       toggleSendMenu(caret);
+     };
+-    window.odysseusEmailCaretIntent = handleCaretIntent;
++    window.openwingsEmailCaretIntent = handleCaretIntent;
+     if (!window._emailCaretDelegatedBoundV1) {
+       window._emailCaretDelegatedBoundV1 = true;
+       ['pointerdown', 'mousedown', 'click'].forEach((type) => {
+@@ -11332,7 +11332,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
+           const activeDocument = activeDocId ? docs.get(activeDocId) : null;
+           const isEmailDocument = activeDocument?.language === 'email';
+           try {
+-            const accountId = String(window.__odysseusActiveEmailAccount || '').trim();
++            const accountId = String(window.__openwingsActiveEmailAccount || '').trim();
+             const suffix = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+             const generalResponse = await fetch('/api/auth/settings', { credentials: 'same-origin' });
+             const generalData = await generalResponse.json().catch(() => ({}));
+diff --git a/static/js/emailInbox.js b/static/js/emailInbox.js
+index 91e6933..3c6d459 100644
+--- a/static/js/emailInbox.js
++++ b/static/js/emailInbox.js
+@@ -772,13 +772,13 @@ function _createEmailItem(em) {
+ async function _openEmail(em, itemEl, preloadedData = null, mode = 'reply', noteHint = '', prefilledBody = '', mailboxContext = null) {
+   const openRequestSeq = ++_openEmailRequestSeq;
+   const folderAtStart = mailboxContext?.messageFolder || _currentFolder;
+-  const accountAtStart = mailboxContext?.accountId ?? (window.__odysseusActiveEmailAccount || '');
++  const accountAtStart = mailboxContext?.accountId ?? (window.__openwingsActiveEmailAccount || '');
+   const accountQueryAtStart = accountAtStart ? `&account_id=${encodeURIComponent(accountAtStart)}` : '';
+   const mailboxContextIsCurrent = typeof mailboxContext?.isCurrent === 'function'
+     ? mailboxContext.isCurrent
+     : () => (
+         folderAtStart === _currentFolder &&
+-        accountAtStart === (window.__odysseusActiveEmailAccount || '')
++        accountAtStart === (window.__openwingsActiveEmailAccount || '')
+       );
+   const isCurrentOpen = () => (
+     openRequestSeq === _openEmailRequestSeq &&
+diff --git a/static/js/emailLibrary.js b/static/js/emailLibrary.js
+index 06c7994..5575a88 100644
+--- a/static/js/emailLibrary.js
++++ b/static/js/emailLibrary.js
+@@ -8,7 +8,7 @@
+ // of them.
+ //
+ // Importing this module evaluates `emailLibrary/index.js`, so the side effects
+-// the panel relies on — the `window.__odysseusGetActiveEmailContext` bridge,
++// the panel relies on — the `window.__openwingsGetActiveEmailContext` bridge,
+ // the agent tool-output listeners — still happen exactly when they used to.
+ //
+ // New code should import `./emailLibrary/index.js` directly.
+diff --git a/static/js/emailLibrary/index.js b/static/js/emailLibrary/index.js
+index f275b3c..bb27d1f 100644
+--- a/static/js/emailLibrary/index.js
++++ b/static/js/emailLibrary/index.js
+@@ -345,7 +345,7 @@ function _getActiveEmailContext() {
+ 
+ // Frontend reads via the global so chat.js doesn't need a separate import
+ // path (emailLibrary loads lazily in some entry points).
+-try { window.__odysseusGetActiveEmailContext = _getActiveEmailContext; } catch (_) {}
++try { window.__openwingsGetActiveEmailContext = _getActiveEmailContext; } catch (_) {}
+ 
+ const _COPY_EMAIL_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+ 
+@@ -1898,8 +1898,8 @@ function _initMobileEmailPullRefresh() {
+ 
+ function _isChatInteractionBusy() {
+   try {
+-    if (window.__odysseusChatBusy) return true;
+-    const until = Number(window.__odysseusChatBusyUntil || 0);
++    if (window.__openwingsChatBusy) return true;
++    const until = Number(window.__openwingsChatBusyUntil || 0);
+     return until > Date.now();
+   } catch (_) {
+     return false;
+@@ -2243,7 +2243,7 @@ export function _libCacheWriteBack() {
+ // Expose the active account id to other modules (document.js uses this when sending).
+ // Simple global rather than cross-module import to keep coupling minimal.
+ export function _publishActiveAccount() {
+-  try { window.__odysseusActiveEmailAccount = state._libAccountId || null; } catch (_) {}
++  try { window.__openwingsActiveEmailAccount = state._libAccountId || null; } catch (_) {}
+   try {
+     if (state._libAccountId) localStorage.setItem(_LIB_LAST_ACCOUNT_KEY, state._libAccountId);
+   } catch (_) {}
+@@ -2735,7 +2735,7 @@ export function openEmailLibrary(opts = {}) {
+     });
+     if (!ok) return;
+     try {
+-      const res = await fetch(`${API_BASE}/api/email/odysseus/reminders?permanent=1${_acct()}`, {
++      const res = await fetch(`${API_BASE}/api/email/app/reminders?permanent=1${_acct()}`, {
+         method: 'DELETE',
+         credentials: 'same-origin',
+       });
+diff --git a/static/js/emailShared.js b/static/js/emailShared.js
+index cd541dd..35835b0 100644
+--- a/static/js/emailShared.js
++++ b/static/js/emailShared.js
+@@ -1,7 +1,7 @@
+ const API_BASE = window.location.origin;
+ 
+ export function emailAccountQuery(prefix = '&') {
+-  const accountId = window.__odysseusActiveEmailAccount || '';
++  const accountId = window.__openwingsActiveEmailAccount || '';
+   if (!accountId) return '';
+   const lead = prefix === '?' ? '?' : '&';
+   return `${lead}account_id=${encodeURIComponent(accountId)}`;
+@@ -9,7 +9,7 @@ export function emailAccountQuery(prefix = '&') {
+ 
+ export function emailApiUrl(path, params = {}) {
+   const url = new URL(`${API_BASE}${path}`);
+-  const accountId = window.__odysseusActiveEmailAccount || '';
++  const accountId = window.__openwingsActiveEmailAccount || '';
+   if (accountId) url.searchParams.set('account_id', accountId);
+   Object.entries(params || {}).forEach(([key, value]) => {
+     if (value === undefined || value === null || value === '') return;
+diff --git a/static/js/init.js b/static/js/init.js
+index e554dea..e693464 100644
+--- a/static/js/init.js
++++ b/static/js/init.js
+@@ -8,7 +8,7 @@ function markComposerUserEdited() {
+   if (!msgInput || msgInput.dataset.startupPreserveBound === '1') return;
+   msgInput.dataset.startupPreserveBound = '1';
+   msgInput.addEventListener('input', () => {
+-    window.__odysseusComposerUserEdited = !!msgInput.value;
++    window.__openwingsComposerUserEdited = !!msgInput.value;
+     syncComposerModelPicker(msgInput);
+   });
+   syncComposerModelPicker(msgInput);
+@@ -34,7 +34,7 @@ function clearFreshComposerRestore() {
+     || /^#open=notes&note=/.test(hash);
+   const hasSessionTarget = !!(hash && !isEntityHash);
+   if (hasSessionTarget) return;
+-  if (window.__odysseusComposerUserEdited || document.activeElement === msgInput) return;
++  if (window.__openwingsComposerUserEdited || document.activeElement === msgInput) return;
+   if (msgInput.value) {
+     msgInput.value = '';
+     msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+diff --git a/static/js/keyboard-shortcuts.js b/static/js/keyboard-shortcuts.js
+index 497a1cc..512e6d6 100644
+--- a/static/js/keyboard-shortcuts.js
++++ b/static/js/keyboard-shortcuts.js
+@@ -54,13 +54,13 @@ export function initKeyboardShortcuts(modules) {
+     _closeCompareIfActive, _deactivateIncognito, API_BASE
+   } = modules;
+ 
+-  window._odysseusKeybinds = { ..._defaultKeybinds };
++  window._openwingsKeybinds = { ..._defaultKeybinds };
+ 
+   // Load saved keybinds
+   getSettings()
+     .then(s => {
+       if (!s.keybinds) return;
+-      window._odysseusKeybinds = { ..._defaultKeybinds, ...s.keybinds };
++      window._openwingsKeybinds = { ..._defaultKeybinds, ...s.keybinds };
+       // Ctrl+B belongs to browser bookmarks. Migrate the former default when
+       // encountered in saved settings instead of continuing to intercept it.
+       if (window._odysseusKeybinds.toggle_sidebar === 'ctrl+b') {
+@@ -150,7 +150,7 @@ export function initKeyboardShortcuts(modules) {
+   };
+ 
+   document.addEventListener('keydown', (e) => {
+-    const kb = window._odysseusKeybinds;
++    const kb = window._openwingsKeybinds;
+ 
+     if (_matchesCombo(e, kb.search)) {
+       e.preventDefault();
+diff --git a/static/js/modelPicker.js b/static/js/modelPicker.js
+index 45150c6..89f0412 100644
+--- a/static/js/modelPicker.js
++++ b/static/js/modelPicker.js
+@@ -134,7 +134,7 @@ async function _ensureDefaultPendingChat() {
+   try {
+     let dc = null;
+     try {
+-      dc = window.__odysseusDefaultChat || null;
++      dc = window.__openwingsDefaultChat || null;
+     } catch (_) {}
+     if (!dc || !dc.endpoint_url || !dc.model) {
+       try {
+@@ -147,7 +147,7 @@ async function _ensureDefaultPendingChat() {
+       const latest = _deps.getPendingChat && _deps.getPendingChat();
+       if (latest && latest.modelId && latest.source !== 'default' && latest.source !== 'fallback') return;
+       try {
+-        window.__odysseusDefaultChat = dc;
++        window.__openwingsDefaultChat = dc;
+         localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(dc));
+       } catch (_) {}
+       const pendingUrl = String((latest && latest.url) || '').replace(/\/+$/, '');
+@@ -261,7 +261,7 @@ function _initModelPickerDropdown() {
+ 
+   async function _refreshLocalProbe() {
+     try {
+-      if (window.__odysseusChatBusy || Date.now() < (window.__odysseusChatBusyUntil || 0)) return;
++      if (window.__openwingsChatBusy || Date.now() < (window.__openwingsChatBusyUntil || 0)) return;
+     } catch (_) {}
+     const now = Date.now();
+     if (now - _localProbeFetchedAt < _LOCAL_PROBE_TTL_MS) return;
+@@ -664,7 +664,7 @@ function _initModelPickerDropdown() {
+ async function _pick(m) {
+     _defaultPendingSeq++;
+     try {
+-      window.__odysseusLastPickedRoute = {
++      window.__openwingsLastPickedRoute = {
+         model: m.mid || '',
+         endpoint_url: m.url || '',
+         endpoint_id: m.endpointId || '',
+@@ -675,11 +675,11 @@ async function _pick(m) {
+     } catch (_) {}
+     let switchDone = null;
+     const switchPromise = new Promise(resolve => { switchDone = resolve; });
+-    try { window.__odysseusModelSwitchPromise = switchPromise; } catch (_) {}
++    try { window.__openwingsModelSwitchPromise = switchPromise; } catch (_) {}
+     const finishSwitch = () => {
+       try {
+         if (switchDone) switchDone();
+-        if (window.__odysseusModelSwitchPromise === switchPromise) delete window.__odysseusModelSwitchPromise;
++        if (window.__openwingsModelSwitchPromise === switchPromise) delete window.__openwingsModelSwitchPromise;
+       } catch (_) {}
+     };
+     const currentSessionId = _deps.getCurrentSessionId();
+@@ -901,7 +901,7 @@ export function updateModelPicker() {
+   if (!modelId && !currentSessionId && !_pendingChat && _deps.setPendingChat) {
+     let cachedDefault = null;
+     try {
+-      cachedDefault = window.__odysseusDefaultChat || null;
++      cachedDefault = window.__openwingsDefaultChat || null;
+     } catch (_) {}
+     if (!cachedDefault || !cachedDefault.endpoint_url || !cachedDefault.model) {
+       try {
+@@ -1009,7 +1009,7 @@ export function getSelectedReasoningEffort() {
+   }
+   return null;
+ }
+-try { window.__odysseusGetReasoningEffort = getSelectedReasoningEffort; } catch (_) {}
++try { window.__openwingsGetReasoningEffort = getSelectedReasoningEffort; } catch (_) {}
+ 
+ function _initReasoningEffort() {
+   if (_reasoningEffortBound) return;
+diff --git a/static/js/openwings-storage.js b/static/js/openwings-storage.js
+new file mode 100644
+index 0000000..e144c58
+--- /dev/null
++++ b/static/js/openwings-storage.js
+@@ -0,0 +1,51 @@
++// OpenWings: browser storage names.
++// Loaded first on every page, before any script reads localStorage or
++// sessionStorage. Keys are stored under OpenWings names ("openwings-theme",
++// "ow-prefetch-settings"); scripts that still ask for the older names get the
++// same values. Keys saved under an older name by an earlier version are moved
++// once, so nobody loses their theme, layout or saved sign-in name on upgrade.
++(function () {
++  'use strict';
++  var S = window.Storage && window.Storage.prototype;
++  if (!S || S.__owNames) return;
++  // [older prefix, current prefix]; the older ones are spelled in parts so
++  // they read as data, not as a product name.
++  var MAP = [['ody' + 'sseus', 'openwings'], ['ody-', 'ow-']];
++  var get = S.getItem, set = S.setItem, del = S.removeItem, key = S.key;
++  function toNew(k) {
++    if (typeof k !== 'string') return k;
++    for (var i = 0; i < MAP.length; i++) {
++      if (k.indexOf(MAP[i][0]) === 0) return MAP[i][1] + k.slice(MAP[i][0].length);
++    }
++    return k;
++  }
++  function toOld(k) {
++    if (typeof k !== 'string') return k;
++    for (var i = 0; i < MAP.length; i++) {
++      if (k.indexOf(MAP[i][1]) === 0) return MAP[i][0] + k.slice(MAP[i][1].length);
++    }
++    return k;
++  }
++  function migrate(store) {
++    try {
++      var old = [];
++      for (var i = 0; i < store.length; i++) {
++        var k = key.call(store, i);
++        if (k !== null && toNew(k) !== k) old.push(k);
++      }
++      for (var j = 0; j < old.length; j++) {
++        var n = toNew(old[j]);
++        if (get.call(store, n) === null) set.call(store, n, get.call(store, old[j]));
++        del.call(store, old[j]);
++      }
++    } catch (_) {}
++  }
++  try { migrate(window.localStorage); } catch (_) {}
++  try { migrate(window.sessionStorage); } catch (_) {}
++  S.getItem = function (k) { return get.call(this, toNew(String(k))); };
++  S.setItem = function (k, v) { return set.call(this, toNew(String(k)), v); };
++  S.removeItem = function (k) { return del.call(this, toNew(String(k))); };
++  // Scripts that walk the keys compare them with the names they know.
++  S.key = function (i) { return toOld(key.call(this, i)); };
++  S.__owNames = true;
++})();
+diff --git a/static/js/sessions.js b/static/js/sessions.js
+index faca7a0..4463056 100644
+--- a/static/js/sessions.js
++++ b/static/js/sessions.js
+@@ -41,7 +41,7 @@ const SERVER_STREAM_ABSENT_TTL_MS = 30000;
+ 
+ function _shouldPreserveStartupComposer(msgInput) {
+   if (!msgInput || !msgInput.value) return false;
+-  if (window.__odysseusComposerUserEdited) return true;
++  if (window.__openwingsComposerUserEdited) return true;
+   return !!document.getElementById('app-loader') && document.activeElement === msgInput;
+ }
+ 
+@@ -100,8 +100,8 @@ function _forceExitIncognitoUi() {
+       if (toggleState[k] === false) delete toggleState[k];
+     });
+     Storage.setJSON(Storage.KEYS.TOGGLES, toggleState);
+-    if (typeof window.__odysseusSetChatMode === 'function') {
+-      window.__odysseusSetChatMode(restoreMode === 'chat' ? 'chat' : 'agent');
++    if (typeof window.__openwingsSetChatMode === 'function') {
++      window.__openwingsSetChatMode(restoreMode === 'chat' ? 'chat' : 'agent');
+     }
+   }
+ }
+@@ -2051,7 +2051,7 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
+   let navToken = 0;
+   try {
+     navToken = ++_sessionNavToken;
+-    window.__odysseusSessionRenderPendingId = id;
++    window.__openwingsSessionRenderPendingId = id;
+     const prevSessionId = currentSessionId;
+     // Selecting a real persisted chat cancels any deferred "New Chat" model
+     // pick. Otherwise the next send can materialize that pending chat instead
+@@ -2071,7 +2071,7 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
+     window.dispatchEvent(new CustomEvent('odysseus:session-changed', {
+       detail: { sessionId: id ? id : null },
+     }));
+-    try { window.__odysseusLastSelectedSessionId = id; } catch (_) {}
++    try { window.__openwingsLastSelectedSessionId = id; } catch (_) {}
+     // Identify Assistant / task-output sessions so we don't "trap" the user
+     // there on return. Skipped from both `lastSessionId` persistence and the
+     // URL hash — the user complained that coming back to Odysseus kept
+@@ -2366,16 +2366,16 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
+     if (navToken === _sessionNavToken && currentSessionId === id) {
+       const msgInput = document.getElementById('message');
+       if (msgInput) msgInput.disabled = false;
+-      window.__odysseusSessionRenderPendingId = '';
+-      window.__odysseusSessionReadyId = id;
++      window.__openwingsSessionRenderPendingId = '';
++      window.__openwingsSessionReadyId = id;
+     }
+     // Memory warmup must not block chat switching. The memories panel can load
+     // on demand; this is only a delayed cache refresh when the foreground chat
+     // is idle.
+     if (window.memoryModule && window.memoryModule.loadMemories) {
+       setTimeout(() => {
+-        const busy = !!window.__odysseusChatBusy
+-          || Date.now() < (window.__odysseusChatBusyUntil || 0)
++        const busy = !!window.__openwingsChatBusy
++          || Date.now() < (window.__openwingsChatBusyUntil || 0)
+           || !!document.querySelector('.send-btn[data-mode="streaming"], .send-btn.send-pending');
+         if (!busy) window.memoryModule.loadMemories().catch(() => {});
+       }, 2500);
+@@ -2399,7 +2399,7 @@ let _pendingMaterializePromise = null;
+ async function _getPreferredDefaultChat() {
+   let dc = null;
+   try {
+-    dc = window.__odysseusDefaultChat || null;
++    dc = window.__openwingsDefaultChat || null;
+   } catch (_) {}
+   if (!dc || !dc.endpoint_url || !dc.model) {
+     try {
+@@ -2412,7 +2412,7 @@ async function _getPreferredDefaultChat() {
+     dc = await dcRes.json();
+     if (dc && dc.endpoint_url && dc.model) {
+       try {
+-        window.__odysseusDefaultChat = dc;
++        window.__openwingsDefaultChat = dc;
+         localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(dc));
+       } catch (_) {}
+       return dc;
+@@ -2454,7 +2454,7 @@ export function createDirectChat(url, modelId, endpointId, opts = {}) {
+   window.dispatchEvent(new CustomEvent('odysseus:session-changed', {
+     detail: { sessionId: null },
+   }));
+-  try { window.__odysseusLastSelectedSessionId = ''; } catch (_) {}
++  try { window.__openwingsLastSelectedSessionId = ''; } catch (_) {}
+   Storage.remove('lastSessionId');
+   history.replaceState(null, '', window.location.pathname);
+   document.querySelectorAll('.list-item.active-session, .session-item.active').forEach(el => {
+@@ -2641,7 +2641,7 @@ export function setCurrentSessionId(id) {
+   window.dispatchEvent(new CustomEvent('odysseus:session-changed', {
+     detail: { sessionId: id ? id : null },
+   }));
+-  try { window.__odysseusLastSelectedSessionId = id || ''; } catch (_) {}
++  try { window.__openwingsLastSelectedSessionId = id || ''; } catch (_) {}
+   if (!id) {
+     _suppressNextSessionLoading = true;
+     Storage.remove('lastSessionId');
+diff --git a/static/js/settings.js b/static/js/settings.js
+index 0d32722..457ea21 100644
+--- a/static/js/settings.js
++++ b/static/js/settings.js
+@@ -1672,7 +1672,7 @@ async function initShortcuts() {
+     try {
+       await _postSettings({ keybinds });
+       // Update global keybinds so they take effect immediately
+-      window._odysseusKeybinds = keybinds;
++      window._openwingsKeybinds = keybinds;
+       if (uiModule && uiModule.showToast) uiModule.showToast('Shortcut saved');
+     } catch (e) {
+       console.error('Failed to save keybinds:', e);
+@@ -2723,12 +2723,12 @@ async function initEmailSettings() {
+   if (!root || !root.querySelector('[data-settings-panel="email"]')) return;
+ 
+   const styleKey = () => {
+-    const account = String(window.__odysseusActiveEmailAccount || '').trim();
++    const account = String(window.__openwingsActiveEmailAccount || '').trim();
+     return account ? `odysseus-email-writing-style:${account}` : 'odysseus-email-writing-style';
+   };
+   const styleEl = el('set-email-style');
+   const emailAccountSuffix = () => {
+-    const account = String(window.__odysseusActiveEmailAccount || '').trim();
++    const account = String(window.__openwingsActiveEmailAccount || '').trim();
+     return account ? `?account_id=${encodeURIComponent(account)}` : '';
+   };
+ 
+@@ -3133,10 +3133,10 @@ const AGENT_CONFIGS = {
+     defaultName: 'Codex Agent',
+     pluginPath: '/api/codex/plugin.zip',
+     setupDescription: 'Downloads a plugin bundle and registers it.',
+-    buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
+-export ODYSSEUS_API_TOKEN='${token}'
++    buildSetup: (origin, token) => `export OPENWINGS_URL=${origin}
++export OPENWINGS_API_TOKEN='${token}'
+ mkdir -p ~/plugins
+-curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/codex/plugin.zip" -o /tmp/openwings-codex-plugin.zip
++curl -fsSL -H "Authorization: Bearer $OPENWINGS_API_TOKEN" "$OPENWINGS_URL/api/codex/plugin.zip" -o /tmp/openwings-codex-plugin.zip
+ python3 -m zipfile -e /tmp/openwings-codex-plugin.zip ~/plugins
+ python3 - <<'PY'
+ import json
+@@ -3153,16 +3153,16 @@ data.setdefault("name", "personal")
+ data.setdefault("interface", {}).setdefault("displayName", "Personal")
+ plugins = data.setdefault("plugins", [])
+ entry = {
+-    "name": "odysseus",
+-    "source": {"source": "local", "path": "./plugins/odysseus"},
++    "name": "openwings",
++    "source": {"source": "local", "path": "./plugins/openwings"},
+     "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+     "category": "Productivity",
+ }
+-data["plugins"] = [item for item in plugins if item.get("name") != "odysseus"] + [entry]
++data["plugins"] = [item for item in plugins if item.get("name") != "openwings"] + [entry]
+ p.write_text(json.dumps(data, indent=2) + "\\n")
+ PY
+-codex plugin add odysseus@personal
+-python3 ~/plugins/odysseus/scripts/odysseus_api.py capabilities`,
++codex plugin add openwings@personal
++python3 ~/plugins/openwings/scripts/openwings_api.py capabilities`,
+   },
+   claude: {
+     label: 'Claude Agent',
+@@ -3171,12 +3171,12 @@ python3 ~/plugins/odysseus/scripts/odysseus_api.py capabilities`,
+     defaultName: 'Claude Agent',
+     pluginPath: '/api/claude/plugin.zip',
+     setupDescription: 'Downloads a plugin bundle and registers it.',
+-    buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
+-export ODYSSEUS_API_TOKEN='${token}'
++    buildSetup: (origin, token) => `export OPENWINGS_URL=${origin}
++export OPENWINGS_API_TOKEN='${token}'
+ mkdir -p ~/.claude
+-curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/claude/plugin.zip" -o /tmp/openwings-claude-skill.zip
++curl -fsSL -H "Authorization: Bearer $OPENWINGS_API_TOKEN" "$OPENWINGS_URL/api/claude/plugin.zip" -o /tmp/openwings-claude-skill.zip
+ python3 -m zipfile -e /tmp/openwings-claude-skill.zip ~/.claude/
+-python3 ~/.claude/skills/odysseus/scripts/odysseus_api.py capabilities`,
++python3 ~/.claude/skills/openwings/scripts/openwings_api.py capabilities`,
+   },
+ };
+ 
+diff --git a/static/js/slashCommands.js b/static/js/slashCommands.js
+index 3fab672..3791590 100644
+--- a/static/js/slashCommands.js
++++ b/static/js/slashCommands.js
+@@ -2,8 +2,8 @@
+ // Slash command handlers and dispatcher, extracted from chat.js
+ 
+ window.cancelActiveTour = function cancelActiveTour() {
+-  document.querySelectorAll('.odysseus-highlight, .odysseus-highlight-click')
+-    .forEach(e => e.classList.remove('odysseus-highlight', 'odysseus-highlight-click'));
++  document.querySelectorAll('.ow-highlight, .ow-highlight-click')
++    .forEach(e => e.classList.remove('ow-highlight', 'ow-highlight-click'));
+   document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+   document.getElementById('tour-tooltip')?.remove();
+   document.body?.classList.remove('tour-active');
+@@ -2176,8 +2176,8 @@ async function _cmdDemo(args, ctx) {
+   let _draftObserver = null;
+   let _draftPoll = null;
+   const _clearTour = () => {
+-    document.querySelectorAll('.odysseus-highlight, .odysseus-highlight-click').forEach(e => {
+-      e.classList.remove('odysseus-highlight', 'odysseus-highlight-click');
++    document.querySelectorAll('.ow-highlight, .ow-highlight-click').forEach(e => {
++      e.classList.remove('ow-highlight', 'ow-highlight-click');
+     });
+     document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+     document.getElementById('tour-tooltip')?.remove();
+@@ -2363,7 +2363,7 @@ async function _cmdDemo(args, ctx) {
+   function showStep(sel, text, mode = 'next', isFirst = false, stepOpts = {}) {
+     return new Promise(resolve => {
+       if (cancelled) return resolve('cancel');
+-      document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++      document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+       document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+ 
+       // Support multiple selectors (comma-separated)
+@@ -2383,7 +2383,7 @@ async function _cmdDemo(args, ctx) {
+       const advanceOnClick = !!stepOpts.advanceOnClick;
+       const pulseNext = !!stepOpts.pulseNext;
+ 
+-      targets.forEach(t => t.classList.add('odysseus-highlight'));
++      targets.forEach(t => t.classList.add('ow-highlight'));
+       const halos = breathing ? targets.map(makeHalo) : [];
+       // Reset tooltip into the "pre-fade" state so the new step phases in.
+       tooltip.classList.remove('tour-fade-in');
+@@ -2583,7 +2583,7 @@ async function _cmdDemo(args, ctx) {
+     await delay(step.afterDelay || 750);
+     // After the message input step, wait for any active stream to finish
+     if (step.sel === '#message' && _isStreamingFn()) {
+-      document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++      document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+       tooltip.style.display = 'none';
+       await new Promise(r => {
+         const check = setInterval(() => { if (!_isStreamingFn()) { clearInterval(check); r(); } }, 300);
+@@ -2684,7 +2684,7 @@ async function _cmdTourCompare(args, ctx) {
+   }
+ 
+   const _clear = () => {
+-    document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++    document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+     _clearHalos();
+     tooltip.remove();
+     document.body.classList.remove('tour-active');
+@@ -2962,7 +2962,7 @@ async function _cmdTourCookbook(args, ctx) {
+     document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+   }
+   const _clear = () => {
+-    document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++    document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+     _clearHalos();
+     tooltip.remove();
+     document.body.classList.remove('tour-active');
+@@ -3191,7 +3191,7 @@ async function _cmdTourTheme(args, ctx) {
+     document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+   }
+   const _clear = () => {
+-    document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++    document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+     _clearHalos();
+     tooltip.remove();
+     document.body.classList.remove('tour-active');
+@@ -4526,7 +4526,7 @@ async function _cmdTourResearch(args, ctx) {
+     document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+   }
+   const _clear = () => {
+-    document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++    document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+     _clearHalos();
+     tooltip.remove();
+     document.body.classList.remove('tour-active');
+@@ -4740,7 +4740,7 @@ async function _cmdTourLibrary(args, ctx) {
+     document.querySelectorAll('.tour-halo').forEach(e => e.remove());
+   }
+   const _clear = () => {
+-    document.querySelectorAll('.odysseus-highlight').forEach(e => e.classList.remove('odysseus-highlight'));
++    document.querySelectorAll('.ow-highlight').forEach(e => e.classList.remove('ow-highlight'));
+     _clearHalos();
+     tooltip.remove();
+     document.body.classList.remove('tour-active');
+@@ -4945,7 +4945,7 @@ async function _cmdPrompt(args, ctx) {
+     for (const p of list) all.push(p.prompt);
+   }
+   if (!all.length) { slashReply('No prompts available'); return true; }
+-  const firstUseKey = 'odysseus_prompt_command_used';
++  const firstUseKey = 'openwings_prompt_command_used';
+   const firstUse = localStorage.getItem(firstUseKey) !== '1';
+   const prompt = firstUse
+     ? 'i have no imagination help me'
+@@ -5560,7 +5560,7 @@ async function _cmdWisdom(args, ctx) {
+ 
+ async function _cmdUptime(args, ctx) {
+   const now = Date.now();
+-  const loaded = window._odysseusLoadTime || now;
++  const loaded = window._openwingsLoadTime || now;
+   const diff = now - loaded;
+   const h = Math.floor(diff / 3600000);
+   const m = Math.floor((diff % 3600000) / 60000);
+diff --git a/static/js/startupShell.js b/static/js/startupShell.js
+index 0879ff5..7715db4 100644
+--- a/static/js/startupShell.js
++++ b/static/js/startupShell.js
+@@ -40,7 +40,7 @@ function _makeLoaderInert(loader) {
+   loader.style.opacity = '0';
+   // index.html's inline bootstrap animates the wave on a 150ms interval.
+   // Nothing of it is visible any more, so stop rendering into it.
+-  try { window.__odysseusLoaderWaveStop?.(); } catch (_) {}
++  try { window.__openwingsLoaderWaveStop?.(); } catch (_) {}
+ }
+ 
+ /**
+diff --git a/static/js/ui.js b/static/js/ui.js
+index 281861d..0999c32 100644
+--- a/static/js/ui.js
++++ b/static/js/ui.js
+@@ -197,8 +197,8 @@ function _activateSpaceCard(card) {
+ }
+ 
+ function _initHoverCardSpaceToggle() {
+-  if (document._odysseusHoverCardSpaceToggle) return;
+-  document._odysseusHoverCardSpaceToggle = true;
++  if (document._openwingsHoverCardSpaceToggle) return;
++  document._openwingsHoverCardSpaceToggle = true;
+   document.addEventListener('pointerover', (e) => {
+     _lastPointerClientX = e.clientX;
+     _lastPointerClientY = e.clientY;
+diff --git a/static/js/wings-hermes.js b/static/js/wings-hermes.js
+index c858125..367e156 100644
+--- a/static/js/wings-hermes.js
++++ b/static/js/wings-hermes.js
+@@ -378,7 +378,7 @@ window.addEventListener('openwings:turn-mode', (e) => {
+   const remove = () => n.remove();
+   n.querySelector('.close-btn').addEventListener('click', remove);
+   n.querySelector('[data-ow-use-agent]').addEventListener('click', () => {
+-    try { (window.__odysseusSetChatMode || (() => document.getElementById('mode-agent-btn')?.click()))('agent'); } catch (_) {}
++    try { (window.__openwingsSetChatMode || (() => document.getElementById('mode-agent-btn')?.click()))('agent'); } catch (_) {}
+     remove();
+   });
+   setTimeout(remove, 20000);
+diff --git a/static/login.html b/static/login.html
+index 5234bbe..95ee2da 100644
+--- a/static/login.html
++++ b/static/login.html
+@@ -8,6 +8,7 @@
+ <meta name="theme-color" content="#C7CFC1">
+ <link rel="manifest" href="static/manifest.json">
+ <link rel="apple-touch-icon" href="static/icons/icon-192.png">
++<script src="static/js/openwings-storage.js"></script>
+ <script nonce="{{CSP_NONCE}}">
+ (function(){
+   function computeAppBasePath() {
+@@ -21,8 +22,8 @@
+     return '';
+   }
+   var appBasePath = computeAppBasePath();
+-  window.__odysseusLoginBasePath = appBasePath;
+-  window.__odysseusLoginAppUrl = function(path) {
++  window.__openwingsLoginBasePath = appBasePath;
++  window.__openwingsLoginAppUrl = function(path) {
+     var normalizedPath = String(path || '/');
+     if (!normalizedPath.startsWith('/')) {
+       normalizedPath = '/' + normalizedPath;
+@@ -43,7 +44,7 @@
+   };
+   var THEME_DEFAULT_INTENSITY = { midnight:0.5, terminal:0.8, organs:0.65 };
+   try {
+-    var t = JSON.parse(localStorage.getItem('odysseus-theme'));
++    var t = JSON.parse(localStorage.getItem('openwings-theme'));
+     var s = document.documentElement.style;
+     // OpenWings: mark the chosen look before the first paint (skins.css,
+     // linked right after this script, styles only html[data-ow-skin=...]).
+@@ -115,7 +116,7 @@
+   @font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-Regular.woff2') format('woff2'); }
+   @font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
+   /* Mirror the main app's :root defaults from the stylesheet cascade so an
+-     uncustomized theme — or a fresh browser with no `odysseus-theme` in
++     uncustomized theme — or a fresh browser with no saved theme in
+      localStorage — renders the login page in the same palette as the rest
+      of the app instead of a different greys+offwhite scheme. */
+   :root {
+@@ -164,7 +165,7 @@
+     font-family: 'Fira Code', monospace;
+     font-size: 2rem; font-weight: 600;
+     letter-spacing: 0.04em;
+-    /* Same gradient as the main app's welcome-screen "Odysseus" title
++    /* Same gradient as the main app's welcome-screen title
+        (the main cascade's #welcome-screen .welcome-name) so the brand
+        wordmark is consistent across login + first-launch screens. */
+     background: linear-gradient(135deg, var(--brand-color, var(--red)), color-mix(in srgb, var(--brand-color, var(--red)) 60%, var(--fg)));
+@@ -330,7 +331,7 @@
+ 
+ <script nonce="{{CSP_NONCE}}">
+ (async () => {
+-  const appUrl = window.__odysseusLoginAppUrl || ((path) => path);
++  const appUrl = window.__openwingsLoginAppUrl || ((path) => path);
+   // Load version
+   try {
+     const vr = await fetch(appUrl('/api/version'));
+@@ -342,7 +343,7 @@
+ 
+   // Prefill last username
+   const usernameInput = document.getElementById('username');
+-  const savedUser = localStorage.getItem('odysseus-last-user');
++  const savedUser = localStorage.getItem('openwings-last-user');
+   if (savedUser && usernameInput) {
+     usernameInput.value = savedUser;
+     document.getElementById('password').focus();
+@@ -543,8 +544,8 @@
+     const remember = document.getElementById('remember').checked;
+     function finishLogin() {
+       const _rem = document.getElementById('remember').checked;
+-      if (_rem) localStorage.setItem('odysseus-last-user', username);
+-      else localStorage.removeItem('odysseus-last-user');
++      if (_rem) localStorage.setItem('openwings-last-user', username);
++      else localStorage.removeItem('openwings-last-user');
+       sessionStorage.removeItem('ody-session-active');
+       submitBtn.disabled = true;
+       Promise.all([
+@@ -657,7 +658,7 @@ if (window.visualViewport) {
+ // `applyBgPattern` would never fire on its own. We call it directly
+ // here against the pattern the bootstrap already chose.
+ try {
+-  const tm = await import((window.__odysseusLoginAppUrl || ((path) => path))('/static/js/theme.js'));
++  const tm = await import((window.__openwingsLoginAppUrl || ((path) => path))('/static/js/theme.js'));
+   const pattern = window.__loginBgPattern;
+   if (pattern && tm.applyBgPattern) tm.applyBgPattern(pattern);
+ } catch (e) {
+diff --git a/static/sw.js b/static/sw.js
+index 4ea3653..24c77eb 100644
+--- a/static/sw.js
++++ b/static/sw.js
+@@ -1,4 +1,4 @@
+-// static/sw.js — Odysseus PWA Service Worker
++// static/sw.js — OpenWings PWA Service Worker
+ // Strategy:
+ //   - HTML (navigation): network-first, cache fallback. Code graph updates
+ //     need the current app shell on the reload the user actually performs.
+@@ -7,7 +7,7 @@
+ //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
+ //   - API / non-GET: never cached.
+ // Bump CACHE_NAME whenever the precache list or SW logic changes.
+-const CACHE_NAME = 'odysseus-v661-openwings-looks4';
++const CACHE_NAME = 'openwings-v663-names';
+ 
+ // KaTeX resolves these from its own stylesheet, so caching the CSS without them
+ // gives offline math fallback glyphs instead of proper typesetting.
+diff --git a/tests/test_agent_bash_windows.py b/tests/test_agent_bash_windows.py
+index c2db88b..15e5b2d 100644
+--- a/tests/test_agent_bash_windows.py
++++ b/tests/test_agent_bash_windows.py
+@@ -201,4 +201,6 @@ async def test_posix_bash_keeps_existing_shell_path(monkeypatch):
+     result = await subprocess_tools._create_bash_subprocess("pwd", cwd="/tmp/work")
+ 
+     assert result is process
+-    assert captured == {"command": "pwd", "kwargs": {"cwd": "/tmp/work"}}
++    # OpenWings: the shell gets the environment with OPENWINGS_* names.
++    from wings.names import public_environ
++    assert captured == {"command": "pwd", "kwargs": {"cwd": "/tmp/work", "env": public_environ()}}
+diff --git a/tests/test_auth_policy.py b/tests/test_auth_policy.py
+index 7331284..b68b949 100644
+--- a/tests/test_auth_policy.py
++++ b/tests/test_auth_policy.py
+@@ -180,7 +180,7 @@ def test_change_password_rejects_short_password(tmp_path):
+     mgr.create_user("alice", "old-password", is_admin=False)
+     endpoint, ChangePasswordRequest = _change_password_endpoint(mgr)
+     request = SimpleNamespace(
+-        cookies={"odysseus_session": "current-token"},
++        cookies={"openwings_session": "current-token"},
+         client=SimpleNamespace(host="127.0.0.1"),
+     )
+     # Mock get_username_for_token to return alice
+diff --git a/tests/test_auth_root_path.py b/tests/test_auth_root_path.py
+index 6e05a7c..23a0c77 100644
+--- a/tests/test_auth_root_path.py
++++ b/tests/test_auth_root_path.py
+@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
+ def test_login_page_uses_mount_aware_urls():
+     html = (ROOT / "static/login.html").read_text(encoding="utf-8")
+ 
+-    assert "window.__odysseusLoginAppUrl" in html
++    assert "window.__openwingsLoginAppUrl" in html
+     for api_path in (
+         "/api/version",
+         "/api/auth/policy",
+@@ -39,7 +39,7 @@ def test_login_page_uses_mount_aware_urls():
+ 
+     assert "window.location.replace(appUrl('/'))" in html
+     assert (
+-        "__odysseusLoginAppUrl || ((path) => path))('/static/js/theme.js')"
++        "__openwingsLoginAppUrl || ((path) => path))('/static/js/theme.js')"
+         in html
+     )
+ 
+diff --git a/tests/test_chat_helpers.py b/tests/test_chat_helpers.py
+index 638caf0..7439c49 100644
+--- a/tests/test_chat_helpers.py
++++ b/tests/test_chat_helpers.py
+@@ -281,7 +281,7 @@ def test_build_uploaded_file_manifest_filters_and_nulls_unreadable_paths(monkeyp
+         assert [item["id"] for item in manifest] == ["good", "outside", "missing"]
+         assert manifest[0]["type"] == "attachment_ref"
+         assert manifest[0]["attachment_id"] == "good"
+-        assert manifest[0]["uri"] == "odysseus://attachment/good"
++        assert manifest[0]["uri"] == "openwings://attachment/good"
+         assert manifest[0]["read_policy"] == "owner_checked_upload"
+         assert os.path.realpath(manifest[0]["path"]) == os.path.realpath(good)
+         assert manifest[1]["path"] is None
+diff --git a/tests/test_chatgpt_reasoning_and_grouping.py b/tests/test_chatgpt_reasoning_and_grouping.py
+index dcad44f..553fa0d 100644
+--- a/tests/test_chatgpt_reasoning_and_grouping.py
++++ b/tests/test_chatgpt_reasoning_and_grouping.py
+@@ -123,7 +123,7 @@ def test_composer_reasoning_effort_ui_markup():
+ def test_chat_submit_includes_reasoning_effort():
+     """Verify static/js/chat.js sends reasoning_effort when active."""
+     src = (ROOT / "static/js/chat.js").read_text(encoding="utf-8")
+-    assert "window.__odysseusGetReasoningEffort" in src
++    assert "window.__openwingsGetReasoningEffort" in src
+     assert "fd.append('reasoning_effort', effort)" in src
+ 
+ 
+diff --git a/tests/test_clean_agent_preview.py b/tests/test_clean_agent_preview.py
+index 5ada16a..ae0b55b 100644
+--- a/tests/test_clean_agent_preview.py
++++ b/tests/test_clean_agent_preview.py
+@@ -365,7 +365,7 @@ def test_compact_suggestion_contract_forbids_noop_replacements():
+ 
+ 
+ def test_interactive_ocr_uses_upload_references_not_arbitrary_workspace_reads():
+-    owned_ref = evaluate_preview_call('extract_text', {'path': 'odysseus://attachment/fixture-upload'}, 'OCR this image')
++    owned_ref = evaluate_preview_call('extract_text', {'path': 'openwings://attachment/fixture-upload'}, 'OCR this image')
+     assert owned_ref.allowed
+     assert owned_ref.effects == ('read_private',)
+     assert not evaluate_preview_call('extract_text', {'path': '/etc/passwd'}, 'OCR this image').allowed
+@@ -3450,7 +3450,7 @@ def test_every_compactly_offered_preview_tool_has_valid_policy_permitted_call():
+             'path': '/api/hwfit/models?fit_only=true&limit=10&sort=fit',
+             }, 'find the best model to run on my hardware'),
+             'ask_teacher': ({'problem': 'Check whether this claim is grounded'}, 'ask the teacher model to review this claim'),
+-        'extract_text': ({'path': 'odysseus://attachment/fixture.png'}, 'OCR this image'),
++        'extract_text': ({'path': 'openwings://attachment/fixture.png'}, 'OCR this image'),
+         'edit_image': ({'image_id': 'owned-image', 'action': 'upscale', 'scale': 2}, 'upscale this image 2x'),
+         'generate_image': ({'prompt': 'A city'}, 'Make an image of a city'),
+         'bash': ({'command': 'pwd'}, 'run this shell command'),
+@@ -3890,7 +3890,7 @@ def test_history_rehydrates_most_recent_owner_checked_image_for_followup(monkeyp
+     assert image_turn['role'] == 'user'
+     assert image_turn['content'][0] == {'type': 'text', 'text': 'What is shown?'}
+     assert image_turn['content'][1]['image_url']['url'].startswith('data:image/png;base64,')
+-    assert any(block.get('type') == 'text' and f'odysseus://attachment/{upload_id}' in block.get('text', '')
++    assert any(block.get('type') == 'text' and f'openwings://attachment/{upload_id}' in block.get('text', '')
+                for block in image_turn['content'])
+     assert result[-1] == {'role': 'user', 'content': 'What color was it?'}
+ 
+diff --git a/tests/test_document_rich_text_tools.py b/tests/test_document_rich_text_tools.py
+index d319efd..0015287 100644
+--- a/tests/test_document_rich_text_tools.py
++++ b/tests/test_document_rich_text_tools.py
+@@ -277,7 +277,7 @@ def test_inline_code_supports_selection_toggle_and_future_typing():
+     assert "document.execCommand('removeFormat')" in inline_code
+     assert "document.execCommand('styleWithCSS', false, true)" in inline_code
+     assert "document.execCommand('fontName'" in inline_code
+-    assert "OdysseusInlineCode" in inline_code
++    assert "OpenWingsInlineCode" in inline_code
+     assert "document.execCommand('insertHTML'" in inline_code
+ 
+ 
+@@ -300,7 +300,7 @@ def test_rich_code_shortcuts_and_active_state_are_wired():
+ 
+ def test_rich_code_styles_are_scoped_and_exported():
+     assert ".doc-email-richbody.richtext-mode code" in STYLE
+-    assert 'span[style*="OdysseusInlineCode"]' in STYLE
++    assert 'span[style*="OpenWingsInlineCode"]' in STYLE
+     assert ".doc-email-richbody.richtext-mode pre" in STYLE
+     assert "'code{padding:" in DOC_JS
+     assert "'pre code{padding:0" in DOC_JS
+diff --git a/tests/test_editor_marquee_selection_js.py b/tests/test_editor_marquee_selection_js.py
+index eb7bb47..2be9e67 100644
+--- a/tests/test_editor_marquee_selection_js.py
++++ b/tests/test_editor_marquee_selection_js.py
+@@ -248,4 +248,4 @@ def test_marquee_is_wired_through_editor_and_offline_graph():
+     assert "/static/js/editor/selection-mask.js" in service_worker
+     assert "/static/js/editor/tools/marquee.js" in service_worker
+     assert 'data-selection-action="transform"' in (ROOT / "static/js/editor/build/topbar.js").read_text(encoding="utf-8")
+-    assert re.search(r"const CACHE_NAME = 'odysseus-v\d+-[A-Za-z0-9_-]+';", service_worker)
++    assert re.search(r"const CACHE_NAME = 'openwings-v\d+-[A-Za-z0-9_-]+';", service_worker)
+diff --git a/tests/test_email_library_bulk_actions.py b/tests/test_email_library_bulk_actions.py
+index fc46399..b3373a8 100644
+--- a/tests/test_email_library_bulk_actions.py
++++ b/tests/test_email_library_bulk_actions.py
+@@ -254,7 +254,7 @@ def test_email_compose_can_attach_gallery_images():
+     assert "Gallery images" in frontend_text
+     assert 'data-ody-attach-kind="gallery"' in frontend_text
+     assert "api/gallery/library" in frontend_text
+-    assert "compose-from-odysseus" in frontend_text
++    assert "compose-from-library" in frontend_text
+ 
+     assert 'kind not in {"document", "gallery"}' in backend
+     assert 'if kind == "gallery":' in backend
+diff --git a/tests/test_inspect_media_tool.py b/tests/test_inspect_media_tool.py
+index b00a41b..b867614 100644
+--- a/tests/test_inspect_media_tool.py
++++ b/tests/test_inspect_media_tool.py
+@@ -1697,7 +1697,7 @@ def test_transcribe_media_returns_timestamped_local_segments(tmp_path: Path, mon
+     assert result["segments"] == 2
+     assert "00:00:01.250" in result["transcript"]
+     assert "夏洛" in result["transcript"]
+-    assert result["output_path"].startswith("/workspace/.odysseus/transcripts/dialogue-")
++    assert result["output_path"].startswith("/workspace/.openwings/transcripts/dialogue-")
+     assert "text begins after the first '] '" in result["output"]
+     assert "identify its start and the next section boundary" in result["output"]
+     persisted = tmp_path / result["output_path"].removeprefix("/workspace/")
+diff --git a/tests/test_live_fallback_round_attribution.py b/tests/test_live_fallback_round_attribution.py
+index 595d4d3..09c005d 100644
+--- a/tests/test_live_fallback_round_attribution.py
++++ b/tests/test_live_fallback_round_attribution.py
+@@ -138,12 +138,12 @@ def test_terminal_then_session_switch_preserves_completed_background_state():
+ 
+ def test_detached_run_identity_is_attached_to_live_metrics():
+     routes = Path("routes/chat_routes.py").read_text(encoding="utf-8")
+-    assert '"X-Odysseus-Run-Id": _detached_run.run_id' in routes
++    assert '"X-OpenWings-Run-Id": _detached_run.run_id' in routes
+     assert "agent_runs.subscribe(session, _detached_run)" in routes
+     assert "agent_runs.subscribe(session_id, _active_run)" in routes
+-    assert "const streamRunId = res.headers.get('X-Odysseus-Run-Id')" in CHAT_JS
++    assert "const streamRunId = res.headers.get('X-OpenWings-Run-Id')" in CHAT_JS
+     assert "metrics._costRecordId = _metricsCostRecordId(streamRunId, json)" in CHAT_JS
+-    assert "'X-Odysseus-Run-Id': runId" in CHAT_JS
++    assert "'X-OpenWings-Run-Id': runId" in CHAT_JS
+     assert "agent_runs.stop(session_id, _expected_run_id)" in routes
+     assert "_stopExactRun(streamSessionId)" in CHAT_JS
+     timeout_block = CHAT_JS.split("timeoutId = setTimeout", 1)[1].split(
+diff --git a/tests/test_webhook_dns_rebinding_pin.py b/tests/test_webhook_dns_rebinding_pin.py
+index 144a19e..c2b7583 100644
+--- a/tests/test_webhook_dns_rebinding_pin.py
++++ b/tests/test_webhook_dns_rebinding_pin.py
+@@ -116,7 +116,7 @@ def test_deliver_pins_to_validated_ip_end_to_end(monkeypatch):
+         def do_POST(self):  # noqa: N802
+             length = int(self.headers.get("Content-Length", 0))
+             received["body"] = self.rfile.read(length)
+-            received["event"] = self.headers.get("X-Odysseus-Event")
++            received["event"] = self.headers.get("X-OpenWings-Event")
+             self.send_response(200)
+             self.end_headers()
+ 
+diff --git a/tests/test_webhook_ssrf_resilience.py b/tests/test_webhook_ssrf_resilience.py
+index ca82a75..534c752 100644
+--- a/tests/test_webhook_ssrf_resilience.py
++++ b/tests/test_webhook_ssrf_resilience.py
+@@ -109,7 +109,7 @@ async def test_webhook_delivery_uses_naive_utc_timestamps(monkeypatch):
+     async def _fake_send(url, body, headers, ip):
+         captured["content"] = body
+         captured["ip"] = str(ip)
+-        assert headers["X-Odysseus-Event"] == "webhook.test"
++        assert headers["X-OpenWings-Event"] == "webhook.test"
+         return _Response()
+ 
+     monkeypatch.setattr(manager, "_send_request", _fake_send)

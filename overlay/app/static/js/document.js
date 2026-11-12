@@ -113,7 +113,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
   }
 
   async function _resolveComposeSendAccountId() {
-    const activeAccountId = window.__odysseusActiveEmailAccount || null;
+    const activeAccountId = window.__openwingsActiveEmailAccount || null;
     if (!activeAccountId) return null;
     const accounts = await _getEmailAccountsCached();
     const activeAccount = accounts.find(a => String(a.id) === String(activeAccountId));
@@ -4008,7 +4008,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
 
   function _isRichInlineCodeMarker(element) {
     return element?.tagName === 'SPAN'
-      && String(element.style?.fontFamily || '').includes('OdysseusInlineCode');
+      && /(OpenWings|Odysseus)InlineCode/.test(String(element.style?.fontFamily || ''));
   }
 
   function _normalizeRichInlineCode(root) {
@@ -4042,13 +4042,13 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     if (!rich.contains(range.commonAncestorContainer)) return false;
     if (range.collapsed) {
       document.execCommand('styleWithCSS', false, true);
-      document.execCommand('fontName', false, 'OdysseusInlineCode, ui-monospace, monospace');
+      document.execCommand('fontName', false, 'OpenWingsInlineCode, ui-monospace, monospace');
       document.execCommand('backColor', false, 'rgba(127, 127, 127, 0.12)');
       _richInlineCodeTypingArmed = true;
       return true;
     }
     const code = document.createElement('span');
-    code.style.fontFamily = 'OdysseusInlineCode, ui-monospace, monospace';
+    code.style.fontFamily = 'OpenWingsInlineCode, ui-monospace, monospace';
     code.style.backgroundColor = 'rgba(127, 127, 127, 0.12)';
     const selectedText = range.toString();
     code.textContent = selectedText;
@@ -5202,27 +5202,27 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     await _uploadComposeFiles(files);
   }
 
-  let _odysseusAttachMenu = null;
+  let _openwingsAttachMenu = null;
 
-  function _closeOdysseusAttachMenu() {
-    if (_odysseusAttachMenu) {
+  function _closeOpenWingsAttachMenu() {
+    if (_openwingsAttachMenu) {
       _odysseusAttachMenu.remove();
-      _odysseusAttachMenu = null;
+      _openwingsAttachMenu = null;
     }
     document.removeEventListener('click', _attachMenuOutsideClick, true);
     document.removeEventListener('keydown', _attachMenuEscape, true);
   }
 
   function _attachMenuOutsideClick(e) {
-    if (_odysseusAttachMenu && !_odysseusAttachMenu.contains(e.target)) _closeOdysseusAttachMenu();
+    if (_openwingsAttachMenu && !_odysseusAttachMenu.contains(e.target)) _closeOpenWingsAttachMenu();
   }
 
   function _attachMenuEscape(e) {
     if (e.key !== 'Escape') return;
-    _closeOdysseusAttachMenu();
+    _closeOpenWingsAttachMenu();
   }
 
-  function _positionOdysseusAttachMenu(anchor, menu) {
+  function _positionOpenWingsAttachMenu(anchor, menu) {
     const r = anchor?.getBoundingClientRect?.();
     if (!r) return;
     menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 310))}px`;
@@ -5235,18 +5235,18 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     });
   }
 
-  function _odysseusAttachLabel(item, kind) {
+  function _openwingsAttachLabel(item, kind) {
     if (kind === 'gallery') {
       return item.caption || item.prompt || item.filename || 'Gallery image';
     }
     return item.title || 'Untitled document';
   }
 
-  async function _stageOdysseusAttachment(kind, id) {
+  async function _stageOpenWingsAttachment(kind, id) {
     const doc = docs.get(activeDocId);
     if (!doc || doc.language !== 'email') return null;
     if (!doc._composeAtts) doc._composeAtts = [];
-    const res = await fetch(`${API_BASE}/api/email/compose-from-odysseus`, {
+    const res = await fetch(`${API_BASE}/api/email/compose-from-library`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -5263,11 +5263,11 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     return data;
   }
 
-  async function _stageOdysseusZip(items) {
+  async function _stageOpenWingsZip(items) {
     const doc = docs.get(activeDocId);
     if (!doc || doc.language !== 'email') return null;
     if (!doc._composeAtts) doc._composeAtts = [];
-    const res = await fetch(`${API_BASE}/api/email/compose-from-odysseus-zip`, {
+    const res = await fetch(`${API_BASE}/api/email/compose-from-library-zip`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -5284,31 +5284,31 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     return data;
   }
 
-  function _afterOdysseusAttachmentsAdded(count, label) {
+  function _afterOpenWingsAttachmentsAdded(count, label) {
     _renderComposeAttachments();
     clearTimeout(_autoSaveDebounce);
     _autoSaveDebounce = setTimeout(() => { saveDocument({ silent: true }); }, 800);
     if (uiModule) uiModule.showToast(count > 1 ? `Attached ${count} items` : `Attached ${label || 'item'}`);
   }
 
-  async function _attachOdysseusItem(kind, id, label, opts = {}) {
+  async function _attachOpenWingsItem(kind, id, label, opts = {}) {
     try {
-      const data = await _stageOdysseusAttachment(kind, id);
+      const data = await _stageOpenWingsAttachment(kind, id);
       if (!data) return;
-      _afterOdysseusAttachmentsAdded(1, label || data.filename);
-      if (!opts.keepOpen) _closeOdysseusAttachMenu();
+      _afterOpenWingsAttachmentsAdded(1, label || data.filename);
+      if (!opts.keepOpen) _closeOpenWingsAttachMenu();
     } catch (err) {
-      console.error('Failed to attach Odysseus item:', err);
+      console.error('Failed to attach item:', err);
       if (uiModule) uiModule.showError('Failed to attach from your library');
     }
   }
 
-  function _selectedOdysseusAttachRows(menu) {
+  function _selectedOpenWingsAttachRows(menu) {
     return Array.from(menu?.querySelectorAll?.('.email-odysseus-attach-row.is-selected') || []);
   }
 
-  function _syncOdysseusAttachSelection(menu) {
-    const selected = _selectedOdysseusAttachRows(menu);
+  function _syncOpenWingsAttachSelection(menu) {
+    const selected = _selectedOpenWingsAttachRows(menu);
     const bar = menu?.querySelector?.('.email-odysseus-attach-actions');
     const count = menu?.querySelector?.('.email-odysseus-attach-count');
     const attachBtn = menu?.querySelector?.('.email-odysseus-attach-selected');
@@ -5317,8 +5317,8 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     if (attachBtn) attachBtn.disabled = selected.length === 0;
   }
 
-  async function _attachSelectedOdysseusItems(menu) {
-    const rows = _selectedOdysseusAttachRows(menu);
+  async function _attachSelectedOpenWingsItems(menu) {
+    const rows = _selectedOpenWingsAttachRows(menu);
     if (!rows.length) return;
     const btn = menu.querySelector('.email-odysseus-attach-selected');
     if (btn) {
@@ -5336,18 +5336,18 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
           : window.confirm(`Attach ${items.length} files as one zip?`);
       }
       if (zip) {
-        await _stageOdysseusZip(items);
+        await _stageOpenWingsZip(items);
         added = 1;
       } else {
         for (const item of items) {
-          await _stageOdysseusAttachment(item.kind, item.id);
+          await _stageOpenWingsAttachment(item.kind, item.id);
           added += 1;
         }
       }
-      _afterOdysseusAttachmentsAdded(added, zip ? 'attachments.zip' : undefined);
-      _closeOdysseusAttachMenu();
+      _afterOpenWingsAttachmentsAdded(added, zip ? 'attachments.zip' : undefined);
+      _closeOpenWingsAttachMenu();
     } catch (err) {
-      console.error('Failed to attach selected Odysseus items:', err);
+      console.error('Failed to attach selected items:', err);
       if (uiModule) uiModule.showError(added ? `Attached ${added}, then failed` : 'Failed to attach from your library');
       _renderComposeAttachments();
     } finally {
@@ -5358,7 +5358,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     }
   }
 
-  async function _loadOdysseusAttachItems(menu, kind) {
+  async function _loadOpenWingsAttachItems(menu, kind) {
     const list = menu.querySelector('.email-odysseus-attach-list');
     if (!list) return;
     menu.dataset.odyAttachKind = kind;
@@ -5381,12 +5381,12 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
         : (Array.isArray(data?.documents) ? data.documents : Array.isArray(data?.items) ? data.items : []);
       if (!items.length) {
         list.innerHTML = `<div class="email-odysseus-attach-empty">${q ? 'No matches' : `No ${kind === 'gallery' ? 'images' : 'documents'}`}</div>`;
-        _syncOdysseusAttachSelection(menu);
+        _syncOpenWingsAttachSelection(menu);
         return;
       }
       list.innerHTML = '';
       for (const item of items) {
-        const label = _odysseusAttachLabel(item, kind);
+        const label = _openwingsAttachLabel(item, kind);
         const row = document.createElement('button');
         row.type = 'button';
         row.className = `email-odysseus-attach-row ${kind === 'gallery' ? 'is-gallery' : ''}`;
@@ -5420,14 +5420,14 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
         row.addEventListener('click', (ev) => {
           ev.preventDefault();
           row.classList.toggle('is-selected');
-          _syncOdysseusAttachSelection(menu);
+          _syncOpenWingsAttachSelection(menu);
         });
-        row.addEventListener('dblclick', () => _attachOdysseusItem(kind, item.id, label, { keepOpen: false }));
+        row.addEventListener('dblclick', () => _attachOpenWingsItem(kind, item.id, label, { keepOpen: false }));
         list.appendChild(row);
       }
-      _syncOdysseusAttachSelection(menu);
+      _syncOpenWingsAttachSelection(menu);
     } catch (err) {
-      console.error('Failed to load Odysseus attach items:', err);
+      console.error('Failed to load attachable items:', err);
       list.innerHTML = '<div class="email-odysseus-attach-empty">Could not load</div>';
     }
   }
@@ -5587,7 +5587,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
       document.getElementById('doc-md-image-input')?.click();
       return;
     }
-    _closeOdysseusAttachMenu();
+    _closeOpenWingsAttachMenu();
     const menu = document.createElement('div');
     menu.className = 'email-odysseus-attach-menu';
     menu.innerHTML = `
@@ -5619,28 +5619,28 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
       </div>
     `;
     document.body.appendChild(menu);
-    _odysseusAttachMenu = menu;
-    _positionOdysseusAttachMenu(anchor, menu);
+    _openwingsAttachMenu = menu;
+    _positionOpenWingsAttachMenu(anchor, menu);
     menu.querySelector('.email-odysseus-attach-local')?.addEventListener('click', () => {
-      _closeOdysseusAttachMenu();
+      _closeOpenWingsAttachMenu();
       document.getElementById('doc-email-file-input')?.click();
     });
     menu.querySelectorAll('[data-ody-attach-kind]').forEach(btn => {
-      btn.addEventListener('click', () => _loadOdysseusAttachItems(menu, btn.dataset.odyAttachKind));
+      btn.addEventListener('click', () => _loadOpenWingsAttachItems(menu, btn.dataset.odyAttachKind));
     });
     let attachSearchTimer = null;
     menu.querySelector('.email-odysseus-attach-search')?.addEventListener('input', () => {
       clearTimeout(attachSearchTimer);
       attachSearchTimer = setTimeout(() => {
-        _loadOdysseusAttachItems(menu, menu.dataset.odyAttachKind || 'document');
+        _loadOpenWingsAttachItems(menu, menu.dataset.odyAttachKind || 'document');
       }, 220);
     });
-    menu.querySelector('.email-odysseus-attach-selected')?.addEventListener('click', () => _attachSelectedOdysseusItems(menu));
+    menu.querySelector('.email-odysseus-attach-selected')?.addEventListener('click', () => _attachSelectedOpenWingsItems(menu));
     setTimeout(() => {
       document.addEventListener('click', _attachMenuOutsideClick, true);
       document.addEventListener('keydown', _attachMenuEscape, true);
     }, 0);
-    _loadOdysseusAttachItems(menu, 'document');
+    _loadOpenWingsAttachItems(menu, 'document');
   }
 
   function _isMarkdownImageFile(file) {
@@ -6520,7 +6520,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
           body_html: bodyHtml,
           in_reply_to: inReplyTo || null,
           references: references || null,
-          account_id: window.__odysseusActiveEmailAccount || null,
+          account_id: window.__openwingsActiveEmailAccount || null,
           attachments: (docs.get(activeDocId)?._composeAtts || []).map(a => a.token),
           draft_uid: docs.get(activeDocId)?._emailDraftUid || null,
           draft_folder: docs.get(activeDocId)?._emailDraftFolder || null,
@@ -6716,7 +6716,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     const inReplyTo = document.getElementById('doc-email-in-reply-to')?.value?.trim() || '';
     const sourceUid = document.getElementById('doc-email-source-uid')?.value?.trim() || '';
     const sourceFolder = document.getElementById('doc-email-source-folder')?.value?.trim() || 'INBOX';
-    const sourceAccountId = docs.get(activeDocId)?.sourceEmailAccountId || window.__odysseusActiveEmailAccount || '';
+    const sourceAccountId = docs.get(activeDocId)?.sourceEmailAccountId || window.__openwingsActiveEmailAccount || '';
     const cleanAiReplyText = (text) => {
       if (!text) return '';
       let t = String(text);
@@ -7630,8 +7630,8 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
         <button id="doc-email-discard-btn" class="email-discard-btn" title="Close email" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Close</span></button>
         <span style="flex:1"></span>
         <div class="email-send-split">
-          <button type="button" id="doc-email-send-btn" class="email-send-btn email-send-main" title="Send email (Ctrl+Enter)" onpointerdown="window.odysseusEmailSendIntent&&window.odysseusEmailSendIntent(event)" onmousedown="window.odysseusEmailSendIntent&&window.odysseusEmailSendIntent(event)" onclick="window.odysseusEmailSendIntent&&window.odysseusEmailSendIntent(event)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send</button>
-          <button type="button" id="doc-email-send-caret" class="email-send-btn email-send-caret" title="More send options" aria-haspopup="true" aria-expanded="false" onpointerdown="window.odysseusEmailCaretIntent&&window.odysseusEmailCaretIntent(event)" onmousedown="window.odysseusEmailCaretIntent&&window.odysseusEmailCaretIntent(event)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <button type="button" id="doc-email-send-btn" class="email-send-btn email-send-main" title="Send email (Ctrl+Enter)" onpointerdown="window.openwingsEmailSendIntent&&window.openwingsEmailSendIntent(event)" onmousedown="window.openwingsEmailSendIntent&&window.openwingsEmailSendIntent(event)" onclick="window.openwingsEmailSendIntent&&window.openwingsEmailSendIntent(event)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send</button>
+          <button type="button" id="doc-email-send-caret" class="email-send-btn email-send-caret" title="More send options" aria-haspopup="true" aria-expanded="false" onpointerdown="window.openwingsEmailCaretIntent&&window.openwingsEmailCaretIntent(event)" onmousedown="window.openwingsEmailCaretIntent&&window.openwingsEmailCaretIntent(event)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div id="doc-email-more-menu" class="email-more-menu" style="display:none">
             <div class="dropdown-item-compact" id="doc-email-draft-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></span>Save Draft</div>
             <div class="dropdown-item-compact" id="doc-email-schedule-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>Schedule Send...</div>
@@ -8264,7 +8264,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
     }
 
     const handleSendIntent = (e) => {
-      if (e && e.__odysseusEmailSendHandled) return;
+      if (e && e.__openwingsEmailSendHandled) return;
       const rawTarget = e && e.target;
       const target = rawTarget && rawTarget.nodeType === Node.TEXT_NODE ? rawTarget.parentElement : rawTarget;
       const targetBtn = target && target.closest ? target.closest('#doc-email-send-btn') : null;
@@ -8273,14 +8273,14 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
       if (e) {
         e.preventDefault();
         e.stopPropagation();
-        e.__odysseusEmailSendHandled = true;
+        e.__openwingsEmailSendHandled = true;
       }
       const _m = document.getElementById('doc-email-more-menu');
       if (_m) _m.style.display = 'none';
       document.getElementById('doc-email-send-caret')?.setAttribute('aria-expanded', 'false');
       _sendEmail();
     };
-    window.odysseusEmailSendIntent = handleSendIntent;
+    window.openwingsEmailSendIntent = handleSendIntent;
     if (!window._emailSendDelegatedBoundV3) {
       window._emailSendDelegatedBoundV3 = true;
       ['pointerdown', 'mousedown', 'pointerup', 'click'].forEach((type) => {
@@ -8298,12 +8298,12 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
       if (caret) caret.setAttribute('aria-expanded', String(opening));
     };
     const handleCaretIntent = (e) => {
-      if (e && e.__odysseusEmailCaretHandled) return;
+      if (e && e.__openwingsEmailCaretHandled) return;
       const now = Date.now();
       if (e && e.type === 'click' && now - lastCaretToggleAt < 350) {
         e.preventDefault();
         e.stopPropagation();
-        e.__odysseusEmailCaretHandled = true;
+        e.__openwingsEmailCaretHandled = true;
         return;
       }
       const rawTarget = e && e.target;
@@ -8314,12 +8314,12 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
       if (e) {
         e.preventDefault();
         e.stopPropagation();
-        e.__odysseusEmailCaretHandled = true;
+        e.__openwingsEmailCaretHandled = true;
       }
       lastCaretToggleAt = now;
       toggleSendMenu(caret);
     };
-    window.odysseusEmailCaretIntent = handleCaretIntent;
+    window.openwingsEmailCaretIntent = handleCaretIntent;
     if (!window._emailCaretDelegatedBoundV1) {
       window._emailCaretDelegatedBoundV1 = true;
       ['pointerdown', 'mousedown', 'click'].forEach((type) => {
@@ -11332,7 +11332,7 @@ import { attachColorPicker } from './colorPicker.js?v=20260910eyedropper1';
           const activeDocument = activeDocId ? docs.get(activeDocId) : null;
           const isEmailDocument = activeDocument?.language === 'email';
           try {
-            const accountId = String(window.__odysseusActiveEmailAccount || '').trim();
+            const accountId = String(window.__openwingsActiveEmailAccount || '').trim();
             const suffix = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
             const generalResponse = await fetch('/api/auth/settings', { credentials: 'same-origin' });
             const generalData = await generalResponse.json().catch(() => ({}));

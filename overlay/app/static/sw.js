@@ -1,4 +1,4 @@
-// static/sw.js — Odysseus PWA Service Worker
+// static/sw.js — OpenWings PWA Service Worker
 // Strategy:
 //   - HTML (navigation): network-first, cache fallback. Code graph updates
 //     need the current app shell on the reload the user actually performs.
@@ -7,7 +7,7 @@
 //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
 //   - API / non-GET: never cached.
 // Bump CACHE_NAME whenever the precache list or SW logic changes.
-const CACHE_NAME = 'odysseus-v661-openwings-looks4';
+const CACHE_NAME = 'openwings-v663-names';
 
 // KaTeX resolves these from its own stylesheet, so caching the CSS without them
 // gives offline math fallback glyphs instead of proper typesetting.

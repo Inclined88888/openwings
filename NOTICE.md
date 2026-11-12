@@ -1,22 +1,23 @@
 # Notice
 
-OpenWings deploys and patches **Odysseus** (https://github.com/odysseus-dev/odysseus),
-Copyright its contributors, licensed under the GNU Affero General Public
-License v3.0 or later. The upstream license text is at
-https://github.com/odysseus-dev/odysseus/blob/main/LICENSE.
+OpenWings is a modified version of Odysseus (https://github.com/odysseus-dev/odysseus),
+copyright its contributors, licensed under the GNU Affero General Public License
+v3.0 or later. OpenWings is distributed under the same license; the full text is
+in [LICENSE](LICENSE). Modified by the OpenWings project, 2026: the changes are
+the patches in `patches/`, each with its date and reason.
 
-Files in this repository derived from Odysseus, and therefore under
+Files in this repository derived from the upstream program, and therefore under
 AGPL-3.0-or-later:
 
-* `patches/*.patch` (diffs against upstream source)
+* `patches/*.patch` (diffs against the upstream source)
 * `overlay/app/**` (upstream files with those patches applied, plus OpenWings
-  modules that run inside the Odysseus process)
+  modules that run inside the app process)
 * `config/searxng/settings.yml` and `scripts/vendor/migrate_searxng_settings.py`
   (vendored unchanged from upstream commit 9d0d3720f4ca181d87bef94da826d730acc6d483)
 
-AGPL section 13: if you let other people use a modified Odysseus over a
+AGPL section 13: if you let other people use OpenWings, modified or not, over a
 network, you must offer them its corresponding source. This repository is that
-source for an OpenWings deployment.
+source for an OpenWings deployment (the sign-in page links to it).
 
 Third party container images used by `docker-compose.yml` keep their own
 licenses: ChromaDB (Apache-2.0), SearXNG (AGPL-3.0), ntfy (Apache-2.0 /

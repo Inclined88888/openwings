@@ -467,7 +467,7 @@ FUNCTION_TOOL_SCHEMAS = [
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "path": {"type": "string", "description": "Supplied odysseus://attachment/ID reference for an owned upload, or a confined workspace image path."},
+                    "path": {"type": "string", "description": "Supplied openwings://attachment/ID reference for an owned upload, or a confined workspace image path."},
                     "mode": {"type": "string", "enum": ["all", "numbers"]},
                     "include_layout": {"type": "boolean", "description": "Include full bounding quadrilaterals; compact pixel centers are always returned."},
                     "min_confidence": {"type": "number", "minimum": 0, "maximum": 1},
@@ -491,7 +491,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "start": {"type": "string", "description": "Optional transcription start in seconds or HH:MM:SS. Pass the requested start directly when the user names a time interval."},
                     "end": {"type": "string", "description": "Optional transcription end in seconds or HH:MM:SS. Pass the requested end directly instead of transcribing and filtering the whole recording."},
                     "model": {"type": "string", "enum": ["tiny", "base", "small"], "description": "Optional local Whisper size. Focused ranges up to five minutes default to small for accuracy; longer or unbounded recordings default to base for speed."},
-                    "output_path": {"type": "string", "description": "Optional workspace destination for the timestamped transcript. Use .txt for readable timestamped text, .jsonl for one {start, end, text} object per speech segment, or .srt/.vtt for subtitle files. If the requested final artifact is one of these formats, pass its path directly so the tool writes it atomically. If omitted, a .txt transcript is saved automatically under /workspace/.odysseus/transcripts/."},
+                    "output_path": {"type": "string", "description": "Optional workspace destination for the timestamped transcript. Use .txt for readable timestamped text, .jsonl for one {start, end, text} object per speech segment, or .srt/.vtt for subtitle files. If the requested final artifact is one of these formats, pass its path directly so the tool writes it atomically. If omitted, a .txt transcript is saved automatically under /workspace/.openwings/transcripts/."},
                     "timestamp_precision": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Decimal places for JSONL start/end seconds (default 3). Match an explicitly requested rounding precision."}
                 },
                 "required": ["path"]
@@ -1527,7 +1527,7 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "image_id": {"type": "string", "description": "Gallery image ID or supplied odysseus://attachment/ID reference for an owned upload"},
+                    "image_id": {"type": "string", "description": "Gallery image ID or supplied openwings://attachment/ID reference for an owned upload"},
                     "action": {"type": "string", "enum": ["prompt", "upscale", "rembg"], "description": "Edit action"},
                     "prompt": {"type": "string", "description": "For action=prompt: requested changes, preserving the rest of the source image"},
                     "scale": {"type": "number", "description": "For upscale: scale factor (default 2)"},

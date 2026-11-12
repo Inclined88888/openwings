@@ -2,8 +2,8 @@
 
 Upstream passes its whole environment to user-added MCP servers (whenever they
 define any env var), to the bundled npx browser server, and to Cookbook
-commands. That environment holds ODYSSEUS_APP_KEY (which decrypts every stored
-credential), the admin password and provider API keys. Third-party code gets a
+commands. That environment holds the encryption key (OPENWINGS_APP_KEY, under
+its internal name; it decrypts every stored credential), the admin password and provider API keys. Third-party code gets a
 copy with those removed; upstream's own Python MCP servers keep the full
 environment because they need the key to read encrypted mail credentials.
 """
@@ -13,8 +13,13 @@ import os
 import re
 from typing import Iterable, Mapping
 
+from wings.names import public_name
+
 # Exact names that must never reach third-party processes.
 ALWAYS_SCRUB = frozenset({
+    "OPENWINGS_APP_KEY",
+    "OPENWINGS_ADMIN_PASSWORD",
+    # The same two under the internal names the app reads (wings/names.py).
     "ODYSSEUS_APP_KEY",
     "ODYSSEUS_ADMIN_PASSWORD",
     "SEARXNG_SECRET",
@@ -29,7 +34,7 @@ ALWAYS_SCRUB = frozenset({
 _SECRET_NAME = re.compile(r"(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|COOKIE|SESSION)", re.I)
 
 # Not secrets, despite matching the pattern: markers children must keep.
-# WINGS_KEY_FROM_ENV tells a process without ODYSSEUS_APP_KEY never to mint a
+# WINGS_KEY_FROM_ENV tells a process without the encryption key never to mint a
 # key file of its own (patch 0001).
 ALWAYS_KEEP = frozenset({"WINGS_KEY_FROM_ENV"})
 
@@ -55,4 +60,7 @@ def scrubbed_environ(
     """
     src = dict(os.environ if base is None else base)
     keep = (set(keep) | ALWAYS_KEEP) - ALWAYS_SCRUB
-    return {k: v for k, v in src.items() if k in keep or not is_secret_name(k)}
+    out = {k: v for k, v in src.items() if k in keep or not is_secret_name(k)}
+    # Settings reach these processes under their OPENWINGS_* names, the ones
+    # people know (a Python child maps them back by itself: wings/site_names.py).
+    return {public_name(k): v for k, v in out.items()}

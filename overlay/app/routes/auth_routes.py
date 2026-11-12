@@ -89,7 +89,30 @@ class ResetUserPasswordRequest(BaseModel):
 class SetOpenRegistrationRequest(BaseModel):
     enabled: bool
 
-SESSION_COOKIE = "odysseus_session"
+SESSION_COOKIE = "openwings_session"
+# The name the cookie had before; still read (and replaced on the next
+# request) so an upgrade signs nobody out.
+LEGACY_SESSION_COOKIE = "odysseus_session"
+
+
+def session_token(cookies) -> Optional[str]:
+    """The session token from either cookie name (current name first)."""
+    return cookies.get(SESSION_COOKIE) or cookies.get(LEGACY_SESSION_COOKIE)
+
+
+def move_legacy_session_cookie(response, token: str, secure: bool) -> None:
+    """Store a session made before the cookie was renamed under the current
+    name (same token) and delete the old cookie.
+
+    The server cannot tell whether the old cookie was kept across browser
+    restarts ("remember me"), so the new one is a browser-session cookie: it
+    never outlives what the person chose. Someone who chose "remember me"
+    signs in once more after the next browser restart."""
+    response.set_cookie(
+        key=SESSION_COOKIE, value=token, httponly=True, samesite="lax",
+        secure=secure, path="/",
+    )
+    response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
 
 
 def _secure_cookie(request: Request) -> bool:
@@ -127,7 +150,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     _setup_limiter = RateLimiter(max_requests=3, window_seconds=300)
 
     def _get_current_user(request: Request) -> Optional[str]:
-        token = request.cookies.get(SESSION_COOKIE)
+        token = session_token(request.cookies)
         return auth_manager.get_username_for_token(token)
 
     def _require_admin_user(request: Request) -> Optional[str]:
@@ -213,19 +236,23 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         if body.remember:
             cookie_kwargs["max_age"] = TOKEN_TTL
         response.set_cookie(**cookie_kwargs)
+        if (getattr(request, "cookies", None) or {}).get(LEGACY_SESSION_COOKIE):
+            response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
         return {"ok": True, "username": username}
 
     @router.post("/logout")
     async def logout(request: Request, response: Response):
-        token = request.cookies.get(SESSION_COOKIE)
+        token = session_token(request.cookies)
         if token:
             auth_manager.revoke_token(token)
         response.delete_cookie(SESSION_COOKIE, path="/")
+        if (getattr(request, "cookies", None) or {}).get(LEGACY_SESSION_COOKIE):
+            response.delete_cookie(LEGACY_SESSION_COOKIE, path="/")
         return {"ok": True}
 
     @router.get("/status")
     async def auth_status(request: Request):
-        token = request.cookies.get(SESSION_COOKIE)
+        token = session_token(request.cookies)
         result = auth_manager.status(token)
         result["signup_enabled"] = auth_manager.signup_enabled
         # Include the caller's effective privileges so the frontend can
@@ -252,7 +279,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(401, "Not authenticated")
         if len(body.new_password) < PASSWORD_MIN_LENGTH:
             raise HTTPException(400, f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
-        current_token = request.cookies.get(SESSION_COOKIE)
+        current_token = session_token(request.cookies)
         ok = await asyncio.to_thread(auth_manager.change_password, user, body.current_password, body.new_password)
         if not ok:
             raise HTTPException(400, "Current password is incorrect")

@@ -120,7 +120,7 @@ CalDAV and Drive APIs turned on (step 2) if you want those.
 ## Where it is stored
 
 The Client ID and secret are stored in OpenWings' database, encrypted with the
-key in `.env` (`ODYSSEUS_APP_KEY`), like every other secret. The secret is never
+key in `.env` (`OPENWINGS_APP_KEY`), like every other secret. The secret is never
 shown again or sent to a browser; the wizard shows only the end of the Client
 ID. Each person's Google sign-in (access and refresh tokens) is stored the same
 way. **Remove** in the wizard deletes the saved key; each person can

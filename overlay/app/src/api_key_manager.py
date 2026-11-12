@@ -25,7 +25,7 @@ class APIKeyManager:
             check_key_file_matches_env(Path(self.key_file), env_key)
             return env_key
         if not os.path.exists(self.key_file) and os.environ.get("WINGS_KEY_FROM_ENV", "").strip() == "1":
-            raise RuntimeError("ODYSSEUS_APP_KEY is not available in this process; refusing to create a key file")
+            raise RuntimeError("OPENWINGS_APP_KEY (the encryption key) is not available in this process; refusing to create a key file")
         if os.path.exists(self.key_file):
             # Older versions wrote .key with the process umask (often 0o644,
             # i.e. group/world-readable). Re-restrict on read so existing

@@ -2673,7 +2673,7 @@ class PrivateBrowserTool:
         configured = os.getenv("ODYSSEUS_BROWSER_SCREENSHOT_DIR")
         candidates = [
             Path(configured) if configured else Path("/app/data/tmp/private-browser"),
-            Path(tempfile.gettempdir()) / "odysseus-private-browser",
+            Path(tempfile.gettempdir()) / "openwings-private-browser",
         ]
         screenshot_dir = candidates[-1]
         for candidate in candidates:

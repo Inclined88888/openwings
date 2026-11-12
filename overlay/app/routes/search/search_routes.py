@@ -93,7 +93,7 @@ def setup_search_routes(config) -> APIRouter:
     .result-snippet {{ margin-top:4px; color:var(--text); font-size:14px; }}
   </style>
   <script nonce="{nonce}">
-    try {{ const t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null'); const n = (t && t.name) || 'ow-sage';
+    try {{ const t = JSON.parse(localStorage.getItem('openwings-theme') || 'null'); const n = (t && t.name) || 'ow-sage';
       if (/^ow-[a-z-]+$/.test(n)) document.documentElement.setAttribute('data-ow-skin', n); }} catch (_) {{}}
     const initialQuery = {q_json};
     function esc(value) {{

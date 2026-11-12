@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Move an encryption key that already lives in the data volume into .env.
 #
-# Needed only when data was created without ODYSSEUS_APP_KEY (an upstream
-# Odysseus install, a restored upstream backup, or a stack started before
-# setup.sh). Symptom: the openwings container restarts with
+# Needed only when data was created without OPENWINGS_APP_KEY (an install of
+# the upstream program that kept its key in the data volume, a backup of one,
+# or a stack started before setup.sh). Symptom: the openwings container restarts with
 #   "wings: configuration error: /app/data/.app_key exists and differs ..."
 #
 #   ./scripts/adopt-key.sh --yes
 #
 # Three phases, so a failure at any point loses nothing:
 #   1. In a throwaway container: check that the key in data/.app_key decrypts
-#      the data already stored, and re-encrypt what upstream protected with its
+#      the data already stored, and re-encrypt what was protected with the
 #      second key (data/.key: webhook signing secrets and api_keys.json) to it.
 #      Nothing is deleted.
 #   2. Write the key to .env (the previous value is kept as a comment) and
@@ -24,8 +24,13 @@ set -euo pipefail
 [ "${1:-}" = "--yes" ] || die "this rewrites .env and deletes key files from the data volume. Re-run with --yes."
 require_docker
 [ -f "$ENV_FILE" ] || die "no .env found"
-vol="$(volume_name odysseus-data)"
-[ -n "$vol" ] || die "the odysseus-data volume does not exist"
+migrate_env
+# Data from before 1.0.3-w2 is copied to the current volume first, so the key
+# is adopted where the app will read it (and `docker compose up` below never
+# creates an empty data volume next to the earlier one).
+migrate_volumes
+vol="$(volume_name app-data)"
+[ -n "$vol" ] || die "the app data volume does not exist"
 IMAGE="$(wings_image)"
 
 info "Stopping OpenWings"
@@ -106,13 +111,13 @@ PY
 [ -n "$key" ] || die "no key was read; nothing changed"
 
 # Phase 2 ---------------------------------------------------------------------
-previous="$(env_get ODYSSEUS_APP_KEY)"
+previous="$(env_get OPENWINGS_APP_KEY)"
 if [ -n "$previous" ] && [ "$previous" != "$key" ]; then
-  printf '# ODYSSEUS_APP_KEY replaced by adopt-key.sh on %s; previous value: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$previous" >> "$ENV_FILE"
+  printf '# OPENWINGS_APP_KEY replaced by adopt-key.sh on %s; previous value: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$previous" >> "$ENV_FILE"
 fi
-env_set ODYSSEUS_APP_KEY "$key"
-[ "$(env_get ODYSSEUS_APP_KEY)" = "$key" ] || die ".env could not be updated; the key files are still in the volume, nothing was lost"
-ok "ODYSSEUS_APP_KEY in .env now holds the adopted key"
+env_set OPENWINGS_APP_KEY "$key"
+[ "$(env_get OPENWINGS_APP_KEY)" = "$key" ] || die ".env could not be updated; the key files are still in the volume, nothing was lost"
+ok "OPENWINGS_APP_KEY in .env now holds the adopted key"
 
 # Phase 3 ---------------------------------------------------------------------
 docker run --rm --network none --entrypoint sh -v "${vol}:/data" "$IMAGE" -c 'rm -f /data/.app_key /data/.key'

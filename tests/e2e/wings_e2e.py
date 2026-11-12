@@ -577,7 +577,7 @@ def main() -> int:
         child_env = {}
     check("user MCP server started (env captured)", bool(child_env), env_dump[:120])
     if child_env:
-        check("MCP child does NOT get ODYSSEUS_APP_KEY", "ODYSSEUS_APP_KEY" not in child_env)
+        check("MCP child does NOT get the encryption key", "ODYSSEUS_APP_KEY" not in child_env and "OPENWINGS_APP_KEY" not in child_env)
         check("MCP child does NOT get the admin password", "ODYSSEUS_ADMIN_PASSWORD" not in child_env)
         check("MCP child still gets its own configured env", child_env.get("E2E_SERVER_TOKEN") == SECRET_MCP_ENV)
     raw_env = app_python(
@@ -616,11 +616,11 @@ def main() -> int:
         check("phone-style client adds an event", st in (200, 201, 204), str(st))
         st, r = c.req("POST", "/api/calendar/config/accounts", json_body={
             "name": "Radicale", "url": f"http://radicale:5232/{dav_user}/", "username": dav_user, "password": dav_pw})
-        check("Odysseus accepts the CalDAV account", st == 200 and "error" not in json.dumps(r).lower(), str(r)[:200])
+        check("OpenWings accepts the CalDAV account", st == 200 and "error" not in json.dumps(r).lower(), str(r)[:200])
         st, r = c.req("POST", "/api/calendar/sync?direction=pull", timeout=120)
         check("CalDAV pull succeeds", st == 200, str(r)[:200])
         st, evs = c.req("GET", "/api/calendar/events?start=2026-11-25T00:00:00Z&end=2026-12-05T00:00:00Z")
-        check("phone's event shows up in Odysseus", f"Dentist {tag}" in json.dumps(evs), json.dumps(evs)[:200])
+        check("phone's event shows up in OpenWings", f"Dentist {tag}" in json.dumps(evs), json.dumps(evs)[:200])
         st, cals = c.req("GET", "/api/calendar/calendars")
         cal_list = cals if isinstance(cals, list) else (cals or {}).get("calendars", [])
         cal_id = next((x.get("href") or x.get("id") for x in cal_list
@@ -628,7 +628,7 @@ def main() -> int:
         st, ev = c.req("POST", "/api/calendar/events", json_body={
             "summary": f"Lunch {tag}", "dtstart": "2026-12-02T12:00:00Z", "dtend": "2026-12-02T13:00:00Z",
             "calendar_href": cal_id})
-        check("create event in Odysseus on the synced calendar", st == 200 and bool(cal_id), f"{st} cal={cal_id} {str(ev)[:160]}")
+        check("create event in OpenWings on the synced calendar", st == 200 and bool(cal_id), f"{st} cal={cal_id} {str(ev)[:160]}")
         time.sleep(3)
         st, listing = dav("PROPFIND", cal, headers={"Depth": "1"})
         found = False
@@ -636,7 +636,7 @@ def main() -> int:
             st2, body2 = dav("GET", href)
             if f"Lunch {tag}" in body2:
                 found = True
-        check("Odysseus event is written back to Radicale", found, listing[:200])
+        check("OpenWings event is written back to Radicale", found, listing[:200])
         raw_pref = sh("docker", "exec", APP, "sh", "-c", f"grep -rl -e '{dav_pw}' /app/data 2>/dev/null || true").strip()
         check("CalDAV password not stored in plaintext", raw_pref == "", raw_pref)
     else:

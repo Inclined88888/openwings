@@ -418,12 +418,12 @@ class WebhookManager:
         body = json.dumps({"event": event, "timestamp": _utcnow().isoformat(), "data": payload})
         headers = {
             "Content-Type": "application/json",
-            "X-Odysseus-Event": event,
+            "X-OpenWings-Event": event,
             "User-Agent": "OpenWings-Webhook/1.0",
         }
         if secret:
             sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
-            headers["X-Odysseus-Signature"] = sig
+            headers["X-OpenWings-Signature"] = sig
 
         db = SessionLocal()
         try:

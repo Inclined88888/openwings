@@ -105,10 +105,10 @@ def create_default_admin():
         if username and password:
             # Both provided via env — validate before using
             if username in RESERVED_USERNAMES:
-                print(f"  [error] ODYSSEUS_ADMIN_USER '{username}' is a reserved username")
+                print(f"  [error] OPENWINGS_ADMIN_USER '{username}' is a reserved username")
                 return "failed"
             if len(password) < PASSWORD_MIN_LENGTH:
-                print(f"  [error] ODYSSEUS_ADMIN_PASSWORD must be at least {PASSWORD_MIN_LENGTH} characters")
+                print(f"  [error] OPENWINGS_ADMIN_PASSWORD must be at least {PASSWORD_MIN_LENGTH} characters")
                 return "failed"
         elif sys.stdin.isatty() and not os.getenv("ODYSSEUS_SKIP_ADMIN_PROMPT"):
             # Interactive terminal — ask the user
@@ -137,7 +137,7 @@ def create_default_admin():
             print(f"  [ok] Initial admin user created ({username})")
             if not os.getenv("ODYSSEUS_ADMIN_PASSWORD"):
                 print(f"        Temporary password: {password}")
-                print(f"        ** Change it after first login. Set ODYSSEUS_ADMIN_PASSWORD to choose your own. **")
+                print(f"        ** Change it after first login. Set OPENWINGS_ADMIN_PASSWORD to choose your own. **")
         return "created"
     except ImportError as e:
         if "incompatible architecture" in str(e).lower():

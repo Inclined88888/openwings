@@ -1,5 +1,4 @@
-# OpenWings: a self-hosted AI workspace built on Odysseus
-# (https://github.com/odysseus-dev/odysseus), pinned to an exact upstream build.
+# OpenWings: a self-hosted AI workspace (credits and license: README.md, NOTICE.md).
 #
 #   ./scripts/setup.sh            first run: writes .env, builds, starts, prints login
 #   docker compose up -d          every run after that
@@ -28,23 +27,25 @@ x-logging: &logging
 services:
   openwings:
     # Built locally: the pinned upstream image plus the OpenWings patch overlay
-    # (docker/odysseus/Dockerfile). pull_policy=build means Compose never tries
+    # (docker/openwings/Dockerfile). pull_policy=build means Compose never tries
     # to pull this tag from a registry, so nobody can squat the name.
-    image: openwings:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w1}
+    image: openwings:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w2}
     pull_policy: build
     build:
       context: .
-      dockerfile: docker/odysseus/Dockerfile
+      dockerfile: docker/openwings/Dockerfile
       args:
-        ODYSSEUS_BASE_IMAGE: ${ODYSSEUS_BASE_IMAGE:-ghcr.io/odysseus-dev/odysseus:1.0.3-9d0d372@sha256:5117c5e07e5976095ce213e601277ff372e0387a67de34c5fd59a3de723e6113}
+        # Unset = the pinned base image named in the Dockerfile. Set
+        # OPENWINGS_BASE_IMAGE in .env only to build from another copy of it.
+        - OPENWINGS_BASE_IMAGE
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7011}:7000"
     volumes:
-      - odysseus-data:/app/data
-      - odysseus-logs:/app/logs
-      - odysseus-ssh:/app/.ssh
-      - odysseus-hf-cache:/app/.cache/huggingface
-      - odysseus-local:/app/.local
+      - app-data:/app/data
+      - app-logs:/app/logs
+      - app-ssh:/app/.ssh
+      - hf-cache:/app/.cache/huggingface
+      - app-local:/app/.local
       # Agent workspace: where the agent's file tools and code work, and what
       # the code runner (profile runner) can write. Separate from app data.
       - agent-workspaces:/workspaces
@@ -62,7 +63,7 @@ services:
     environment:
       # OpenWings hardening (see patches/). Encryption keys come from .env so they
       # never sit in the same volume (or backup) as the data they protect.
-      - ODYSSEUS_APP_KEY=${ODYSSEUS_APP_KEY:?ODYSSEUS_APP_KEY is not set. Run ./scripts/setup.sh first}
+      - OPENWINGS_APP_KEY=${OPENWINGS_APP_KEY:?OPENWINGS_APP_KEY is not set in .env. Run ./scripts/setup.sh first (it also updates an .env from an older version)}
       # Processes that lack the key refuse to create a new key file (patch 0001).
       - WINGS_KEY_FROM_ENV=1
       # 1 = start even though the key cannot decrypt stored credentials (after
@@ -76,7 +77,7 @@ services:
       # Upstream's agent tools call the app over loopback and default to port
       # 7011, but inside the container uvicorn listens on 7000. Without this,
       # every agent tool that loops back fails with "connection refused".
-      - ODYSSEUS_INTERNAL_BASE=http://127.0.0.1:7000
+      - OPENWINGS_INTERNAL_BASE=http://127.0.0.1:7000
       # Upstream defers scheduled agent tasks while any browser tab is open,
       # so an always-open tab can stop schedules from ever running. Off by
       # default here; set true if scheduled jobs slow a single local GPU.
@@ -84,7 +85,7 @@ services:
       # Upstream's own Playwright MCP path is not used (OpenWings drives the browser
       # container instead); do not download an unpinned @playwright/mcp@latest
       # from npm at every start.
-      - ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=${ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE:-1}
+      - OPENWINGS_BROWSER_MCP_REQUIRE_CACHE=${OPENWINGS_BROWSER_MCP_REQUIRE_CACHE:-1}
       # Browser automation (profile: browser, patch 0008). The app turns it on
       # when "browser" is in COMPOSE_PROFILES. See .env.example for each switch.
       - WINGS_COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
@@ -114,12 +115,12 @@ services:
       - WINGS_MODEL_RETRIES=${WINGS_MODEL_RETRIES:-3}
       # Default workspace for chats in the web UI (admins). Without one,
       # upstream refuses every file and code tool in an ordinary chat.
-      - ODYSSEUS_WORKSPACE_DEFAULT=${ODYSSEUS_WORKSPACE_DEFAULT:-/workspaces/default}
+      - OPENWINGS_WORKSPACE_DEFAULT=${OPENWINGS_WORKSPACE_DEFAULT:-/workspaces/default}
       # Accounts and auth
       - AUTH_ENABLED=true
       - LOCALHOST_BYPASS=false
-      - ODYSSEUS_ADMIN_USER=${ODYSSEUS_ADMIN_USER:-admin}
-      - ODYSSEUS_ADMIN_PASSWORD=${ODYSSEUS_ADMIN_PASSWORD:-}
+      - OPENWINGS_ADMIN_USER=${OPENWINGS_ADMIN_USER:-admin}
+      - OPENWINGS_ADMIN_PASSWORD=${OPENWINGS_ADMIN_PASSWORD:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7011,http://127.0.0.1:7011}
       - SECURE_COOKIES=${SECURE_COOKIES:-}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
@@ -159,7 +160,7 @@ services:
       - DATABASE_URL=sqlite:///./data/app.db
       # Needed only for the bundled Radicale (profile: caldav), whose address is
       # private. Upstream blocks private CalDAV hosts by default (SSRF guard).
-      - ODYSSEUS_ALLOW_PRIVATE_CALDAV=${ODYSSEUS_ALLOW_PRIVATE_CALDAV:-0}
+      - OPENWINGS_ALLOW_PRIVATE_CALDAV=${OPENWINGS_ALLOW_PRIVATE_CALDAV:-0}
       # Mail servers on a private address (Proton Mail Bridge, DavMail for
       # Outlook/Exchange, a LAN mail server) are blocked by upstream's SSRF
       # guard on the send path unless this is true.
@@ -175,16 +176,16 @@ services:
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
       # Safety rails. Keep these on.
-      - ODYSSEUS_TOOL_APPROVAL_GATE=${ODYSSEUS_TOOL_APPROVAL_GATE:-1}
-      - ODYSSEUS_CAPTURE_MODEL_REQUESTS=0
+      - OPENWINGS_TOOL_APPROVAL_GATE=${OPENWINGS_TOOL_APPROVAL_GATE:-1}
+      - OPENWINGS_CAPTURE_MODEL_REQUESTS=0
       # Background work
-      - ODYSSEUS_INPROCESS_POLLERS=${ODYSSEUS_INPROCESS_POLLERS:-1}
-      - ODYSSEUS_INPROCESS_TASKS=${ODYSSEUS_INPROCESS_TASKS:-1}
+      - OPENWINGS_INPROCESS_POLLERS=${OPENWINGS_INPROCESS_POLLERS:-1}
+      - OPENWINGS_INPROCESS_TASKS=${OPENWINGS_INPROCESS_TASKS:-1}
       - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-24}
       # Upload limits (bytes)
-      - ODYSSEUS_CHAT_UPLOAD_MAX_BYTES=${ODYSSEUS_CHAT_UPLOAD_MAX_BYTES:-52428800}
-      - ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES=${ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES:-52428800}
-      - ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES=${ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES:-26214400}
+      - OPENWINGS_CHAT_UPLOAD_MAX_BYTES=${OPENWINGS_CHAT_UPLOAD_MAX_BYTES:-52428800}
+      - OPENWINGS_PERSONAL_UPLOAD_MAX_BYTES=${OPENWINGS_PERSONAL_UPLOAD_MAX_BYTES:-52428800}
+      - OPENWINGS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES=${OPENWINGS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES:-26214400}
       # File ownership inside the named volumes
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -233,7 +234,7 @@ services:
       - -c
       - |
         set -eu
-        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'odysseus-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
+        if [ ! -s /etc/searxng/settings.yml ] || grep -Eq '[a-z]+-local-searxng-json-2026-05-30|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
           secret="$${SEARXNG_SECRET:-}"
           if [ -z "$$secret" ]; then
             secret="$$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
@@ -308,7 +309,7 @@ services:
     restart: unless-stopped
 
   radicale:
-    # Optional private CalDAV server (profile: caldav). Odysseus syncs to it,
+    # Optional private CalDAV server (profile: caldav). OpenWings syncs to it,
     # and so can your phone. Accounts live in ./config/radicale/users
     # (bcrypt), created by ./scripts/setup.sh --with-caldav.
     profiles: ["caldav"]
@@ -501,11 +502,11 @@ networks:
           ip_range: ${WINGS_IP_RANGE:-172.30.57.0/25}
 
 volumes:
-  odysseus-data:      # database, settings, notes, tasks, memory, documents, uploads, skills
-  odysseus-logs:
-  odysseus-ssh:       # Cookbook remote-server SSH identity
-  odysseus-hf-cache:  # downloaded HuggingFace models (re-downloadable)
-  odysseus-local:     # Cookbook-installed serving engines (re-installable)
+  app-data:           # database, settings, notes, tasks, memory, documents, uploads, skills
+  app-logs:
+  app-ssh:            # Cookbook remote-server SSH identity
+  hf-cache:           # downloaded HuggingFace models (re-downloadable)
+  app-local:          # Cookbook-installed serving engines (re-installable)
   chromadb-data:      # vector index for files, memory, RAG
   searxng-data:       # generated SearXNG settings (re-creatable)
   ntfy-cache:

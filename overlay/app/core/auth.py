@@ -243,7 +243,9 @@ class AuthManager:
         """Return public auth policy constants for the frontend."""
         return {
             "password_min_length": PASSWORD_MIN_LENGTH,
-            "reserved_usernames": sorted(RESERVED_USERNAMES),
+            # The built-in local owner id is reserved too, but it is not a name
+            # anyone would type; keep it out of what the browser is told.
+            "reserved_usernames": sorted(u for u in RESERVED_USERNAMES if not u.startswith("__")),
             "signup_enabled": self.signup_enabled,
             "session_days": TOKEN_TTL // 86400,
         }

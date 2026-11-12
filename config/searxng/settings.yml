@@ -1,4 +1,4 @@
-# Vendored from odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+# Vendored from the upstream project (see NOTICE.md) at commit 9d0d3720f4ca181d87bef94da826d730acc6d483
 # path: config/searxng/settings.yml (AGPL-3.0-or-later). Refresh with
 # scripts/dev/sync-vendor.sh when bumping the upstream pin.
 use_default_settings: true

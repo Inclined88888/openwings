@@ -6,14 +6,14 @@ your own server to confirm. Dates are UTC, 2026-11-10.
 ## Test environment, and its one big limitation
 
 The build environment could reach Docker Hub and PyPI but not GitHub's
-container registry blobs or Debian package mirrors. So the official image
-`ghcr.io/odysseus-dev/odysseus:1.0.3-9d0d372` could be neither pulled nor
+container registry blobs or Debian package mirrors. So the official upstream
+base image (pinned in `docker/openwings/Dockerfile`) could be neither pulled nor
 rebuilt there. Every runtime test ran on a stand in image built from the same
 upstream commit (`9d0d372`): the same Python 3.14.9 base, the same
 `requirements.txt`, the same source tree and entrypoint, but without the apt
 packages (Chromium, Node, build tools, gosu). The OpenWings overlay was then built
-on top of it through the real `docker/odysseus/Dockerfile`, with
-`ODYSSEUS_BASE_IMAGE` overridden. Consequences:
+on top of it through the real `docker/openwings/Dockerfile`, with
+`OPENWINGS_BASE_IMAGE` overridden. Consequences:
 
 * Anything that depends on those apt packages (Cookbook engine builds, the
   bundled npx browser server, agent-browser) was not exercised.
@@ -90,11 +90,11 @@ the fresh stack: 0 failures. Checks:
   creates a draft document and its process cannot open SMTP; nothing an agent
   wrote reaches the recipient; a scheduled row no person approved is refused
   by the poller and not delivered
-* a user added MCP server does not receive `ODYSSEUS_APP_KEY` or the admin
+* a user added MCP server does not receive `OPENWINGS_APP_KEY` or the admin
   password but does receive its own configured env; its env is encrypted at
   rest
 * CalDAV with the bundled Radicale: a phone style client creates a calendar
-  and an event; Odysseus pulls it; an event created in Odysseus is written
+  and an event; OpenWings pulls it; an event created in OpenWings is written
   back; the CalDAV password is not stored in plaintext
 * no plaintext endpoint key, mail password, MCP env value or CalDAV password
   anywhere under `/app/data` or `/app/logs`
@@ -119,7 +119,7 @@ The browser container was built from the pinned Selenium Chromium image
 (Chromium 156.0.8078.79) and run with all capabilities dropped and
 `no-new-privileges`. Checked:
 
-* **Isolation**: from a container named `odysseus` the guard admits DevTools
+* **Isolation**: from the app container the guard admits DevTools
   and the noVNC bridge; from any other container on the same network, and
   from the Docker host through the bridge address, the connection is reset.
   Chromium's DevTools, VNC and noVNC listen on loopback only.
@@ -285,7 +285,7 @@ found 7 more. Fixed, each where the defect was introduced:
   backend or a folder its parent excluded (4 upstream security tests
   failed). intersect() is upstream's again; only tool_execution's per call
   rebinding of the running request's own authority keeps its flag.
-* **Documentation tests (0001, 0008)**: ODYSSEUS_APP_KEY is in upstream's
+* **Documentation tests (0001, 0008)**: the encryption key setting is in upstream's
   environment reference; upstream's isolated distribution check copies the
   wings package.
 * **Spend caps (0013)**: they missed the compact agent runtime, the
@@ -420,7 +420,7 @@ reach HuggingFace.
 * Radicale under dropped capabilities: the image's default recursive chown
   failed; fixed with `TAKE_FILE_OWNERSHIP=false`.
 * Agent loopback port bug reproduced: inside the container port 7011 refuses,
-  7000 answers; fixed with `ODYSSEUS_INTERNAL_BASE`.
+  7000 answers; fixed with `OPENWINGS_INTERNAL_BASE`.
 
 ## UI (Chromium, Playwright)
 
@@ -530,7 +530,7 @@ failed, not a measured minimum: this sandbox cannot load the embedding model,
 so its app (about 440 MB) does not show the peak.
 
 The app service is now `openwings` (container `wings-openwings-1`, image
-`openwings:<tag>`) instead of `odysseus`; setup and its messages say
+`openwings:<tag>`) instead of the earlier name; setup and its messages say
 OpenWings. Checked by running setup over an existing install with the old
 container and the browser, runner and renderer profiles: the old container
 was removed, the new one became healthy, sign in worked with the same
@@ -538,10 +538,10 @@ password and all 76 existing chats were there. The browser guard returned
 Chrome's version to the app and dropped an outsider container on the same
 network holding the right token; the runner admitted the app (404 on an
 unknown path) and refused the outsider (403). An old compose override that
-still names `odysseus` is refused with a message saying what to rename.
-Unit tests: 187 passed. Volume names (`odysseus-data` and so on) and the
-`ODYSSEUS_*` settings keep their names: they hold existing data and are
-read by upstream.
+still uses the earlier service name is refused with a message saying what to
+rename. Unit tests: 187 passed. (Since 1.0.3-w2 the settings are named
+`OPENWINGS_*` and the data volumes `app-data` and so on; setup and upgrade
+rename and copy them, see README, "Settings and data volumes renamed".)
 
 ## Quiet, question free install (2026-11-11)
 
@@ -724,6 +724,53 @@ hosts): a real Gmail, iCloud or Yahoo login with an app password; a real
 Google sign-in, CalDAV, Calendar API and Drive with a real key; Google's
 "unverified app" screen. Please connect one real account of each kind on
 your own server.
+
+## Setting and volume names (1.0.3-w2, 2026-11-12)
+
+**Upstream suite on the shipped image.** The image no longer ships
+upstream's packaging files (`wings/image-tidy.sh` removes its compose files,
+Dockerfile, `docker/`, `.github/`, desktop launchers and the training and
+evaluation scripts, and replaces `.env.example`). 90 upstream tests only read
+those files (81 tests and 9 test files that cannot be collected); each was
+checked, and each fails only with the file missing. They are listed in
+`tests/upstream/not-shipped.txt`, and `tests/upstream/run.sh <upstream tests>`
+leaves them out. Result on `openwings:1.0.3-9d0d372-w2`, network off: 323
+failed, 13,385 passed, 479 skipped. The failure set is the unpatched
+upstream baseline (323, environmental) less one test inside an ignored file;
+the only other differences are process timing tests in
+`test_shell_routes.py` and `test_containment_process_tree.py`, which pass
+or fail with machine load on both images (three reruns of
+`test_shell_routes.py` alone: 81 passed). The earlier "323 baseline plus 1
+fixed" was measured before image-tidy existed and did not hold for this
+image. `test_agent_bash_windows.py::test_posix_bash_keeps_existing_shell_path`
+now expects the shell's `OPENWINGS_*` environment (patch 0027).
+
+**Data volume copy**, with the real Docker under bash 3.2.57 and BWK awk
+(20,000 small files, a WAL mode database, a 200 MB download cache):
+
+* a normal copy marks each new volume finished only after every copy was
+  checked, and records it in `.env` (`WINGS_VOLUMES_MIGRATED=1`); a second
+  run does nothing;
+* the script and its copy container killed with SIGKILL mid copy: the next
+  run removed the four unfinished copies, copied again and finished;
+* a closed terminal (SIGHUP) mid copy: the copy container was stopped, every
+  new volume removed and the old app started again on its own volumes;
+* the download cache copy failing with "No space left on device" after the
+  data, keys and logs were copied: all new volumes removed, old app running,
+  nothing recorded;
+* a volume with the new name but no labels (from a plain `docker run -v`):
+  refused before the app is stopped;
+* `--remove-old` after the old app wrote one more file to its volume: that
+  volume was kept ("changed after it was copied"), the other four removed;
+* `setup.sh` with no key in `.env` and data volumes present: stopped before
+  making a key, listing the three choices; no key or password was written.
+
+Unit tests cover the same cases with a stand-in for the docker CLI
+(`tests/unit/test_wings_volumes.py`), plus setup's order (images first, then
+the copy, then the start; a failed build leaves the app running), the
+preflight reading a key check value that is only in `app.db-wal`, the moved
+session cookie (a browser-session cookie, never persistent), and `.env`
+comments: only setting names are renamed, other words stay.
 
 ## Not verified: please check on your server
 

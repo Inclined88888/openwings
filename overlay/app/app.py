@@ -254,7 +254,7 @@ app.add_middleware(_InteractiveActivityMiddleware)
 app.add_middleware(_SlowRequestLogMiddleware)
 
 # ========= AUTH =========
-from routes.auth_routes import setup_auth_routes, SESSION_COOKIE
+from routes.auth_routes import setup_auth_routes, SESSION_COOKIE, LEGACY_SESSION_COOKIE, session_token, _secure_cookie, move_legacy_session_cookie
 
 auth_manager = AuthManager()
 app.state.auth_manager = auth_manager
@@ -472,7 +472,7 @@ if AUTH_ENABLED:
                 return JSONResponse(status_code=401, content={"error": "Invalid API token"})
 
             # --- Cookie-based session auth ---
-            token = request.cookies.get(SESSION_COOKIE)
+            token = session_token(request.cookies)
             if not auth_manager.validate_token(token):
                 # Wings (patch 0025): a sign-in whose registered callback is on
                 # another address than the one the person started from (for
@@ -496,7 +496,15 @@ if AUTH_ENABLED:
             # Attach current username to request state for downstream routes
             request.state.current_user = auth_manager.get_username_for_token(token)
             request.state.api_token = False
-            return await call_next(request)
+            response = await call_next(request)
+            if not request.cookies.get(SESSION_COOKIE) and request.cookies.get(LEGACY_SESSION_COOKIE):
+                # A session made before the cookie was renamed moves to the
+                # current name (same token, browser-session cookie).
+                try:
+                    move_legacy_session_cookie(response, token, _secure_cookie(request))
+                except Exception:
+                    pass
+            return response
 
     app.add_middleware(AuthMiddleware)
     logger.info("Auth middleware enabled (AUTH_ENABLED=true)")

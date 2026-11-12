@@ -17,8 +17,8 @@ if [ -n "$domain" ] && [ "$domain" != "localhost" ]; then url="https://${domain}
   port_v="$(env_get APP_PORT)"; port_v="${port_v:-7011}"
   url="http://${bind_v}:${port_v}"
 fi
-user_v="$(env_get ODYSSEUS_ADMIN_USER)"; user_v="${user_v:-admin}"
-pw_v="$(env_get ODYSSEUS_ADMIN_PASSWORD)"
+user_v="$(setting ADMIN_USER)"; user_v="${user_v:-admin}"
+pw_v="$(setting ADMIN_PASSWORD)"
 [ -n "$pw_v" ] || die "No admin password in .env. Run the installer (or ./scripts/setup.sh) to create one."
 cat <<OUT
 

@@ -10,9 +10,9 @@ set -euo pipefail
 
 require_docker
 [ -f "$ENV_FILE" ] || die "no .env found; run ./scripts/setup.sh first"
-user="$(env_get ODYSSEUS_ADMIN_USER)"; user="${user:-admin}"
-pw="$(env_get ODYSSEUS_ADMIN_PASSWORD)"
-[ -n "$pw" ] || die "ODYSSEUS_ADMIN_PASSWORD is not in .env"
+user="$(setting ADMIN_USER)"; user="${user:-admin}"
+pw="$(setting ADMIN_PASSWORD)"
+[ -n "$pw" ] || die "OPENWINGS_ADMIN_PASSWORD is not in .env"
 
 # Runs inside the app container against its own loopback port; credentials
 # travel as environment variables of this one exec, not on a command line.

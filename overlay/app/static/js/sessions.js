@@ -41,7 +41,7 @@ const SERVER_STREAM_ABSENT_TTL_MS = 30000;
 
 function _shouldPreserveStartupComposer(msgInput) {
   if (!msgInput || !msgInput.value) return false;
-  if (window.__odysseusComposerUserEdited) return true;
+  if (window.__openwingsComposerUserEdited) return true;
   return !!document.getElementById('app-loader') && document.activeElement === msgInput;
 }
 
@@ -100,8 +100,8 @@ function _forceExitIncognitoUi() {
       if (toggleState[k] === false) delete toggleState[k];
     });
     Storage.setJSON(Storage.KEYS.TOGGLES, toggleState);
-    if (typeof window.__odysseusSetChatMode === 'function') {
-      window.__odysseusSetChatMode(restoreMode === 'chat' ? 'chat' : 'agent');
+    if (typeof window.__openwingsSetChatMode === 'function') {
+      window.__openwingsSetChatMode(restoreMode === 'chat' ? 'chat' : 'agent');
     }
   }
 }
@@ -2051,7 +2051,7 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
   let navToken = 0;
   try {
     navToken = ++_sessionNavToken;
-    window.__odysseusSessionRenderPendingId = id;
+    window.__openwingsSessionRenderPendingId = id;
     const prevSessionId = currentSessionId;
     // Selecting a real persisted chat cancels any deferred "New Chat" model
     // pick. Otherwise the next send can materialize that pending chat instead
@@ -2071,7 +2071,7 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
     window.dispatchEvent(new CustomEvent('odysseus:session-changed', {
       detail: { sessionId: id ? id : null },
     }));
-    try { window.__odysseusLastSelectedSessionId = id; } catch (_) {}
+    try { window.__openwingsLastSelectedSessionId = id; } catch (_) {}
     // Identify Assistant / task-output sessions so we don't "trap" the user
     // there on return. Skipped from both `lastSessionId` persistence and the
     // URL hash — the user complained that coming back to Odysseus kept
@@ -2366,16 +2366,16 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
     if (navToken === _sessionNavToken && currentSessionId === id) {
       const msgInput = document.getElementById('message');
       if (msgInput) msgInput.disabled = false;
-      window.__odysseusSessionRenderPendingId = '';
-      window.__odysseusSessionReadyId = id;
+      window.__openwingsSessionRenderPendingId = '';
+      window.__openwingsSessionReadyId = id;
     }
     // Memory warmup must not block chat switching. The memories panel can load
     // on demand; this is only a delayed cache refresh when the foreground chat
     // is idle.
     if (window.memoryModule && window.memoryModule.loadMemories) {
       setTimeout(() => {
-        const busy = !!window.__odysseusChatBusy
-          || Date.now() < (window.__odysseusChatBusyUntil || 0)
+        const busy = !!window.__openwingsChatBusy
+          || Date.now() < (window.__openwingsChatBusyUntil || 0)
           || !!document.querySelector('.send-btn[data-mode="streaming"], .send-btn.send-pending');
         if (!busy) window.memoryModule.loadMemories().catch(() => {});
       }, 2500);
@@ -2399,7 +2399,7 @@ let _pendingMaterializePromise = null;
 async function _getPreferredDefaultChat() {
   let dc = null;
   try {
-    dc = window.__odysseusDefaultChat || null;
+    dc = window.__openwingsDefaultChat || null;
   } catch (_) {}
   if (!dc || !dc.endpoint_url || !dc.model) {
     try {
@@ -2412,7 +2412,7 @@ async function _getPreferredDefaultChat() {
     dc = await dcRes.json();
     if (dc && dc.endpoint_url && dc.model) {
       try {
-        window.__odysseusDefaultChat = dc;
+        window.__openwingsDefaultChat = dc;
         localStorage.setItem('odysseus-default-chat-cache', JSON.stringify(dc));
       } catch (_) {}
       return dc;
@@ -2454,7 +2454,7 @@ export function createDirectChat(url, modelId, endpointId, opts = {}) {
   window.dispatchEvent(new CustomEvent('odysseus:session-changed', {
     detail: { sessionId: null },
   }));
-  try { window.__odysseusLastSelectedSessionId = ''; } catch (_) {}
+  try { window.__openwingsLastSelectedSessionId = ''; } catch (_) {}
   Storage.remove('lastSessionId');
   history.replaceState(null, '', window.location.pathname);
   document.querySelectorAll('.list-item.active-session, .session-item.active').forEach(el => {
@@ -2641,7 +2641,7 @@ export function setCurrentSessionId(id) {
   window.dispatchEvent(new CustomEvent('odysseus:session-changed', {
     detail: { sessionId: id ? id : null },
   }));
-  try { window.__odysseusLastSelectedSessionId = id || ''; } catch (_) {}
+  try { window.__openwingsLastSelectedSessionId = id || ''; } catch (_) {}
   if (!id) {
     _suppressNextSessionLoading = true;
     Storage.remove('lastSessionId');

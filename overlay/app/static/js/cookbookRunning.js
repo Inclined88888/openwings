@@ -3832,7 +3832,7 @@ function _isCookbookVisible() {
 
 function _foregroundChatBusy() {
   try {
-    return !!window.__odysseusChatBusy || Date.now() < (window.__odysseusChatBusyUntil || 0);
+    return !!window.__openwingsChatBusy || Date.now() < (window.__openwingsChatBusyUntil || 0);
   } catch {
     return false;
   }
