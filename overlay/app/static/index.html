@@ -6,7 +6,7 @@
   <title>OpenWings</title>
   <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#C7CFC1">
+  <meta name="theme-color" content="#F2F2F0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- Disable iOS / Android auto-linkifying of numbers (phone/date/address)
@@ -15,7 +15,8 @@
   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <script src="/static/js/openwings-storage.js"></script>
-  <!-- OpenWings: motion for the Lichen look (does nothing under any other theme) -->
+  <!-- OpenWings: motion for the Lichen look (does nothing under any other theme;
+       Axon, the default, keeps its motion in its own stylesheet) -->
   <script src="/static/openwings/motion.js?v=2" defer></script>
   <script nonce="{{CSP_NONCE}}">
   window._openwingsLoadTime = Date.now();
@@ -31,7 +32,10 @@
       var t = JSON.parse(localStorage.getItem('openwings-theme'));
       // OpenWings: mark the chosen look before the first paint (skins.css,
       // linked right after this script, styles only html[data-ow-skin=...]).
-      var owName = (t && t.name) || 'ow-sage';
+      // With nothing saved: Axon, or Axon night when the system is dark.
+      var owLight = !(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var owName = (t && t.name) || (owLight ? 'ow-axon' : 'ow-axon-night');
+      if ((!t && !owLight) || /-night$/.test(owName)) { var owMtc = document.querySelector('meta[name="theme-color"]'); if (owMtc) owMtc.setAttribute('content', '#111111'); }
       document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
       // Upstream preloads Fira Code, its app font. The OpenWings looks bring
       // their own fonts, so only an upstream theme on the mono font asks
@@ -146,7 +150,7 @@
        The href is page-relative (this page is only served at / and one-segment
        paths, so it resolves to /static/openwings/...): upstream's split
        stylesheets, linked as /static/..., keep sharing their one token. -->
-  <link rel="stylesheet" href="static/openwings/skins.css?v=owlooks4">
+  <link rel="stylesheet" href="static/openwings/skins.css?v=owlooks5">
   <!-- Per-route favicon. Bookmarking /calendar shows a calendar icon,
        /notes a notes icon, etc. Each shape is rendered in the current
        theme accent color. Falls back to the boat logo on the root path. -->
@@ -204,15 +208,15 @@
       apple.href = href;
       // Also customize the page title so the bookmark inherits a useful name.
       var titles = {
-        '/calendar': 'Calendar — OpenWings',
-        '/notes': 'Notes — OpenWings',
-        '/cookbook': 'Cookbook — OpenWings',
-        '/email': 'Email — OpenWings',
-        '/memory': 'Memory — OpenWings',
-        '/skills': 'Skills — OpenWings',
-        '/gallery': 'Gallery — OpenWings',
-        '/tasks': 'Tasks — OpenWings',
-        '/library': 'Library — OpenWings',
+        '/calendar': 'Calendar · OpenWings',
+        '/notes': 'Notes · OpenWings',
+        '/cookbook': 'Cookbook · OpenWings',
+        '/email': 'Email · OpenWings',
+        '/memory': 'Memory · OpenWings',
+        '/skills': 'Skills · OpenWings',
+        '/gallery': 'Gallery · OpenWings',
+        '/tasks': 'Tasks · OpenWings',
+        '/library': 'Library · OpenWings',
       };
       if (titles[path]) document.title = titles[path];
       // Per-route Android home-screen icon. We swap the <link rel="manifest">
@@ -371,7 +375,7 @@
               <span class="admin-toggle-state"></span>
               <label class="admin-switch" title="Include memories in chat context"><input type="checkbox" id="memory-enabled-header-toggle" checked /><span class="admin-slider"></span></label>
             </div>
-            <p class="memory-desc doclib-desc" style="margin-top:6px;">Long-term facts the AI remembers across chats — recall, edit, or curate.</p>
+            <p class="memory-desc doclib-desc" style="margin-top:6px;">Long-term facts the AI remembers across chats. Recall, edit or curate them here.</p>
             <div class="memory-toolbar">
               <div class="memory-toolbar-row">
                 <div class="memory-sort-picker" id="memory-sort-picker" style="position:relative;">
@@ -421,7 +425,7 @@
             <div class="memory-add-row" style="margin-top:8px;">
               <div class="skill-ph-wrap" style="flex:1;min-width:0;">
                 <input type="text" id="new-memory-input" placeholder=" " class="memory-add-input skill-hint-input" aria-label="New memory text" />
-                <span class="skill-rich-ph"><span class="k">Add a memory</span> &mdash; e.g. 'I prefer concise replies' <svg class="k" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-left:4px;" aria-hidden="true"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></span>
+                <span class="skill-rich-ph"><span class="k">Add a memory</span>: e.g. 'I prefer concise replies' <svg class="k" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-left:4px;" aria-hidden="true"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></span>
               </div>
               <select id="new-memory-category" class="memory-edit-cat-select" aria-label="Memory category"></select>
               <button type="button" id="new-memory-add-btn" class="theme-io-btn" title="Save this memory" style="flex:none;height:28px;font-size:12px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
@@ -435,26 +439,26 @@
             <div class="memory-add-row" style="margin-top:6px;margin-bottom:10px;">
               <div class="skill-ph-wrap" style="flex:1;min-width:0;">
                 <input type="url" id="skill-import-url" placeholder=" " class="memory-add-input skill-hint-input" aria-label="Skill import URL" />
-                <span class="skill-rich-ph"><span class="k">Import URL</span> — e.g. GitHub tree link to a skill folder</span>
+                <span class="skill-rich-ph"><span class="k">Import URL</span>: e.g. GitHub tree link to a skill folder</span>
               </div>
               <button type="button" id="skill-import-url-btn" class="theme-io-btn" title="Import skill from URL" style="flex:none;height:28px;font-size:12px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Import</button>
             </div>
             <p class="memory-desc doclib-desc" style="margin-top:0;">Or create a skill by hand — title, what it solves, and an approach.</p>
             <div class="skill-ph-wrap" style="margin-top:4px;margin-bottom:6px;">
               <input type="text" id="new-skill-title" placeholder=" " class="memory-add-input skill-hint-input" aria-label="Skill title" />
-              <span class="skill-rich-ph"><span class="k">Title</span> — short name, e.g. “build-vllm-wheel”</span>
+              <span class="skill-rich-ph"><span class="k">Title</span>: short name, e.g. “build-vllm-wheel”</span>
             </div>
             <div class="skill-ph-wrap" style="margin-bottom:6px;">
               <input type="text" id="new-skill-problem" placeholder=" " class="memory-add-input skill-hint-input" aria-label="When to use this skill" />
-              <span class="skill-rich-ph"><span class="k">When to use</span> — what problem does this skill solve?</span>
+              <span class="skill-rich-ph"><span class="k">When to use</span>: what problem does this skill solve?</span>
             </div>
             <div class="skill-ph-wrap" style="margin-bottom:6px;">
-              <textarea id="new-skill-solution" placeholder=" " class="memory-add-input skill-hint-input" rows="2" style="resize:vertical;" aria-label="How — the approach or steps"></textarea>
-              <span class="skill-rich-ph skill-rich-ph-top"><span class="k">How</span> — the approach, steps, commands, or rules to follow</span>
+              <textarea id="new-skill-solution" placeholder=" " class="memory-add-input skill-hint-input" rows="2" style="resize:vertical;" aria-label="How: the approach or steps"></textarea>
+              <span class="skill-rich-ph skill-rich-ph-top"><span class="k">How</span>: the approach, steps, commands, or rules to follow</span>
             </div>
             <div class="skill-ph-wrap" style="margin-bottom:8px;">
               <input type="text" id="new-skill-tags" placeholder=" " class="memory-add-input skill-hint-input" aria-label="Tags" />
-              <span class="skill-rich-ph"><span class="k">Tags</span> — comma-separated, e.g. python, build, vllm</span>
+              <span class="skill-rich-ph"><span class="k">Tags</span>: comma-separated, e.g. python, build, vllm</span>
             </div>
             <div style="display:flex;justify-content:flex-end;">
               <button id="add-skill-btn" class="confirm-btn confirm-btn-primary">Add Skill</button>

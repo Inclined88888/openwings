@@ -71,7 +71,7 @@ def setup_search_routes(config) -> APIRouter:
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{title} · OpenWings search</title>
   <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
-  <link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks4">
+  <link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks5">
   <style>
     :root {{ color-scheme: light dark; --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#5b6474; --line:#dfe3ea; --accent:#2f6fec; --on-accent:#fff; }}
     @media (prefers-color-scheme: dark) {{ :root {{ --bg:#0f1218; --panel:#171b23; --text:#e6e9ef; --muted:#9aa3b2; --line:#2a303b; --accent:#6d9bff; --on-accent:#0f1218; }} }}
@@ -93,7 +93,7 @@ def setup_search_routes(config) -> APIRouter:
     .result-snippet {{ margin-top:4px; color:var(--text); font-size:14px; }}
   </style>
   <script nonce="{nonce}">
-    try {{ const t = JSON.parse(localStorage.getItem('openwings-theme') || 'null'); const n = (t && t.name) || 'ow-sage';
+    try {{ const t = JSON.parse(localStorage.getItem('openwings-theme') || 'null'); const n = (t && t.name) || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'ow-axon-night' : 'ow-axon');
       if (/^ow-[a-z-]+$/.test(n)) document.documentElement.setAttribute('data-ow-skin', n); }} catch (_) {{}}
     const initialQuery = {q_json};
     function esc(value) {{

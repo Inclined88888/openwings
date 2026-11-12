@@ -867,8 +867,8 @@ def _oauth_result_page(title: str, message: str, success: bool = False, neutral:
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{safe_title} · OpenWings</title>
 <link rel="icon" type="image/svg+xml" href="/static/openwings/openwings-tile.svg">
-<script src="/static/openwings/look.js?v=owlooks4"></script>
-<link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks4">
+<script src="/static/openwings/look.js?v=owlooks5"></script>
+<link rel="stylesheet" href="/static/openwings/skins.css?v=owlooks5">
 <style>
   :root {{ color-scheme: light dark; --bg: #f5f5f2; --panel: #ffffff; --text: #1f2328; --muted: #57606a; --line: #d8dad3;
     --ok: #2f7d4f; --bad: #b4413c; --on-state: #ffffff; }}

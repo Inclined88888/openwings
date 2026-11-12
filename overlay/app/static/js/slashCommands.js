@@ -1553,7 +1553,7 @@ async function _cmdTheme(args, ctx) {
 }
 
 // OpenWings: people type and read the names the theme picker shows
-// ("Lichen"), not the internal keys ("ow-sage").
+// ("Axon"), not the internal keys ("ow-axon").
 function _resolveTheme(typed) {
   const tm = themeModule;
   return tm && tm.resolveThemeName ? tm.resolveThemeName(typed) : String(typed || '').trim().toLowerCase().replace(/\s+/g, '-');

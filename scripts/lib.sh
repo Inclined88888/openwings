@@ -668,10 +668,17 @@ wings_image() {
 }
 
 # Image tags from before the app service was renamed, still on hosts that
-# installed early. Removes only the tag, and only when no container uses it.
+# installed early, and the release tags of earlier versions
+# (openwings:<version>-<base>-w<n>) once an upgrade has built a new one.
+# Removes only the tag, and only when no container uses it; the tag in use now
+# and hand-made tags (openwings:dev and the like) are always kept.
 remove_old_image_tags() {
-  local ref
-  for ref in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^wings/ody''sseus:' || true); do
+  local ref current
+  current="$(cd "$WINGS_ROOT" && docker compose config --images 2>/dev/null | grep -m1 '^openwings:' || true)"
+  for ref in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+      | grep -E '^wings/ody''sseus:|^openwings:[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{7}-w[0-9]+$' || true); do
+    [ -n "$current" ] && [ "$ref" = "$current" ] && continue
+    case "$ref" in openwings:*) [ -n "$current" ] || continue ;; esac
     if [ -z "$(docker ps -aq --filter "ancestor=${ref}" 2>/dev/null)" ]; then
       docker image rm "$ref" >/dev/null 2>&1 || true
     fi

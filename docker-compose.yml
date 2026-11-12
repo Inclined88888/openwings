@@ -29,7 +29,7 @@ services:
     # Built locally: the pinned upstream image plus the OpenWings patch overlay
     # (docker/openwings/Dockerfile). pull_policy=build means Compose never tries
     # to pull this tag from a registry, so nobody can squat the name.
-    image: openwings:${WINGS_IMAGE_TAG:-1.0.3-9d0d372-w2}
+    image: openwings:${WINGS_IMAGE_TAG:-1.0.4-9d0d372-w3}
     pull_policy: build
     build:
       context: .

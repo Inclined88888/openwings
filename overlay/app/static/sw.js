@@ -7,7 +7,7 @@
 //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
 //   - API / non-GET: never cached.
 // Bump CACHE_NAME whenever the precache list or SW logic changes.
-const CACHE_NAME = 'openwings-v663-names';
+const CACHE_NAME = 'openwings-v664-axon';
 
 // KaTeX resolves these from its own stylesheet, so caching the CSS without them
 // gives offline math fallback glyphs instead of proper typesetting.
@@ -41,7 +41,7 @@ const PRECACHE = [
   '/',
   // OpenWings: the looks stylesheet index.html links before the app's own,
   // with its own cache-bust token (bump it, and CACHE_NAME, when a look changes).
-  '/static/openwings/skins.css?v=owlooks4',
+  '/static/openwings/skins.css?v=owlooks5',
   '/static/css/00-tokens.css?v=20260929csssplit',
   '/static/css/01-agent-chat.css?v=20260929csssplit',
   '/static/css/02-compare.css?v=20260929csssplit',

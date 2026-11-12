@@ -1,4 +1,4 @@
-"""Consistency checks for the OpenWings looks (patches 0020 and 0023): every
+"""Consistency checks for the OpenWings looks (patches 0020, 0023 and 0028): every
 ow-* theme in static/js/theme.js has its look stylesheet, a display name and
 matching first paint colours in skins.css, the default looks the boot scripts
 name exist, the theme picker lists only the looks unless
@@ -126,7 +126,7 @@ def test_classic_themes_flag_is_filled_in_when_pages_are_served(monkeypatch, val
 
 def test_no_upstream_font_under_a_look():
     skins = SKINS.read_text()
-    for look in ("sage", "duet", "hush"):
+    for look in ("axon", "sage", "duet", "hush"):
         css = (STATIC / "openwings" / "looks" / f"{look}.css").read_text()
         assert re.search(r"--font-family:\s*var\(--[a-z-]+\)\s*!important;", css), look
         assert "--ow-font-sans:" in css and "--ow-font-mono:" in css, look
@@ -192,12 +192,13 @@ UPSTREAM_NAMED_COLOURS = ("--color-subheader", "--color-blind-orange", "--color-
                           "--color-warning")
 
 
-@pytest.mark.parametrize("look", ["sage", "duet", "hush"])
+@pytest.mark.parametrize("look", ["axon", "sage", "duet", "hush"])
 def test_each_look_remaps_upstreams_named_colours_and_has_a_palette(look):
     css = (STATIC / "openwings" / "looks" / f"{look}.css").read_text()
     tokens = (STATIC / "openwings" / "tokens.css").read_text() if look == "sage" else ""
     for var in UPSTREAM_NAMED_COLOURS:
-        assert re.search(re.escape(var) + r":\s*var\(", css + tokens), (look, var)
+        # A look maps each to one of its own tokens, or (Axon) sets it to its own colour.
+        assert re.search(re.escape(var) + r":\s*(var\(|#[0-9A-Fa-f]{6}\b)", css + tokens), (look, var)
     for name in ("--ow-palette", "--ow-tints"):
         lists = re.findall(re.escape(name) + r":\s*([^;]+);", css)
         assert lists, (look, name)
@@ -213,3 +214,22 @@ def test_theme_swatches_are_a_keyboard_radio_group():
     js = THEME_JS.read_text()
     assert "role', 'radiogroup'" in js and "'aria-checked'" in js and "ArrowRight" in js
     assert ".theme-swatch:focus-visible" in SKINS.read_text()
+
+
+def test_axon_is_the_default_and_lichen_stays_in_the_picker(themes):
+    js = THEME_JS.read_text()
+    assert re.search(r"const OW_DEFAULT_LOOK = 'ow-axon';", js)
+    order = re.findall(r"'(ow-[a-z-]+)'", re.search(r"const OW_PICKER_ORDER = \[(.*?)\];", js).group(1))
+    assert order[:2] == ["ow-axon", "ow-axon-night"] and "ow-sage" in order
+    # Nothing saved: day or night from the operating system, on every page
+    # outside the app shell too.
+    pages = [Path("/app/static/openwings/look.js"), Path("/app/wings/static/live.js"),
+             Path("/app/wings/files_routes.py"), Path("/app/routes/search/search_routes.py")]
+    for page in pages:
+        text = page.read_text()
+        assert "'ow-axon-night' : 'ow-axon'" in text and "ow-sage" not in text, page
+    css = (STATIC / "openwings" / "looks" / "axon.css").read_text()
+    # Day and night are separate keys; no colour depends on the system once a
+    # look is chosen, and nothing rounds, shadows or blurs.
+    assert ':root[data-ow-skin="ow-axon-night"]' in css and "prefers-color-scheme" not in css
+    assert "border-radius: 0 !important" in css and "owp-" not in css

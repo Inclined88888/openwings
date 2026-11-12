@@ -11,6 +11,8 @@ import { snapModalToZone } from './tileManager.js?v=20260910responsivebounds1';
 export const THEMES = {
   // OpenWings looks: each also changes type, shapes and textures through
   // /static/openwings/looks/<name>.css (see applyOpenWingsSkin below).
+  'ow-axon':            { bg:'#F2F2F0', fg:'#111111', panel:'#FFFFFF', border:'#D8D8D5', red:'#FF4D00' },
+  'ow-axon-night':      { bg:'#111111', fg:'#F2F2F0', panel:'#1A1A1A', border:'#2E2E2C', red:'#FF4D00' },
   'ow-sage':            { bg:'#C7CFC1', fg:'#1B281C', panel:'#D6DCCF', border:'#A0A79A', red:'#7A4C13' },
   'ow-duet':            { bg:'#E5EAE8', fg:'#1D2A2E', panel:'#FDFBF7', border:'#C9D4D3', red:'#1E5A68' },
   'ow-duet-night':      { bg:'#1B1F21', fg:'#E6E9E7', panel:'#252A2C', border:'#3A4346', red:'#9DC4BA' },
@@ -41,16 +43,20 @@ export const THEMES = {
   yoyo:       { bg:'#211f23', fg:'#dfdbd7', panel:'#141415', border:'#3e5146', red:'#e09d6c' },
 };
 
-// OpenWings: with no saved choice, start in the default OpenWings look. A
-// look with a night version follows the operating system; Lichen (ow-sage)
-// has one mode for everyone, so it never gets a -night suffix. A saved
-// theme still wins.
-const OW_DEFAULT_LOOK = 'ow-sage';
+// OpenWings: with no saved choice, start in the default OpenWings look, Axon
+// (patch 0028): Axon in light, Axon night when the operating system is set to
+// dark. A look with a night version follows the operating system; Lichen
+// (ow-sage) has one mode for everyone, so it never gets a -night suffix. A
+// saved theme still wins: only an explicit pick (the picker, /theme, the
+// assistant's set_theme) saves one, so people who chose a look keep it and
+// everyone else moves to the default.
+const OW_DEFAULT_LOOK = 'ow-axon';
 const OW_SINGLE_MODE_LOOKS = new Set(['ow-sage']);
 const DEFAULT_THEME = OW_DEFAULT_LOOK + (OW_SINGLE_MODE_LOOKS.has(OW_DEFAULT_LOOK) ? '' : ((typeof window !== 'undefined' && window.matchMedia
-  && window.matchMedia('(prefers-color-scheme: light)').matches) ? '' : '-night'));
+  && window.matchMedia('(prefers-color-scheme: dark)').matches) ? '-night' : ''));
 const THEME_DISPLAY_NAMES = {
   ocean: 'starfield',
+  'ow-axon': 'Axon', 'ow-axon-night': 'Axon night',
   'ow-duet': 'Duet', 'ow-duet-night': 'Duet night',
   'ow-hush': 'Hush', 'ow-hush-night': 'Hush night',
   'ow-sage': 'Lichen',
@@ -60,7 +66,7 @@ const THEME_DISPLAY_NAMES = {
 // working (and stays listed while it is the active one), /theme <name> still
 // applies one, and the server lists them all again with
 // WINGS_SHOW_CLASSIC_THEMES=1 (it fills index.html's data-ow-classic-themes).
-const OW_PICKER_ORDER = ['ow-sage', 'ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night'];
+const OW_PICKER_ORDER = ['ow-axon', 'ow-axon-night', 'ow-sage', 'ow-duet', 'ow-duet-night', 'ow-hush', 'ow-hush-night'];
 export function showClassicThemes() {
   try { return document.documentElement.getAttribute('data-ow-classic-themes') === '1'; } catch (_) { return false; }
 }
@@ -74,8 +80,8 @@ export function pickerThemeNames(activeName) {
 export function themeDisplayName(name) {
   return name === 'dark' ? 'original' : (name === 'gpt' ? 'GPT' : (THEME_DISPLAY_NAMES[name] || name));
 }
-// OpenWings: what people type ("Lichen", "duet night") to the theme key
-// ("ow-sage", "ow-duet-night"); keys and unknown names pass through. The
+// OpenWings: what people type ("Axon", "duet night") to the theme key
+// ("ow-axon", "ow-duet-night"); keys and unknown names pass through. The
 // agent's set_theme does the same with src/theme_palette.py THEME_ALIASES.
 export function resolveThemeName(input) {
   const typed = String(input || '').trim().toLowerCase().replace(/\s+/g, '-');
@@ -1150,6 +1156,9 @@ export function initThemeUI() {
     resetBtn.parentNode.replaceChild(newReset, resetBtn);
     newReset.addEventListener('click', () => {
       Storage.remove(LS_KEY);
+      // Clear the server copy too, or the next load brings the old look back
+      // from /api/prefs/theme instead of following the default.
+      _syncToServer(null);
       const colors = THEMES[DEFAULT_THEME];
       applyColors(colors);
       applyOpenWingsSkin(DEFAULT_THEME);

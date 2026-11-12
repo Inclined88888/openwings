@@ -473,3 +473,50 @@ def test_agent_bundles_ship_under_openwings_names():
     low = OLD[:-1].lower()
     assert _bundle_name(f"skills/{low}/scripts/{low}_api.py") == "skills/openwings/scripts/openwings_api.py"
     assert _bundle_name(f'os.environ.get("{OLD}URL") # {low.capitalize()}') == 'os.environ.get("OPENWINGS_URL") # OpenWings'
+
+
+# ------------------------------------------------------- old image tags
+
+FAKE_DOCKER_IMAGES = r'''#!/bin/sh
+# docker stand-in for remove_old_image_tags: lists $IMAGES, reports a
+# container for $IN_USE, answers compose config with $CURRENT, logs removals.
+case "$1" in
+  images) printf '%s\n' $IMAGES ;;
+  ps) case "$*" in *"ancestor=$IN_USE"*) echo c0ffee ;; esac ;;
+  compose) [ -n "$CURRENT" ] && printf '%s\n' "$CURRENT" ;;
+  image) echo "$3" >> "$RM_LOG" ;;
+esac
+exit 0
+'''
+
+
+def _cleanup(install, images, current, in_use="none"):
+    bin_dir = install / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    fake = bin_dir / "docker"
+    fake.write_text(FAKE_DOCKER_IMAGES)
+    fake.chmod(0o755)
+    rm_log = install / "rm.log"
+    rm_log.write_text("")
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", IMAGES=" ".join(images),
+               CURRENT=current, IN_USE=in_use, RM_LOG=str(rm_log))
+    r = subprocess.run(["bash", "-c", f'. "{install}/scripts/lib.sh"; remove_old_image_tags'],
+                       capture_output=True, text=True, env=env, cwd=install)
+    assert r.returncode == 0, r.stderr
+    return set(rm_log.read_text().split())
+
+
+@needs_lib
+def test_upgrade_removes_earlier_release_tags_only(install):
+    old_upstream = OLD[:-1].lower()
+    images = ["openwings:1.0.4-9d0d372-w3", "openwings:1.0.3-9d0d372-w2", "openwings:1.0.2-1234abc-w1",
+              "openwings:axon", "openwings:dev", "openwings:test", f"wings/{old_upstream}:1.0.1",
+              "chromadb/chroma:1.5.9"]
+    removed = _cleanup(install, images, "openwings:1.0.4-9d0d372-w3", in_use="openwings:1.0.2-1234abc-w1")
+    assert removed == {"openwings:1.0.3-9d0d372-w2", f"wings/{old_upstream}:1.0.1"}
+
+
+@needs_lib
+def test_image_cleanup_keeps_release_tags_when_the_current_one_is_unknown(install):
+    removed = _cleanup(install, ["openwings:1.0.3-9d0d372-w2", "openwings:1.0.4-9d0d372-w3"], "")
+    assert removed == set()

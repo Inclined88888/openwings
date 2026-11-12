@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
-<title>OpenWings — Login</title>
+<title>Sign in · OpenWings</title>
 <link rel="icon" type="image/svg+xml" href="static/openwings/openwings-tile.svg">
-<meta name="theme-color" content="#C7CFC1">
+<meta name="theme-color" content="#F2F2F0">
 <link rel="manifest" href="static/manifest.json">
 <link rel="apple-touch-icon" href="static/icons/icon-192.png">
 <script src="static/js/openwings-storage.js"></script>
@@ -48,7 +48,10 @@
     var s = document.documentElement.style;
     // OpenWings: mark the chosen look before the first paint (skins.css,
     // linked right after this script, styles only html[data-ow-skin=...]).
-    var owName = (t && t.name) || 'ow-sage';
+    // With nothing saved: Axon, or Axon night when the system is dark.
+    var owLight = !(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var owName = (t && t.name) || (owLight ? 'ow-axon' : 'ow-axon-night');
+    if ((!t && !owLight) || /-night$/.test(owName)) { var owMtc = document.querySelector('meta[name="theme-color"]'); if (owMtc) owMtc.setAttribute('content', '#111111'); }
     document.documentElement.setAttribute('data-ow-skin', /^ow-/.test(owName) ? owName : '');
     if (t && t.colors) {
       var c = t.colors;
@@ -111,7 +114,7 @@
 </script>
 <!-- OpenWings looks. A parser-inserted stylesheet holds the first layout and
      the scripts after it, so no upstream font is fetched before a look applies. -->
-<link rel="stylesheet" href="static/openwings/skins.css?v=owlooks4">
+<link rel="stylesheet" href="static/openwings/skins.css?v=owlooks5">
 <style>
   @font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-Regular.woff2') format('woff2'); }
   @font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
@@ -219,6 +222,7 @@
     #authForm > .login-username-wrap { order: 2; }
     #authForm > label[for="password"] { order: 3; }
     #authForm > .login-password-wrap { order: 4; }
+    #authForm > #rememberToggle { order: 4; }
     #error { order: 5; margin-top: 0.15rem; margin-bottom: 0.75rem; scroll-margin-bottom: 1rem; }
     #authForm > #confirmGroup { order: 6; }
     #authForm > #submitBtn { order: 7; }

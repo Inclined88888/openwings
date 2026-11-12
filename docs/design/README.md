@@ -1,8 +1,24 @@
-# Lichen, the OpenWings look
+# The OpenWings looks
 
-Lichen (theme key `ow-sage`) is the look every OpenWings user starts in. It is
-one look in one mode for everyone: there is no dark version, and the operating
-system's light or dark setting does not change it.
+**Axon is the default look since 1.0.4 (patch 0028).** Axon (theme keys
+`ow-axon` and `ow-axon-night`, "Axon" and "Axon night" in the theme picker) is
+industrial and technical: warm grey page `#F2F2F0`, white surfaces, ink
+`#111111`, 1px lines, square corners, no shadows, extra bold condensed
+uppercase titles (Archivo), Inter for text, JetBrains Mono for small
+`[01 // LABEL]` captions, and one signal orange `#FF4D00` for marks. Its dark
+version uses near black surfaces with light ink and the same orange. With no
+saved choice the app wears Axon, or Axon night when the operating system is
+set to dark; a look someone picked stays. Its stylesheet is
+`overlay/app/wings/brand/looks/axon.css` (fonts and their OFL licences in
+`brand/fonts/`); motion is CSS only and off under reduced motion.
+
+Lichen, described below, was the default before 1.0.4 and stays in the picker.
+
+## Lichen
+
+Lichen (theme key `ow-sage`) is one look in one mode for everyone: there is no
+dark version, and the operating system's light or dark setting does not
+change it.
 
 ![Lichen, welcome screen](img/after-lichen-welcome.png)
 
@@ -81,7 +97,9 @@ sees them.
 
 | File | What it is |
 | --- | --- |
-| `overlay/app/wings/brand/skins.css` | The entry point the app links: it imports `tokens.css` and the three looks, sets each look's first-paint colours, keeps upstream's hard-coded fonts out of the looks, and styles the busy mark. |
+| `overlay/app/wings/brand/skins.css` | The entry point the app links: it imports `tokens.css` and the four looks, sets each look's first-paint colours, keeps upstream's hard-coded fonts out of the looks, and styles the busy mark. |
+| `overlay/app/wings/brand/looks/axon.css` | Axon, the default look, day and night. Every rule is scoped to `:root[data-ow-skin^="ow-axon"]`; night colours sit under `ow-axon-night`. |
+| `patches/0028-openwings-axon.patch` | Makes Axon the default (following the system's light or dark until someone picks a look), lists Axon and Axon night first in the picker, bumps the looks token and service worker cache, and shows version 1.0.4. |
 | `overlay/app/wings/brand/looks/sage.css` | Lichen itself. It is generated: edit `scripts/dev/brand/lichen/sage.src.css` (where `@@` stands for the look's scope) and run `python3 scripts/dev/brand/lichen/build.py`. |
 | `overlay/app/wings/brand/motion.js` | The motion described above. It only runs while Lichen is active. |
 | `overlay/app/wings/brand/looks/duet.css`, `hush.css` | The two other OpenWings looks, Duet and Hush, each with a night version. |

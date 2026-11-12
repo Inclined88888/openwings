@@ -10,7 +10,7 @@ look it is a plain light or dark page.
 from __future__ import annotations
 
 # Bump with the looks' token in index.html, sw.js, login.html and live.html.
-LOOKS_VERSION = "owlooks4"
+LOOKS_VERSION = "owlooks5"
 
 _NOT_FOUND = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -30,7 +30,7 @@ main p {{ margin:0 0 12px; }}
 main a {{ color:var(--accent); }}
 .muted {{ color:var(--muted); }}
 </style></head>
-<body><header class="bar"><a class="back" href="/" title="Back to OpenWings">← OpenWings</a><strong class="title">Page not found</strong></header>
+<body class="ow-notfound"><header class="bar"><a class="back" href="/" title="Back to OpenWings">← OpenWings</a><strong class="title">Page not found</strong></header>
 <main><p>There is nothing at this address.</p>
 <p class="muted">Check the link, or go back to <a href="/">OpenWings</a>.</p></main>
 </body></html>"""
