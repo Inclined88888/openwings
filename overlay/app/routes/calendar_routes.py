@@ -277,7 +277,11 @@ def _ensure_default_calendar(db, owner: str = None) -> CalendarCal:
     remains usable and atomic.
     """
     owner = owner or FALLBACK_OWNER
-    cal = db.query(CalendarCal).filter(CalendarCal.owner == owner).first()
+    # Wings (patch 0025): a calendar added by link is read only, so it never
+    # becomes the default; a person whose only calendar is one gets a local
+    # "Personal" calendar for new events.
+    _writable = or_(CalendarCal.source.is_(None), CalendarCal.source != "ics")
+    cal = db.query(CalendarCal).filter(CalendarCal.owner == owner, _writable).first()
     if cal:
         return cal
 
@@ -285,7 +289,7 @@ def _ensure_default_calendar(db, owner: str = None) -> CalendarCal:
     if dialect == "sqlite":
         _begin_sqlite_default_write(db)
         # Another worker may have committed while BEGIN IMMEDIATE waited.
-        cal = db.query(CalendarCal).filter(CalendarCal.owner == owner).first()
+        cal = db.query(CalendarCal).filter(CalendarCal.owner == owner, _writable).first()
         if cal:
             return cal
 
@@ -790,6 +794,8 @@ def _event_to_dict(ev: CalendarEvent, db=None, owner: str | None = None) -> dict
         "source_email_folder": getattr(ev, "source_email_folder", None),
         "source_email_account_id": getattr(ev, "source_email_account_id", None),
         "source_email_message_id": getattr(ev, "source_email_message_id", None),
+        # Wings (patch 0025): events from a calendar added by link.
+        "read_only": bool(ev.calendar and getattr(ev.calendar, "source", None) == "ics"),
     }
 
 
@@ -1044,6 +1050,8 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 "url": acc.get("url", "") or "",
                 "username": acc.get("username", "") or "",
                 "has_password": has_pw,
+                # Wings (patch 0025): signed in with Google instead of a password.
+                "signed_in_with": (acc.get("wings_oauth") or {}).get("provider", ""),
             })
         return {"accounts": safe}
 
@@ -1239,6 +1247,10 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
             db.query(CalendarEvent).filter(CalendarEvent.calendar_id == cal_id).delete()
             db.delete(cal)
             db.commit()
+            # Wings (patch 0025): a calendar added by link stops refreshing.
+            if cal.source == "ics":
+                from wings.ics_feeds import on_calendar_deleted
+                on_calendar_deleted(owner, cal_id)
             return {"ok": True}
         except HTTPException:
             raise
@@ -1260,8 +1272,16 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
             # Other callers commit it with the event they are creating.
             db.commit()
             cals = db.query(CalendarCal).filter(CalendarCal.owner == owner).all()
+            # Wings (patch 0025): calendars added by link are read only; Google
+            # calendars (signed in with Google) can get a Meet link.
+            try:
+                from wings.accounts_google import is_google_calendar as _wings_is_google
+            except Exception:
+                _wings_is_google = lambda _o, _c: False  # noqa: E731
             return {"calendars": [
-                {"name": c.name, "href": c.id, "color": c.color, "source": c.source}
+                {"name": c.name, "href": c.id, "color": c.color, "source": c.source,
+                 "read_only": c.source == "ics",
+                 "google": bool(c.source == "caldav" and _wings_is_google(owner, c))}
                 for c in cals
             ]}
         except HTTPException:
@@ -1355,6 +1375,10 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 # `_get_or_404_calendar`.
                 if cal and (cal.owner is None or cal.owner != owner):
                     raise HTTPException(404, "Calendar not found")
+                # Wings (patch 0025): calendars added by link are read only.
+                if cal and cal.source == "ics":
+                    from wings.ics_feeds import READ_ONLY_MESSAGE
+                    raise HTTPException(409, READ_ONLY_MESSAGE)
             if not cal:
                 cal = _ensure_default_calendar(db, owner)
 
@@ -1432,6 +1456,9 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         db = SessionLocal()
         try:
             ev = _get_or_404_event(db, base_uid, owner)
+            if ev.calendar and ev.calendar.source == "ics":
+                from wings.ics_feeds import READ_ONLY_MESSAGE
+                raise HTTPException(409, READ_ONLY_MESSAGE)
             if data.summary is not None:
                 ev.summary = data.summary
             if data.description is not None:
@@ -1494,6 +1521,9 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         db = SessionLocal()
         try:
             ev = _get_or_404_event(db, base_uid, owner)
+            if ev.calendar and ev.calendar.source == "ics":
+                from wings.ics_feeds import READ_ONLY_MESSAGE
+                raise HTTPException(409, READ_ONLY_MESSAGE)
             is_occurrence_delete = scope in {"occurrence", "instance"} and "::" in uid and bool(ev.rrule)
             is_caldav = ev.calendar and ev.calendar.source == "caldav"
             if scope in {"occurrence", "instance"} and not is_occurrence_delete:
@@ -1600,6 +1630,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
             target_cal = db.query(CalendarCal).filter(
                 CalendarCal.name == cal_display,
                 CalendarCal.owner == owner,
+                CalendarCal.source != "ics",  # Wings (patch 0025): link calendars are read only
             ).first()
             if not target_cal:
                 target_cal = CalendarCal(

@@ -3500,6 +3500,13 @@ def setup_chat_routes(
         disabled_tools.update(agent_denied_tools(
             preset_id, str(form_data.get("wings_agent_template_id") or "") or None,
         ))
+        # Wings (patch 0025): tools for connected accounts (Google Drive)
+        # only for a person who connected that account.
+        try:
+            from wings.accounts import unavailable_tools as _wings_unavailable_tools
+            disabled_tools.update(_wings_unavailable_tools(effective_user(request) or ""))
+        except Exception:
+            logger.debug("Account tools check skipped", exc_info=True)
 
         # Light auto-escalation: the user is in chat mode and just expressed a
         # notes/calendar/email intent. Grant the relevant managers but withhold

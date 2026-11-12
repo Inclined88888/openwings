@@ -139,6 +139,15 @@ _register(
     ToolEffect.READ_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# Wings (patch 0025): the Google Drive tools a person gets after connecting
+# Drive (wings/accounts_google.py). They are added to the tool catalog at
+# start-up; their safety entry is declared here so it is known from import:
+# a Drive file is outside text, like an email's.
+_register(
+    {"google_drive_search", "google_drive_read"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 _register(
     {"bash", "host_shell", "manage_bg_jobs", "python"},
     ToolEffect.EXECUTE_CODE,

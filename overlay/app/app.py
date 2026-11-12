@@ -474,6 +474,18 @@ if AUTH_ENABLED:
             # --- Cookie-based session auth ---
             token = request.cookies.get(SESSION_COOKIE)
             if not auth_manager.validate_token(token):
+                # Wings (patch 0025): a sign-in whose registered callback is on
+                # another address than the one the person started from (for
+                # example localhost vs 127.0.0.1) goes back to that address,
+                # stored server side with the attempt, to finish there with
+                # the person's session (wings/accounts.py bounce).
+                try:
+                    from wings.accounts import bounce_unauthenticated as _wings_bounce
+                    _bounced = _wings_bounce(request)
+                except Exception:
+                    _bounced = None
+                if _bounced is not None:
+                    return _bounced
                 if path.startswith("/api/"):
                     return JSONResponse(status_code=401, content={"error": "Not authenticated"})
                 return RedirectResponse(
@@ -1183,6 +1195,13 @@ async def _startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
     webhook_manager.set_loop(asyncio.get_running_loop())
+    # Wings (patch 0025): per-person assistant tools for connected accounts
+    # and the 30 minute refresh of calendars added by link.
+    try:
+        from wings.accounts_routes import on_startup as _wings_accounts_startup
+        _wings_accounts_startup()
+    except Exception:
+        logger.exception("Connect your accounts start-up failed")
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.
     try:

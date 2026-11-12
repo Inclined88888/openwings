@@ -4,8 +4,10 @@
 //   shows a short "Connect your AI" panel in #welcome-setup (left empty
 //   upstream) to an admin, and one line saying whom to ask to a member.
 // * Settings > Add Models: the same choices as a "Connect your AI" card.
-// * Settings > Integrations: a "Connect your apps" card grid at the top.
-// * Coming back from OpenRouter (?ow_connect=...): a short note.
+// * Settings > Integrations: "Connect your accounts" at the top (patch 0025):
+//   mail and calendar, files and notes, work apps (the 0021 app cards).
+// * Coming back from OpenRouter (?ow_connect=...) or from Sign in with
+//   Google (?ow_accounts=..., patch 0025): a short note.
 // * Use your ChatGPT plan (patch 0022): OpenAI's official Sign in with
 //   ChatGPT (wings/chatgpt_plan.py), a "Continue with ChatGPT" button, the
 //   first-use note, and "Using ChatGPT plan" beside the model picker.
@@ -17,6 +19,10 @@
 // styles these too; the few rules below only lay them out.
 import uiModule from './ui.js?v=20260916largetoolscroll1';
 import settingsModule from './settings.js?v=20260912writingstyle3';
+// Same module instance as ui.js's (same URL): upstream's Escape arbiter
+// closes the newest registered layer first, so a dialog here closes before
+// the Settings window behind it.
+import { registerEscapeLayer } from './escMenuStack.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -174,6 +180,44 @@ function injectStyle() {
     .ow-gpt-chip a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
     .ow-gpt-chip .ow-gpt-mark { display: inline-flex; width: 14px; height: 14px; border-radius: 50%; background: #000; align-items: center; justify-content: center; }
     .ow-connect .ow-choice.ow-flash { outline: 2px solid var(--accent, var(--red)); outline-offset: 1px; }
+    /* Connect your accounts (patch 0025). */
+    .ow-acct-group { margin-top: 10px; }
+    .ow-acct-group:first-child { margin-top: 0; }
+    .ow-acct-group-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg); margin: 0 0 6px 2px; }
+    .ow-apps-grid .intg-card.ow-flash { outline: 2px solid var(--accent, var(--red)); outline-offset: 1px; }
+    .ow-feed-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .ow-feed-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; }
+    .ow-feed-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .ow-feed-name { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+    .ow-feed-sub { display: block; font-weight: 400; opacity: 0.65; font-size: 10.5px; }
+    .ow-acct-dialog .modal-content { max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+    .ow-acct-body { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.45; }
+    .ow-acct-body a, .ow-apps-grid a:not(.admin-btn-add) { color: var(--accent, var(--red)); text-decoration: underline; text-underline-offset: 2px; opacity: 1; }
+    .ow-acct-lead { opacity: 0.9; }
+    .ow-acct-steps { margin: 0 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .ow-acct-wizard li { line-height: 1.5; }
+    .ow-acct-label { font-size: 12px; font-weight: 600; margin-bottom: -4px; }
+    .ow-acct-body .settings-input { width: 100%; box-sizing: border-box; }
+    .ow-acct-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; cursor: pointer; }
+    .ow-acct-check input { margin-top: 3px; flex-shrink: 0; }
+    .ow-acct-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
+    .ow-acct-warn { font-size: 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); border-left: 3px solid var(--accent, var(--red)); background: color-mix(in srgb, var(--fg) 4%, transparent); }
+    .ow-acct-or { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg); text-align: center; margin: 4px 0; }
+    .ow-acct-choice { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+    .ow-acct-details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--fg); opacity: 1; }
+    .ow-acct-details > div { margin-top: 6px; font-size: 13px; }
+    .ow-acct-dl { margin: 6px 0 0; font-size: 13px; }
+    .ow-acct-dl dt { font-weight: 600; margin-top: 6px; }
+    .ow-acct-dl dd { margin: 2px 0 0; font-size: 13px; }
+    .ow-acct-dl dd a { font-size: 13px; }
+    .ow-acct-notpossible { font-size: 11.5px; line-height: 1.45; margin-top: 10px; color: var(--fg); }
+    .ow-acct-copy { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+    .ow-acct-copy code { flex: 1 1 200px; min-width: 0; padding: 5px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 7%, transparent); font-size: 11.5px; word-break: break-all; user-select: all; }
+    .ow-acct-body .adm-ep-inline-msg:empty, .ow-apps-grid .adm-ep-inline-msg:empty { display: none; }
+    @media (max-width: 560px) {
+      .ow-apps-grid { grid-template-columns: 1fr; }
+      .ow-acct-dialog .modal-content { width: calc(100vw - 16px) !important; }
+    }
     #ow-gpt-welcome .modal-content { max-width: 420px; }
     #ow-gpt-welcome .ow-gpt-welcome-logo { display: flex; justify-content: center; margin: 4px 0 10px; }
     #ow-gpt-welcome .ow-gpt-welcome-logo span { display: inline-flex; width: 44px; height: 44px; border-radius: 50%; background: #000; align-items: center; justify-content: center; }
@@ -971,37 +1015,6 @@ async function loadServers() {
 const AI_ICON = '<svg class="ow-card-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
 const APP_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
 
-async function renderAppsGrid(card) {
-  const st = await fetchStatus();
-  const grid = card.querySelector('.ow-apps-grid');
-  if (!grid) return;
-  const servers = await loadServers();
-  grid.innerHTML = (st.apps || []).map((app) => {
-    const s = appState(app, servers);
-    const connected = s.dot === 'on';
-    const buttons = [];
-    const finishUrl = s.srv && s.srv.status === 'needs_auth' ? safeAuthUrl(s.srv.auth_url) : null;
-    if (!s.srv || (s.fresh && !finishUrl)) {
-      buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">${s.error ? 'Try again' : 'Connect'}</button>`);
-    } else {
-      if (finishUrl) {
-        buttons.push(`<a class="admin-btn-add" style="text-decoration:none;" href="${esc(finishUrl)}" target="_blank" rel="noopener noreferrer">Finish sign-in</a>`);
-        buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-connect="${esc(app.slug)}">Start over</button>`);
-      } else if (!connected) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Reconnect</button>`);
-      buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-disconnect="${esc(s.srv.id)}" data-ow-app-name="${esc(app.name)}">Disconnect</button>`);
-    }
-    return `<div class="intg-card" data-ow-app="${esc(app.slug)}">
-      <div class="ow-app-head"><span style="color:var(--accent, var(--red));display:inline-flex;">${APP_ICON}</span>${esc(app.name)}</div>
-      <div class="ow-app-about">${esc(app.about)}</div>
-      <div class="ow-app-state"><span class="ow-app-dot ${s.dot}"></span><span data-ow-app-label>${esc(s.label)}</span></div>
-      ${s.error ? `<div class="ow-app-error">${esc(s.error)}</div>` : ''}
-      <div class="ow-app-actions">${buttons.join('')}</div>
-      <div class="adm-ep-inline-msg" data-ow-app-msg></div>
-      ${app.note ? `<div class="ow-app-note">${esc(app.note)}</div>` : ''}
-    </div>`;
-  }).join('');
-}
-
 function safeAuthUrl(u) {
   try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; }
 }
@@ -1039,14 +1052,14 @@ async function connectApp(card, slug) {
     if (d.connected || d.status === 'connected') {
       if (tab) tab.close();
       setMsg(msg, 'Connected.', 'ok');
-      return renderAppsGrid(card);
+      return renderAccounts(card);
     }
     let authUrl = safeAuthUrl(d.auth_url);
     for (let i = 0; !authUrl && i < 20; i++) {
       await new Promise((res) => setTimeout(res, 1500));
       const s = (await loadServers()).find((x) => x.id === serverId);
       if (s && s.status === 'error') throw new Error(s.error || 'the app did not answer');
-      if (s && s.status === 'connected') { if (tab) tab.close(); return renderAppsGrid(card); }
+      if (s && s.status === 'connected') { if (tab) tab.close(); return renderAccounts(card); }
       authUrl = safeAuthUrl(s && s.auth_url);
     }
     if (!authUrl) throw new Error('the sign-in page did not come up');
@@ -1083,20 +1096,20 @@ async function connectApp(card, slug) {
       await new Promise((res) => setTimeout(res, 2000));
       const s = (await loadServers()).find((x) => x.id === serverId);
       if (!s) break;
-      if (s.status === 'connected') { await renderAppsGrid(card); return; }
+      if (s.status === 'connected') { await renderAccounts(card); return; }
       if (s.status === 'error') throw new Error(s.error || 'sign-in failed');
       if (s.status !== 'needs_auth' && s.status !== 'connecting') {
         // Cancelled on the app's own page: the server ended the sign-in.
-        await renderAppsGrid(card);
+        await renderAccounts(card);
         const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
         setMsg(m, 'Sign-in cancelled. Nothing was connected.');
         return;
       }
     }
-    await renderAppsGrid(card);
+    await renderAccounts(card);
   } catch (e) {
     if (tab && !tab.closed) { try { tab.close(); } catch (_) {} }
-    await renderAppsGrid(card);
+    await renderAccounts(card);
     const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
     // The card itself now shows the reason under its label.
     if (!m || !m.closest('[data-ow-app]')?.querySelector('.ow-app-error')) {
@@ -1111,34 +1124,604 @@ async function disconnectApp(card, serverId, name) {
     : window.confirm(`Disconnect ${name}?`);
   if (!ok) return;
   try { await fetch(`/api/mcp/servers/${encodeURIComponent(serverId)}`, { method: 'DELETE', credentials: 'same-origin' }); } catch (_) {}
-  await renderAppsGrid(card);
+  await renderAccounts(card);
 }
+
+// ------------------------------------------------------------ Connect your accounts (patch 0025)
+//
+// One card in Settings > Integrations for every account a person can
+// connect: mail and calendar, files and notes, work apps. Each person
+// connects their own (the work apps are connected by an admin for everyone,
+// as in patch 0021). Back end: wings/accounts_routes.py.
+//
+// Cards are an ordered list so a later patch can add one in its place:
+// patch 0026 puts "Outlook / Microsoft 365" right after Yahoo (see
+// ACCOUNT_CARDS and addAccountCard).
+
+const ACCOUNT_GROUPS = [
+  { id: 'mail', title: 'Mail and calendar' },
+  { id: 'files', title: 'Files and notes' },
+  { id: 'work', title: 'Work apps' },
+];
+
+const MAIL_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>';
+const CAL_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+const LINK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+
+// Card list. kind: 'mail' (app password), 'google', 'feed', 'app' (0021 apps).
+const ACCOUNT_CARDS = [
+  { id: 'gmail', group: 'mail', kind: 'mail', provider: 'gmail', name: 'Gmail', icon: MAIL_ICON, about: 'Your Gmail inbox and sending, with an app password.' },
+  { id: 'google', group: 'mail', kind: 'google', name: 'Google Calendar and Drive', icon: CAL_ICON, about: 'Sign in with Google: Gmail, your main Google calendar with Meet links, and Drive. Needs a free one-time setup by your admin.', aboutReady: 'Sign in with Google: Gmail, your main Google calendar with Meet links, and Drive.' },
+  { id: 'icloud', group: 'mail', kind: 'mail', provider: 'icloud', name: 'iCloud', icon: MAIL_ICON, about: 'iCloud Mail and, if you like, iCloud Calendar.' },
+  { id: 'yahoo', group: 'mail', kind: 'mail', provider: 'yahoo', name: 'Yahoo', icon: MAIL_ICON, about: 'Your Yahoo inbox and sending, with an app password.' },
+  // Patch 0026 adds { id: 'microsoft', ... } "Outlook / Microsoft 365" here.
+  { id: 'calendar-link', group: 'mail', kind: 'feed', name: 'Calendar by link', icon: LINK_ICON, about: 'Any calendar with a share link: Google, Outlook, iCloud and more. Read only.' },
+  { id: 'notion', group: 'files', kind: 'app', slug: 'notion' },
+  { id: 'linear', group: 'work', kind: 'app', slug: 'linear' },
+  { id: 'atlassian', group: 'work', kind: 'app', slug: 'atlassian' },
+];
+
+// For a later patch: add a card after another one (or at the end).
+function addAccountCard(card, { after } = {}) {
+  if (ACCOUNT_CARDS.some((c) => c.id === card.id)) return;
+  const at = after ? ACCOUNT_CARDS.findIndex((c) => c.id === after) : -1;
+  if (at < 0) ACCOUNT_CARDS.push(card);
+  else ACCOUNT_CARDS.splice(at + 1, 0, card);
+  const host = document.getElementById('ow-connect-apps-card');
+  if (host) renderAccounts(host);
+}
+window.owAccounts = { addAccountCard, open: (id) => openAccountCard(id) };
+
+const ACCOUNT_ERRORS = {
+  denied: 'Google sign-in was cancelled. Nothing was changed.',
+  expired: 'That sign-in ran out of time or was already used. Press Sign in with Google again.',
+  other_user: 'That sign-in was started by another OpenWings account. Press Sign in with Google again.',
+  not_signed_in: 'Sign in to OpenWings in this browser first, then try again.',
+  no_client: 'Sign in with Google is not set up on this OpenWings yet. Ask your admin.',
+  invalid_client: 'Google did not accept this OpenWings\' client ID or secret. Ask your admin to check them.',
+  redirect_mismatch: 'Google says the redirect address does not match. Ask your admin to check the redirect URI in the Google console.',
+  exchange_failed: 'Google did not hand over access. Please try again.',
+  no_email: 'Google did not say which account signed in. Please try again.',
+  save_failed: 'You signed in, but the account could not be saved. Please try again.',
+  missing_code: 'The sign-in came back without a code. Please try again.',
+  no_code: 'The sign-in came back without a code. Please try again.',
+};
+const FEATURE_NAMES = { mail: 'Mail', calendar: 'Calendar', drive: 'Drive' };
+const listWords = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+let _accounts = null;
+
+async function fetchAccounts() {
+  try {
+    const r = await fetch('/api/wings/accounts/status', { credentials: 'same-origin' });
+    _accounts = r.ok ? await r.json() : null;
+  } catch (_) { _accounts = null; }
+  return _accounts;
+}
+
+async function postJson(url, body, method = 'POST') {
+  const r = await fetch(url, {
+    method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok && d.ok !== false, status: r.status, data: d };
+}
+
+function cardShell(c, { label, dot = '', buttons = [], error = '', note = '' }) {
+  return `<div class="intg-card" data-ow-acct="${esc(c.id)}">
+    <div class="ow-app-head"><span style="color:var(--accent, var(--red));display:inline-flex;">${c.icon || APP_ICON}</span>${esc(c.name)}</div>
+    <div class="ow-app-about">${esc(c.about || '')}</div>
+    <div class="ow-app-state"><span class="ow-app-dot ${dot}"></span><span data-ow-app-label>${esc(label)}</span></div>
+    ${error ? `<div class="ow-app-error">${esc(error)}</div>` : ''}
+    <div class="ow-app-actions">${buttons.join('')}</div>
+    <div class="adm-ep-inline-msg" data-ow-app-msg></div>
+    ${note ? `<div class="ow-app-note">${esc(note)}</div>` : ''}
+  </div>`;
+}
+
+const btn = (label, attrs, primary = false) => `<button type="button" class="${primary ? 'admin-btn-add' : 'admin-btn-sm'}" ${attrs}>${esc(label)}</button>`;
+
+function mailCardHtml(c, acc) {
+  const mine = (acc.mail || []).filter((m) => m.provider === c.provider);
+  if (!mine.length) {
+    const gmailOAuth = c.provider === 'gmail' && (acc.mail || []).some((m) => m.provider === 'google_oauth');
+    return cardShell(c, {
+      label: gmailOAuth ? 'Connected with Sign in with Google' : 'Not connected',
+      dot: gmailOAuth ? 'on' : '',
+      buttons: gmailOAuth ? [] : [btn('Connect', `data-ow-acct-open="${esc(c.id)}"`, true)],
+    });
+  }
+  const buttons = [btn('Add another', `data-ow-acct-open="${esc(c.id)}"`)];
+  mine.forEach((m) => buttons.push(btn(mine.length > 1 ? `Disconnect ${m.address}` : 'Disconnect',
+    `data-ow-mail-remove="${esc(m.id)}" data-ow-name="${esc(m.address)}"`)));
+  const cal = c.provider === 'icloud' && (acc.caldav || []).some((x) => x.kind === 'icloud');
+  return cardShell(c, {
+    label: `Connected as ${mine.map((m) => m.address).join(', ')}${cal ? ' · Calendar too' : ''}`,
+    dot: 'on', buttons,
+  });
+}
+
+function googleCardHtml(c, acc) {
+  const g = acc.google || {};
+  const links = g.links || [];
+  if (g.configured && c.aboutReady) c = { ...c, about: c.aboutReady };
+  if (!g.configured) {
+    const buttons = acc.admin ? [btn('Set up (admin, once)', 'data-ow-google-setup', true)] : [];
+    return cardShell(c, {
+      label: acc.admin ? 'Needs a one-time setup' : 'Ask your OpenWings admin to set this up',
+      buttons,
+      note: 'Google charges for the review that a shared one-click Gmail needs, so each OpenWings uses its own free Google key. The admin makes it once, for everyone here.',
+    });
+  }
+  if (!links.length) {
+    const buttons = [btn('Sign in with Google', `data-ow-acct-open="google"`, true)];
+    if (acc.admin) buttons.push(btn('Google key', 'data-ow-google-setup'));
+    return cardShell(c, { label: 'Not connected', buttons });
+  }
+  const buttons = [btn('Sign in again or add more', `data-ow-acct-open="google"`)];
+  links.forEach((l) => buttons.push(btn(links.length > 1 ? `Disconnect ${l.account}` : 'Disconnect',
+    `data-ow-google-remove="${esc(l.id)}" data-ow-name="${esc(l.account)}"`)));
+  if (acc.admin) buttons.push(btn('Google key', 'data-ow-google-setup'));
+  const what = (l) => ['mail', 'calendar', 'drive'].filter((k) => l[k]).map((k) => ({ mail: 'Mail', calendar: 'Calendar', drive: 'Drive' }[k])).join(', ') || 'nothing yet';
+  const needs = links.some((l) => l.needs_signin);
+  return cardShell(c, {
+    label: needs ? 'Needs a new sign-in' : `Connected as ${links.map((l) => `${l.account} (${what(l)})`).join('; ')}`,
+    dot: needs ? 'warn' : 'on', buttons,
+  });
+}
+
+function feedCardHtml(c, acc) {
+  const feeds = acc.feeds || [];
+  const buttons = [btn(feeds.length ? 'Add another' : 'Add a calendar', `data-ow-acct-open="calendar-link"`, !feeds.length)];
+  if (!feeds.length) return cardShell(c, { label: 'No calendars added', buttons });
+  const rows = feeds.map((f) => `<div class="ow-feed-row" data-ow-feed="${esc(f.id)}">
+      <span class="ow-feed-dot" style="background:${/^#[0-9a-f]{6}$/i.test(f.color || '') ? f.color : 'var(--accent, var(--red))'}"></span>
+      <span class="ow-feed-name">${esc(f.name)}<span class="ow-feed-sub">${f.error ? esc(f.error) : `${f.events} events · read only`}</span></span>
+      <button type="button" class="admin-btn-sm" data-ow-feed-refresh="${esc(f.id)}">Refresh now</button>
+      <button type="button" class="admin-btn-sm" data-ow-feed-remove="${esc(f.id)}" data-ow-name="${esc(f.name)}">Remove</button>
+    </div>`).join('');
+  return cardShell(c, { label: `${feeds.length} calendar${feeds.length > 1 ? 's' : ''} added`, dot: feeds.some((f) => f.error) ? 'warn' : 'on', buttons })
+    .replace('<div class="ow-app-actions">', `<div class="ow-feed-list">${rows}</div><div class="ow-app-actions">`);
+}
+
+function appCardHtml(c, app, servers, admin) {
+  const card = { ...c, name: app.name, about: app.about, icon: APP_ICON };
+  if (!admin) {
+    // Only what is true right now: connected by the admin, or not set up yet.
+    return app.connected
+      ? cardShell(card, { label: 'Connected by your admin for everyone', dot: 'on', note: 'Your OpenWings admin connected this once for everyone here.' })
+      : cardShell(card, { label: 'Not set up yet. Ask your OpenWings admin.', note: 'Your OpenWings admin connects this once for everyone here.' });
+  }
+  const s = appState(app, servers);
+  const connected = s.dot === 'on';
+  const buttons = [];
+  const finishUrl = s.srv && s.srv.status === 'needs_auth' ? safeAuthUrl(s.srv.auth_url) : null;
+  if (!s.srv || (s.fresh && !finishUrl)) {
+    buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">${s.error ? 'Try again' : 'Connect'}</button>`);
+  } else {
+    if (finishUrl) {
+      buttons.push(`<a class="admin-btn-add" style="text-decoration:none;" href="${esc(finishUrl)}" target="_blank" rel="noopener noreferrer">Finish sign-in</a>`);
+      buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-connect="${esc(app.slug)}">Start over</button>`);
+    } else if (!connected) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Reconnect</button>`);
+    buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-disconnect="${esc(s.srv.id)}" data-ow-app-name="${esc(app.name)}">Disconnect</button>`);
+  }
+  return cardShell(card, { label: s.label, dot: s.dot, buttons, error: s.error, note: app.note || 'Everyone on this OpenWings can use it with your account.' })
+    .replace(`data-ow-acct="${esc(c.id)}"`, `data-ow-acct="${esc(c.id)}" data-ow-app="${esc(app.slug)}"`);
+}
+
+async function renderAccounts(card) {
+  const [acc, st] = await Promise.all([fetchAccounts(), fetchStatus()]);
+  const body = card.querySelector('.ow-acct-groups');
+  if (!body) return;
+  if (!acc) { body.innerHTML = '<div class="ow-app-note">Could not load your accounts. Reload the page to try again.</div>'; return; }
+  const apps = acc.apps || [];
+  const servers = acc.admin ? await loadServers() : [];
+  body.innerHTML = ACCOUNT_GROUPS.map((g) => {
+    const cards = ACCOUNT_CARDS.filter((c) => c.group === g.id).map((c) => {
+      if (c.render) return c.render(c, acc);
+      if (c.kind === 'mail') return mailCardHtml(c, acc);
+      if (c.kind === 'google') return googleCardHtml(c, acc);
+      if (c.kind === 'feed') return feedCardHtml(c, acc);
+      if (c.kind === 'app') {
+        const app = apps.find((a) => a.slug === c.slug);
+        return app ? appCardHtml(c, app, servers, acc.admin) : '';
+      }
+      return '';
+    }).join('');
+    return cards ? `<div class="ow-acct-group"><div class="ow-acct-group-title">${esc(g.title)}</div><div class="ow-apps-grid">${cards}</div></div>` : '';
+  }).join('') + '<div class="ow-acct-notpossible">Not possible: Google Keep and Apple Notes, because Google and Apple offer no way for other apps to open them. Zoom needs its own app setup, so it comes later.</div>';
+  void st;
+}
+
+// ---- dialogs
+
+// Dialogs: upstream's window look (modal, modal-content), on top of Settings.
+// Escape closes the newest one through upstream's Escape arbiter (never the
+// window behind it), Tab stays inside, and focus goes back to the button
+// that opened it.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+const _openDialogs = [];
+
+function openDialog(id, title, html, { wide = false } = {}) {
+  const old = document.getElementById(id);
+  if (old) { if (typeof old.close === 'function') old.close({ keepFocus: true }); else old.remove(); }
+  const opener = document.activeElement;
+  const openerCard = (opener && opener.closest && opener.closest('[data-ow-acct]')?.dataset.owAcct) || opener?.dataset?.owAcctOpen || '';
+  const overlay = document.createElement('div');
+  overlay.id = id;
+  overlay.className = 'modal ow-acct-dialog';
+  overlay.style.zIndex = '300';
+  overlay.innerHTML = `<div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="${id}-title" style="width:${wide ? 560 : 460}px;max-width:calc(100vw - 24px);">
+      <div class="modal-header"><h4 id="${id}-title">${esc(title)}</h4><button type="button" class="close-btn" data-ow-close aria-label="Close">✖</button></div>
+      <div class="modal-body ow-acct-body">${html}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.classList.remove('hidden');
+  overlay.style.display = 'flex';
+  const box = overlay.querySelector('.modal-content');
+  let closed = false;
+  let unregister = () => {};
+  const close = ({ keepFocus = false } = {}) => {
+    if (closed) return;
+    closed = true;
+    unregister();
+    document.removeEventListener('keydown', onKey);
+    const i = _openDialogs.indexOf(overlay);
+    if (i !== -1) _openDialogs.splice(i, 1);
+    overlay.remove();
+    if (!keepFocus) {
+      const back = (opener && opener.isConnected && opener !== document.body) ? opener
+        : (openerCard && document.querySelector(`#ow-connect-apps-card [data-ow-acct="${CSS.escape(openerCard)}"] button`));
+      try { back?.focus(); } catch (_) {}
+    }
+  };
+  unregister = registerEscapeLayer(() => close(), () => !closed && overlay.isConnected);
+  const onKey = (e) => {
+    if (_openDialogs[_openDialogs.length - 1] !== overlay) return;
+    const confirmOpen = document.getElementById('styled-confirm-overlay');
+    if (confirmOpen && !confirmOpen.classList.contains('hidden') && confirmOpen.style.display !== 'none') return;
+    if (e.key === 'Escape' && !e.defaultPrevented) {
+      // Fallback only: upstream's arbiter normally handles Escape first.
+      e.preventDefault(); e.stopPropagation(); close();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const items = [...box.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  };
+  _openDialogs.push(overlay);
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.closest('[data-ow-close]')) close();
+  });
+  overlay.close = close;
+  setTimeout(() => (overlay.querySelector('input:not([type=checkbox]), button.admin-btn-add') || box)?.focus(), 30);
+  return overlay;
+}
+
+// upstream's styledConfirm, as the newest Escape layer: Escape closes the
+// question, not the dialog or window under it.
+async function askConfirm(text, opts) {
+  if (!window.styledConfirm) return window.confirm(text);
+  const unregister = registerEscapeLayer(() => {
+    document.getElementById('styled-confirm-cancel')?.click();
+  }, () => {
+    const o = document.getElementById('styled-confirm-overlay');
+    return !!o && !o.classList.contains('hidden');
+  });
+  try { return await window.styledConfirm(text, opts); } finally { unregister(); }
+}
+
+function stepsHtml(steps) {
+  return `<ol class="ow-acct-steps">${steps.map((s) => `<li>${esc(s.text)}${s.url ? ` <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.link || 'Open')}</a>` : ''}</li>`).join('')}</ol>`;
+}
+
+async function openMailDialog(providerKey) {
+  const acc = _accounts || await fetchAccounts();
+  const p = ((acc && acc.mail_providers) || []).find((x) => x.key === providerKey);
+  if (!p) return;
+  const google = providerKey === 'gmail' && acc.google && acc.google.configured;
+  const html = `
+    ${google ? `<div class="ow-acct-choice"><div class="ow-acct-lead">Easiest: Sign in with Google. Google's own page opens; no password to copy.</div>
+      <button type="button" class="admin-btn-add" data-ow-goto-google>Sign in with Google</button></div>
+      <div class="ow-acct-or">Or use an app password</div>` : ''}
+    <div class="ow-acct-lead">${esc(p.intro)}</div>
+    ${stepsHtml(p.steps)}
+    ${p.unavailable ? `<details class="ow-acct-details" data-ow-unavailable><summary>No App passwords option?</summary><div>${esc(p.unavailable)}</div></details>` : ''}
+    <label class="ow-acct-label" for="ow-mail-address">Email address</label>
+    <input id="ow-mail-address" class="settings-input" type="email" autocomplete="email" placeholder="${esc(p.example)}">
+    <label class="ow-acct-label" for="ow-mail-password">App password</label>
+    <input id="ow-mail-password" class="settings-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the app password">
+    ${p.calendar ? `<label class="ow-acct-check"><input type="checkbox" id="ow-mail-calendar" checked> Also sync my ${esc(p.name)} calendars</label>` : ''}
+    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-mail-connect>Connect</button><button type="button" class="admin-btn-sm" data-ow-close>Cancel</button></div>
+    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>
+    <div class="ow-app-note">OpenWings tests the password with ${esc(p.name)} first and saves it encrypted. It is used only for your mailbox. <a href="${esc(p.help)}" target="_blank" rel="noopener noreferrer">${esc(p.name)} help</a></div>`;
+  const dlg = openDialog('ow-mail-dialog', `Connect ${p.name}`, html);
+  const msg = dlg.querySelector('[data-ow-dialog-msg]');
+  dlg.querySelector('[data-ow-goto-google]')?.addEventListener('click', () => { dlg.close(); openGoogleDialog(); });
+  dlg.querySelector('#ow-mail-password').addEventListener('input', (e) => {
+    const v = e.target.value; const clean = v.replace(/\s+/g, '');
+    if (v !== clean) e.target.value = clean;
+  });
+  const go = async () => {
+    const address = dlg.querySelector('#ow-mail-address').value.trim();
+    const password = dlg.querySelector('#ow-mail-password').value.replace(/\s+/g, '');
+    if (!address) return setMsg(msg, 'Type your email address.', 'err');
+    if (!password) return setMsg(msg, 'Paste the app password.', 'err');
+    const b = dlg.querySelector('[data-ow-mail-connect]');
+    b.disabled = true;
+    setMsg(msg, `Checking with ${p.name}…`);
+    const r = await postJson('/api/wings/accounts/mail/connect', {
+      provider: providerKey, address, password, calendar: !!dlg.querySelector('#ow-mail-calendar')?.checked,
+    });
+    b.disabled = false;
+    if (!r.ok) {
+      // A refused password: the account may simply have no app passwords.
+      if (r.data.error === 'wrong_password') { const d = dlg.querySelector('[data-ow-unavailable]'); if (d) d.open = true; }
+      return setMsg(msg, r.data.message || r.data.detail || 'That did not work. Please try again.', 'err');
+    }
+    let done = `Connected ${r.data.address}. Your mail shows up in Email in a minute.`;
+    if (r.data.calendar === 'syncing') done += ' Your calendars are syncing.';
+    if (r.data.calendar === 'failed') done += ` Calendars were not added: ${r.data.calendar_error || 'please try again'}.`;
+    setMsg(msg, done, 'ok');
+    dlg.querySelector('#ow-mail-password').value = '';
+    const host = document.getElementById('ow-connect-apps-card');
+    if (host) renderAccounts(host);
+    setTimeout(() => dlg.close(), 1800);
+  };
+  dlg.querySelector('[data-ow-mail-connect]').addEventListener('click', go);
+  dlg.querySelector('#ow-mail-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+}
+
+async function openFeedDialog() {
+  const acc = _accounts || await fetchAccounts();
+  const help = (acc && acc.feed_help) || [];
+  const html = `
+    <div class="ow-acct-lead">Paste a calendar's share link. OpenWings shows its events in your Calendar and refreshes them every 30 minutes.</div>
+    <div class="ow-acct-warn"><strong>Read only.</strong> OpenWings and the assistant can see these events but cannot change them. A secret link works like a password: anyone who has it can see the calendar, so keep it to yourself.</div>
+    <details class="ow-acct-details"><summary>Where do I find the link?</summary>
+      <dl class="ow-acct-dl">${help.map((h) => `<dt>${esc(h.name)}</dt><dd>${esc(h.steps)}${h.url ? ` <a href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">${esc(h.link || 'Steps')}</a>` : ''}</dd>`).join('')}</dl>
+    </details>
+    <label class="ow-acct-label" for="ow-feed-url">Calendar link</label>
+    <input id="ow-feed-url" class="settings-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://…/basic.ics or webcal://…">
+    <label class="ow-acct-label" for="ow-feed-name">Name (optional)</label>
+    <input id="ow-feed-name" class="settings-input" type="text" maxlength="80" placeholder="For example Family or Work">
+    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-feed-add>Add calendar</button><button type="button" class="admin-btn-sm" data-ow-close>Cancel</button></div>
+    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>`;
+  const dlg = openDialog('ow-feed-dialog', 'Add a calendar by link', html);
+  const msg = dlg.querySelector('[data-ow-dialog-msg]');
+  const go = async () => {
+    const url = dlg.querySelector('#ow-feed-url').value.trim();
+    if (!url) return setMsg(msg, 'Paste the calendar link.', 'err');
+    const b = dlg.querySelector('[data-ow-feed-add]');
+    b.disabled = true;
+    setMsg(msg, 'Loading the calendar…');
+    const r = await postJson('/api/wings/accounts/calendar-link', { url, name: dlg.querySelector('#ow-feed-name').value.trim() });
+    b.disabled = false;
+    if (!r.ok) return setMsg(msg, r.data.message || r.data.detail || 'That link did not work.', 'err');
+    setMsg(msg, `Added "${r.data.name}" with ${r.data.events} events. It is in your Calendar now.`, 'ok');
+    try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {}
+    const host = document.getElementById('ow-connect-apps-card');
+    if (host) renderAccounts(host);
+    setTimeout(() => dlg.close(), 1800);
+  };
+  dlg.querySelector('[data-ow-feed-add]').addEventListener('click', go);
+  dlg.querySelector('#ow-feed-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+}
+
+async function openGoogleDialog() {
+  const acc = _accounts || await fetchAccounts();
+  const g = (acc && acc.google) || {};
+  if (!g.configured) {
+    if (acc && acc.admin) return openGoogleSetup();
+    openDialog('ow-google-dialog', 'Sign in with Google', `<div class="ow-acct-lead">Sign in with Google needs a one-time setup by your OpenWings admin. Google charges for the review that a shared one-click Gmail needs, so each OpenWings uses its own free Google key.</div>
+      <div class="ow-acct-lead">Until then: Gmail works with an app password, and any Google calendar can be added with Calendar by link (read only).</div>
+      <div class="ow-acct-actions"><button type="button" class="admin-btn-sm" data-ow-close>Close</button></div>`);
+    return undefined;
+  }
+  const connected = (g.links || []).length > 0;
+  const html = `
+    <div class="ow-acct-lead">Google's own sign-in page opens. Choose what OpenWings may use for you:</div>
+    <label class="ow-acct-check"><input type="checkbox" data-ow-scope="mail" checked> Mail: read, sort and send your Gmail</label>
+    <label class="ow-acct-check"><input type="checkbox" data-ow-scope="calendar" checked> Calendar: see and change your main Google calendar, add Meet links</label>
+    <label class="ow-acct-check"><input type="checkbox" data-ow-scope="drive" checked> Drive: the assistant can find and read your files (read only)</label>
+    <div class="ow-acct-lead">On Google's page, leave every box ticked. A box you untick there is not connected.</div>
+    ${connected ? '<div class="ow-acct-lead">What is connected already stays connected. To remove it, use Disconnect on the card.</div>' : ''}
+    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-google-go>Sign in with Google</button><button type="button" class="admin-btn-sm" data-ow-close>Cancel</button></div>
+    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>
+    <div class="ow-app-note">Google may say it has not verified this app: that is your own OpenWings' key. Choose Advanced, then continue. Only you can use what you connect here. Other Google calendars than your main one: add them with Calendar by link.</div>`;
+  const dlg = openDialog('ow-google-dialog', 'Sign in with Google', html);
+  const msg = dlg.querySelector('[data-ow-dialog-msg]');
+  dlg.querySelector('[data-ow-google-go]').addEventListener('click', async () => {
+    const pick = {};
+    dlg.querySelectorAll('[data-ow-scope]').forEach((x) => { pick[x.dataset.owScope] = x.checked; });
+    if (!pick.mail && !pick.calendar && !pick.drive) return setMsg(msg, 'Tick at least one.', 'err');
+    setMsg(msg, 'Opening Google…');
+    const r = await postJson('/api/wings/accounts/google/start', pick);
+    if (!r.ok || !r.data.authorize_url) return setMsg(msg, r.data.message || 'Could not start the sign-in.', 'err');
+    window.location.href = r.data.authorize_url;
+    return undefined;
+  });
+  return undefined;
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0;';
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+  ta.remove(); return ok;
+}
+
+async function openGoogleSetup() {
+  let info;
+  try {
+    const r = await fetch('/api/wings/accounts/google/setup', { credentials: 'same-origin' });
+    info = r.ok ? await r.json() : null;
+  } catch (_) { info = null; }
+  if (!info) { uiModule.showError('Only an OpenWings admin can set up the Google key.'); return; }
+  const c = info.console || {};
+  const client = info.client || {};
+  const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`;
+  const current = client.configured
+    ? `<div class="ow-acct-warn">${client.source === 'env' ? 'Set in .env' : 'Saved here'}: Client ID ${esc(client.client_id)}${client.source === 'env' ? '. A key saved below takes its place.' : ''}
+        ${client.source === 'stored' ? '<button type="button" class="admin-btn-sm" data-ow-google-forget style="margin-left:6px;">Remove</button>' : ''}</div>`
+    : '';
+  const html = `
+    <div class="ow-acct-lead">About 10 minutes, once, for everyone on this OpenWings. It is free. Each step opens Google's console in a new tab; sign in with any Google account you control.</div>
+    ${current}
+    <ol class="ow-acct-steps ow-acct-wizard">
+      <li><strong>Create a project.</strong> ${link(c.project, 'Open the new project page')}. Any name, for example OpenWings.</li>
+      <li><strong>Turn on the APIs</strong> for that project. Press Enable on each: ${link(c.gmail_api, 'Gmail API')}, ${link(c.calendar_api, 'Google Calendar API')}, ${link(c.caldav_api, 'CalDAV API')}, ${link(c.drive_api, 'Google Drive API')}.</li>
+      <li><strong>Set up the sign-in screen.</strong> ${link(c.branding, 'Branding')}: press Get started. App name: OpenWings. Support and contact email: yours. Audience: <strong>External</strong>. Agree to the policy, then Create.</li>
+      <li><strong>Publish it.</strong> ${link(c.audience, 'Audience')}: press Publish app. While it says Testing, only people you list there as test users can sign in, and only for 7 days at a time. If Google asks for a home page and privacy policy link first, add them under Branding (your own page or this OpenWings address). After you publish, Google may say the app needs verification: you can ignore that for your own OpenWings (up to 100 people can sign in without it). It costs nothing.</li>
+      <li><strong>Make the key.</strong> ${link(c.clients, 'Clients')}: Create client. Application type: <strong>Web application</strong>. Name: OpenWings. If the form shows "Use this client for an AI-powered agent", leave it unticked. Under Authorized redirect URIs press Add URI and paste exactly:
+        <div class="ow-acct-copy"><code data-ow-uri>${esc(info.redirect_uri)}</code><button type="button" class="admin-btn-sm" data-ow-copy-uri>Copy</button></div>
+        ${info.redirect_ok ? '' : `<div class="ow-acct-warn">${esc(info.redirect_rules || '')} Open OpenWings at such an address and open this guide again.</div>`}
+        ${info.only_this_computer ? '<div class="ow-acct-warn">With this address, Sign in with Google only works in a browser on the OpenWings computer itself. For phones and other computers, give OpenWings an https address (setup.sh --domain), then open this guide there.</div>' : ''}
+        ${info.current_uri ? `<div class="ow-acct-warn">OpenWings is now opened at another address. To sign in from here, use <code>${esc(info.current_uri)}</code> instead and add it in Google's console too. <button type="button" class="admin-btn-sm" data-ow-use-current style="margin-left:6px;">Use this address instead</button></div>` : ''}
+        Then press Create.</li>
+      <li><strong>Paste the key here.</strong> Google shows the Client secret only once, so copy it right away.</li>
+    </ol>
+    <label class="ow-acct-label" for="ow-g-id">Client ID</label>
+    <input id="ow-g-id" class="settings-input" type="text" autocomplete="off" spellcheck="false" placeholder="…apps.googleusercontent.com">
+    <label class="ow-acct-label" for="ow-g-secret">Client secret</label>
+    <input id="ow-g-secret" class="settings-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the client secret">
+    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-g-save>Save</button><button type="button" class="admin-btn-sm" data-ow-close>Close</button></div>
+    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>
+    <div class="ow-app-note">Saved encrypted on this server and never shown again. A new key usually works within minutes; Google says it can take up to five hours. Steps follow ${link(c.guide, 'Google\'s guide')}.</div>`;
+  const dlg = openDialog('ow-google-setup', 'Set up Sign in with Google', html, { wide: true });
+  const msg = dlg.querySelector('[data-ow-dialog-msg]');
+  dlg.querySelector('[data-ow-copy-uri]').addEventListener('click', async (e) => {
+    const ok = await copyText(info.redirect_uri);
+    e.target.textContent = ok ? 'Copied' : 'Copy failed';
+    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
+  });
+  dlg.querySelector('[data-ow-use-current]')?.addEventListener('click', async () => {
+    const r = await postJson('/api/wings/accounts/google/setup/redirect', {});
+    if (!r.ok) return setMsg(msg, r.data.message || 'Could not change the address.', 'err');
+    dlg.close({ keepFocus: true });
+    await openGoogleSetup();
+    const m = document.querySelector('#ow-google-setup [data-ow-dialog-msg]');
+    setMsg(m, 'Address changed. Add it under Authorized redirect URIs in Google\'s console too.', 'ok');
+    return undefined;
+  });
+  dlg.querySelector('[data-ow-google-forget]')?.addEventListener('click', async () => {
+    const ok = await askConfirm('Remove the saved Google key? People who signed in with Google stay signed in until their access runs out.', { confirmText: 'Remove', danger: true });
+    if (!ok) return;
+    await postJson('/api/wings/accounts/google/setup', undefined, 'DELETE');
+    dlg.close();
+    const host = document.getElementById('ow-connect-apps-card');
+    if (host) renderAccounts(host);
+  });
+  dlg.querySelector('[data-ow-g-save]').addEventListener('click', async () => {
+    const client_id = dlg.querySelector('#ow-g-id').value.trim();
+    const client_secret = dlg.querySelector('#ow-g-secret').value.trim();
+    if (!client_id || !client_secret) return setMsg(msg, 'Paste both the Client ID and the Client secret.', 'err');
+    const r = await postJson('/api/wings/accounts/google/setup', { client_id, client_secret });
+    if (!r.ok) return setMsg(msg, r.data.message || 'Could not save.', 'err');
+    dlg.querySelector('#ow-g-secret').value = '';
+    setMsg(msg, 'Saved. Everyone here can now use Sign in with Google.', 'ok');
+    const host = document.getElementById('ow-connect-apps-card');
+    if (host) renderAccounts(host);
+    return undefined;
+  });
+}
+
+async function confirmRemove(text) {
+  return askConfirm(text, { confirmText: 'Disconnect', danger: true });
+}
+
+async function onAccountsClick(card, e) {
+  const t = (sel) => e.target.closest(sel);
+  let el;
+  if ((el = t('[data-ow-app-connect]'))) return connectApp(card, el.dataset.owAppConnect);
+  if ((el = t('[data-ow-app-disconnect]'))) return disconnectApp(card, el.dataset.owAppDisconnect, el.dataset.owAppName || 'this app');
+  if ((el = t('[data-ow-acct-open]'))) return openAccountCard(el.dataset.owAcctOpen);
+  if (t('[data-ow-google-setup]')) return openGoogleSetup();
+  if ((el = t('[data-ow-mail-remove]'))) {
+    if (!await confirmRemove(`Disconnect ${el.dataset.owName}? OpenWings forgets the password and stops reading this mailbox.`)) return undefined;
+    await postJson(`/api/wings/accounts/mail/${encodeURIComponent(el.dataset.owMailRemove)}`, undefined, 'DELETE');
+    return renderAccounts(card);
+  }
+  if ((el = t('[data-ow-google-remove]'))) {
+    if (!await confirmRemove(`Disconnect ${el.dataset.owName}? OpenWings signs out of Google and removes this account's mail and calendars from OpenWings.`)) return undefined;
+    await postJson(`/api/wings/accounts/google/${encodeURIComponent(el.dataset.owGoogleRemove)}`, undefined, 'DELETE');
+    return renderAccounts(card);
+  }
+  if ((el = t('[data-ow-feed-refresh]'))) {
+    el.disabled = true; el.textContent = 'Refreshing…';
+    const r = await postJson(`/api/wings/accounts/calendar-link/${encodeURIComponent(el.dataset.owFeedRefresh)}/refresh`);
+    if (!r.ok) uiModule.showError(r.data.message || 'Could not refresh that calendar.');
+    else uiModule.showToast(`Calendar refreshed: ${r.data.events} events.`);
+    try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {}
+    return renderAccounts(card);
+  }
+  if ((el = t('[data-ow-feed-remove]'))) {
+    const ok = await askConfirm(`Remove "${el.dataset.owName}"? Its events leave your Calendar.`, { confirmText: 'Remove', danger: true });
+    if (!ok) return undefined;
+    await postJson(`/api/wings/accounts/calendar-link/${encodeURIComponent(el.dataset.owFeedRemove)}`, undefined, 'DELETE');
+    try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {}
+    return renderAccounts(card);
+  }
+  return undefined;
+}
+
+function openAccountCard(id) {
+  const c = ACCOUNT_CARDS.find((x) => x.id === id);
+  if (c && c.open) return c.open(c);
+  if (c && c.kind === 'mail') return openMailDialog(c.provider);
+  if (id === 'google') return openGoogleDialog();
+  if (id === 'calendar-link') return openFeedDialog();
+  return undefined;
+}
+
+// Other screens (Email accounts, Calendar settings) point here: open
+// Settings > Integrations at this card, and its dialog when asked.
+async function goToAccounts(id, { dialog = true } = {}) {
+  try { settingsModule.open('integrations'); } catch (_) {}
+  const card = await waitFor(() => document.getElementById('ow-connect-apps-card'), 6000);
+  if (!card) return;
+  const el = await waitFor(() => card.querySelector(`[data-ow-acct="${CSS.escape(id || 'gmail')}"]`), 4000);
+  if (el) {
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('ow-flash');
+    setTimeout(() => el.classList.remove('ow-flash'), 1600);
+  }
+  if (dialog && id) openAccountCard(id);
+}
+window.owGoToAccounts = goToAccounts;
 
 async function renderSettingsAppsCard() {
   const panel = document.querySelector('[data-settings-panel="integrations"]');
   if (!panel || document.getElementById('ow-connect-apps-card')) return;
-  const st = await fetchStatus();
-  if (!st.admin || !(st.apps || []).length) return;
   const card = document.createElement('div');
   card.className = 'admin-card';
   card.id = 'ow-connect-apps-card';
-  card.innerHTML = `<h2>${APP_ICON.replace('aria-hidden="true"', 'class="ow-card-ico" aria-hidden="true"')}Connect your apps</h2>
-    <div class="admin-toggle-sub" style="margin-bottom:8px">One click: you sign in on the app's own page and OpenWings never sees your password. The assistant can then use the app with your account, for everyone on this OpenWings: anyone who chats here can read and change what your account can.</div>
-    <div class="ow-apps-grid"></div>`;
+  card.innerHTML = `<h2>${APP_ICON.replace('aria-hidden="true"', 'class="ow-card-ico" aria-hidden="true"')}Connect your accounts</h2>
+    <div class="admin-toggle-sub" style="margin-bottom:8px">Each person connects their own mail, calendars and files; the assistant uses them only for that person. Work apps are connected once by an admin for everyone.</div>
+    <div class="ow-acct-groups"><div class="ow-app-note">Loading…</div></div>`;
   panel.insertBefore(card, panel.firstChild);
-  card.addEventListener('click', (e) => {
-    const c = e.target.closest('[data-ow-app-connect]');
-    if (c) return connectApp(card, c.dataset.owAppConnect);
-    const d = e.target.closest('[data-ow-app-disconnect]');
-    if (d) return disconnectApp(card, d.dataset.owAppDisconnect, d.dataset.owAppName || 'this app');
-    return undefined;
-  });
-  await renderAppsGrid(card);
+  card.addEventListener('click', (e) => { onAccountsClick(card, e); });
+  await renderAccounts(card);
   // Refresh whenever the Integrations panel is shown again.
   new MutationObserver(() => {
-    if (!panel.classList.contains('hidden')) renderAppsGrid(card);
+    if (!panel.classList.contains('hidden')) renderAccounts(card);
   }).observe(panel, { attributes: true, attributeFilter: ['class'] });
 }
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-ow-open-accounts]');
+  if (!el) return;
+  e.preventDefault();
+  goToAccounts(el.dataset.owOpenAccounts, { dialog: el.dataset.owOpenDialog !== '0' });
+});
 
 // ------------------------------------------------------------ return notes
 
@@ -1171,8 +1754,42 @@ function handleChatgptReturn() {
   }, 600);
 }
 
+// Back from Sign in with Google (wings/accounts_google.py callback):
+// ?ow_accounts=google (with ow_accounts_note=missing_<parts> when Google did
+// not grant something) or ?ow_accounts_error=<code>. Open the Google card
+// and say plainly what happened.
+function handleAccountsReturn() {
+  const sp = new URLSearchParams(window.location.search);
+  if (!sp.has('ow_accounts') && !sp.has('ow_accounts_error') && !sp.has('ow_accounts_note')) return;
+  const ok = sp.get('ow_accounts');
+  const err = sp.get('ow_accounts_error');
+  const note = sp.get('ow_accounts_note') || '';
+  ['ow_accounts', 'ow_accounts_error', 'ow_accounts_note'].forEach((k) => sp.delete(k));
+  const rest = sp.toString();
+  window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+  setTimeout(async () => {
+    goToAccounts('google', { dialog: false });
+    if (err || ok !== 'google') {
+      uiModule.showError(ACCOUNT_ERRORS[err] || 'Sign in with Google did not finish. Please try again.');
+      return;
+    }
+    const acc = await fetchAccounts();
+    const links = (acc && acc.google && acc.google.links) || [];
+    const parts = (l) => ['mail', 'calendar', 'drive'].filter((k) => l[k]).map((k) => FEATURE_NAMES[k]);
+    const what = links.map((l) => `${l.account} (${listWords(parts(l)) || 'nothing yet'})`).join('; ');
+    const missing = note.startsWith('missing_') ? note.slice(8).split('_').filter((k) => FEATURE_NAMES[k]).map((k) => FEATURE_NAMES[k]) : [];
+    if (missing.length) {
+      uiModule.showError(`Signed in, but Google did not give OpenWings access to ${listWords(missing)}. Press Sign in again or add more, and leave ${missing.length > 1 ? 'those boxes' : 'that box'} ticked on Google's page.`);
+    } else {
+      uiModule.showToast(`Signed in with Google${what ? `: ${what}` : ''}. Mail and calendars appear in a minute.`, { duration: 7000 });
+    }
+    if (links.some((l) => l.calendar)) { try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {} }
+  }, 600);
+}
+
 function handleReturn() {
   handleChatgptReturn();
+  handleAccountsReturn();
   const sp = new URLSearchParams(window.location.search);
   if (!sp.has('ow_connect') && !sp.has('ow_connect_error')) return;
   const ok = sp.get('ow_connect');

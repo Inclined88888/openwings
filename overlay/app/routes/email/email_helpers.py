@@ -107,8 +107,11 @@ def _refresh_google_token(account_id: str) -> str | None:
     import httpx
     from core.database import SessionLocal as _SL, EmailAccount as _EA
     from src.secret_storage import encrypt as _enc, decrypt as _dec
-    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    # Wings (patch 0025): the Google client an admin saved in Connect your
+    # accounts (encrypted), else upstream's .env GOOGLE_OAUTH_* values.
+    from wings.accounts_google import client_credentials as _wings_google_client
+    from wings.accounts import test_url as _wings_test_url
+    client_id, client_secret = _wings_google_client()
     if not client_id or not client_secret:
         return None
     db = _SL()
@@ -119,7 +122,7 @@ def _refresh_google_token(account_id: str) -> str | None:
         refresh_token = _dec(row.oauth_refresh_token or "")
         if not refresh_token:
             return None
-        resp = httpx.post("https://oauth2.googleapis.com/token", data={
+        resp = httpx.post(_wings_test_url("https://oauth2.googleapis.com/token"), data={
             "client_id": client_id,
             "client_secret": client_secret,
             "refresh_token": refresh_token,
@@ -264,10 +267,13 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
     password = cfg.get("smtp_password") or ""
 
     def _auth_smtp(smtp):
-        if cfg.get("oauth_provider") == "google":
-            token = _get_valid_google_token(cfg.get("account_id"), cfg)
+        if cfg.get("oauth_provider"):
+            # Wings (patch 0025): any OAuth mail account (Google now,
+            # Microsoft later) through wings.accounts.mail_token.
+            from wings.accounts import mail_token as _wings_mail_token
+            token = _wings_mail_token(cfg)
             if not token:
-                raise RuntimeError("Google OAuth token unavailable — reconnect the account")
+                raise RuntimeError("Mail sign-in has expired. Sign in again: Settings > Integrations > Connect your accounts.")
             smtp.ehlo()
             smtp.auth("XOAUTH2", lambda challenge=None: _xoauth2_raw(user, token), initial_response_ok=True)
         elif user and password:
@@ -1388,10 +1394,12 @@ def _imap_connect(account_id: str | None = None, owner: str = "",
         owner=cfg.get("owner"),
     )
     try:
-        if cfg.get("oauth_provider") == "google":
-            token = _get_valid_google_token(cfg.get("account_id"), cfg)
+        if cfg.get("oauth_provider"):
+            # Wings (patch 0025): any OAuth mail account, see _auth_smtp.
+            from wings.accounts import mail_token as _wings_mail_token
+            token = _wings_mail_token(cfg)
             if not token:
-                raise RuntimeError("Google OAuth token unavailable — reconnect the account in Settings → Integrations")
+                raise RuntimeError("Mail sign-in has expired. Sign in again: Settings > Integrations > Connect your accounts.")
             conn.authenticate("XOAUTH2", lambda x: _xoauth2_bytes(cfg["imap_user"], token))
         else:
             conn.login(cfg["imap_user"], cfg["imap_password"])

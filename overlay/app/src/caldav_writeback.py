@@ -187,11 +187,11 @@ def _discover_calendars(client):
 
 
 def _writeback_blocking(local_cal_id, ev, delete, url, username, password,
-                        owner="", account_id="") -> dict:
+                        owner="", account_id="", bearer=False) -> dict:
     from src.caldav_sync import _build_dav_client
     # Redirects disabled here too: the write-back path opens its own DAVClient,
     # so it needs the same SSRF-via-redirect protection as the pull path.
-    client = _build_dav_client(url, username, password)
+    client = _build_dav_client(url, username, password, bearer=bearer)
     try:
         calendars = _discover_calendars(client)
         if not calendars:
@@ -287,6 +287,21 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
 
         url = (acc.get("url") or "").strip()
         user = (acc.get("username") or "").strip()
+        acc_id = acc.get("id") or ""
+        if acc.get("wings_oauth"):
+            # Wings (patch 0025): Google sign-in, see sync_caldav.
+            from wings.accounts_google import caldav_bearer
+            try:
+                url, token = await asyncio.to_thread(caldav_bearer, owner, acc)
+            except Exception as e:
+                return {"ok": False, "error": (getattr(e, "message", None) or "sign in again")[:200]}
+            result = await asyncio.to_thread(
+                _writeback_blocking, calendar_id, ev, delete, url, user, token, owner, acc_id, True
+            )
+            _persist_writeback_result(owner, calendar_id, (ev or {}).get("uid", ""), result, delete=delete)
+            if not result.get("ok"):
+                logger.warning("CalDAV write-back did not apply: %s", result.get("error") or result)
+            return result
         pw = decrypt(acc.get("password") or "")
         if not (url and user and pw):
             return {"skipped": "caldav account credentials incomplete"}
@@ -296,7 +311,6 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
         except ValueError as e:
             logger.warning("CalDAV write-back URL rejected: %s", e)
             return {"ok": False, "error": str(e)[:200]}
-        acc_id = acc.get("id") or ""
         result = await asyncio.to_thread(
             _writeback_blocking, calendar_id, ev, delete, url, user, pw, owner, acc_id
         )

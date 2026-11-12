@@ -179,6 +179,15 @@ function _prefetchAdjacent() {
   }
 }
 
+// Wings (patch 0025): Connect your accounts added or removed a calendar
+// (by link, iCloud or Google): drop the cached events so the next render
+// shows them.
+window.addEventListener('ow-calendars-changed', () => {
+  _allEvents = {}; _fetchedRanges = [];
+  try { localStorage.removeItem(LS_KEY); } catch (_) {}
+  if (_open) { _fetchCalendars().then(() => _render()).catch(() => {}); }
+});
+
 let _calendarsError = null;
 // Guard so we only trigger an on-open CalDAV pull once per page load —
 // every list/render path calls _fetchCalendars, but we only want to
@@ -263,6 +272,17 @@ function _optimisticEvent(data, uid) {
 // resolved the promise and the optimistic state got promoted to truth.
 // All three flows now inspect `r.ok` and roll back the optimistic
 // state + surface a toast on the failure path.
+// Wings (patch 0025): say why the server refused (for example "This calendar
+// is read only ...") instead of a bare "HTTP 409".
+async function _httpError(r) {
+  let msg = 'HTTP ' + r.status;
+  try {
+    const d = await r.clone().json();
+    if (r.status === 409 && d && typeof d.detail === 'string' && d.detail) msg = d.detail;
+  } catch (_) {}
+  return new Error(msg);
+}
+
 async function _createEvent(data) {
   const tempUid = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   _allEvents[tempUid] = _optimisticEvent(data, tempUid);
@@ -271,7 +291,7 @@ async function _createEvent(data) {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) throw await _httpError(r);
     const d = await r.json();
     if (d.uid) {
       delete _allEvents[tempUid];
@@ -303,7 +323,7 @@ async function _updateEvent(uid, data) {
       method: 'PUT', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) throw await _httpError(r);
     const d = await r.json().catch(() => ({}));
     if (d.event && d.event.uid) _allEvents[d.event.uid] = d.event;
     if (isRecurring) {
@@ -351,12 +371,12 @@ async function _deleteEvent(uid, { scope = 'series' } = {}) {
   const scopeParam = scope === 'occurrence' ? '?scope=occurrence' : '';
   fetch(`${API_BASE}/api/calendar/events/${encodeURIComponent(uid)}${scopeParam}`, {
     method: 'DELETE', credentials: 'same-origin',
-  }).then(r => {
+  }).then(async r => {
     // 404 = the event was already deleted by another session/device. That's
     // exactly the state we want, so treat it as success — don't restore the
     // row, otherwise the user can never clear stale cached events that were
     // deleted from desktop while mobile was open (and vice versa).
-    if (!r.ok && r.status !== 404) throw new Error('HTTP ' + r.status);
+    if (!r.ok && r.status !== 404) throw await _httpError(r);
     if (isRecurring) {
       _fetchedRanges = [];
       localStorage.removeItem(LS_KEY);
@@ -646,12 +666,14 @@ function _showEventMoreMenu(ev, anchor) {
 
   const _editIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
 
-  dropdown.appendChild(_item(_editIcon, 'Edit', () => {
+  // Wings (patch 0025): an event from a calendar added by link can only be
+  // looked at here; it changes in the app that owns the calendar.
+  dropdown.appendChild(_item(_editIcon, ev.read_only ? 'View (read only)' : 'Edit', () => {
     closeMenu();
     _showEventForm(ev);
   }));
 
-  dropdown.appendChild(_item(_trashIcon, 'Delete', async () => {
+  if (!ev.read_only) dropdown.appendChild(_item(_trashIcon, 'Delete', async () => {
     closeMenu();
     await _confirmAndDeleteEvent(ev);
   }, true));
@@ -971,15 +993,16 @@ function _renderEmpty() {
         <line x1="3" y1="10" x2="21" y2="10"/>
       </svg>
       <div class="cal-empty-title">${hasError ? 'Calendar unavailable' : 'No calendars yet'}</div>
-      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Create a local calendar, import an .ics file, or sync via CalDAV.'}</div>
+      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Add your Google, iCloud or Outlook calendar, create a calendar here, or import an .ics file.'}</div>
       ${hasError ? `
         <button class="cal-btn cal-btn-primary" id="cal-goto-settings">Open Settings</button>
       ` : `
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
-          <button class="cal-btn cal-btn-primary" id="cal-empty-new">New calendar</button>
+          <button class="cal-btn cal-btn-primary" id="cal-empty-accounts" data-ow-cal-accounts="calendar-link">Add a calendar</button>
+          <button class="cal-btn" id="cal-empty-new">New calendar</button>
           <button class="cal-btn" id="cal-empty-import">Import .ics</button>
         </div>
-        <div style="margin-top:10px;font-size:11px;opacity:0.55;">Or <a href="#" id="cal-empty-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">set up CalDAV sync</a>.</div>
+        <div style="margin-top:10px;font-size:11px;opacity:0.55;">Other / manual: <a href="#" id="cal-empty-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">set up CalDAV sync</a>.</div>
       `}
     </div>`;
   document.getElementById('cal-goto-settings')?.addEventListener('click', () => {
@@ -994,6 +1017,11 @@ function _renderEmpty() {
   // New / Import open the calendar settings panel; the panel already
   // has the "New calendar" button and the .ics file picker. Import
   // triggers the file picker immediately so it's a one-click flow.
+  // Wings (patch 0025): "Add a calendar" opens Connect your accounts.
+  document.getElementById('cal-empty-accounts')?.addEventListener('click', () => {
+    closeCalendar();
+    if (window.owGoToAccounts) window.owGoToAccounts('calendar-link');
+  });
   document.getElementById('cal-empty-new')?.addEventListener('click', () => {
     _showCalSettings();
     setTimeout(() => document.getElementById('cal-settings-add')?.click(), 50);
@@ -1207,7 +1235,7 @@ async function _renderMonth() {
           const _impMark = ev.importance === 'critical' ? '<span style="color:var(--red);margin-right:2px" title="critical">!!</span>'
                          : ev.importance === 'high' ? '<span style="color:var(--orange,#e5a33a);margin-right:2px" title="high">!</span>' : '';
           const _typeBadge = ev.event_type ? `<span class="cal-event-type-badge" data-type="${_e(ev.event_type)}" title="${_e(ev.event_type)}"></span>` : '';
-          h += `<div class="cal-event-row" draggable="true" data-uid="${_e(ev.uid)}" title="${_e(ev.summary)}${ev.event_type ? ' · ' + ev.event_type : ''}${ev.importance && ev.importance !== 'normal' ? ' · ' + ev.importance : ''}">
+          h += `<div class="cal-event-row" draggable="${ev.read_only ? 'false' : 'true'}" data-uid="${_e(ev.uid)}" title="${_e(ev.summary)}${ev.event_type ? ' · ' + ev.event_type : ''}${ev.importance && ev.importance !== 'normal' ? ' · ' + ev.importance : ''}">
             <span class="cal-event-row-dot" style="background:${_calColor(ev)}"></span>
             ${_typeBadge}
             ${t ? `<span class="cal-event-row-time">${t}</span>` : ''}
@@ -1268,7 +1296,7 @@ async function _renderMonth() {
           }
         } catch (_) { startFrac = 0; endFrac = 1; }
       }
-      h += `<div class="cal-multiday" style="--col:${startColInt};--span:${span};--slot:${barSlot};--start-frac:${startFrac.toFixed(4)};--end-frac:${endFrac.toFixed(4)};background:${_calColor(md)};--cal-event-fg:${_calEventFg(md)}" draggable="true" data-uid="${_e(md.uid)}" title="${_e(md.summary)}">${_e(md.summary)}${_eventReminderHtml(md)}${_eventSourceHtml(md)}</div>`;
+      h += `<div class="cal-multiday" style="--col:${startColInt};--span:${span};--slot:${barSlot};--start-frac:${startFrac.toFixed(4)};--end-frac:${endFrac.toFixed(4)};background:${_calColor(md)};--cal-event-fg:${_calEventFg(md)}" draggable="${md.read_only ? 'false' : 'true'}" data-uid="${_e(md.uid)}" title="${_e(md.summary)}">${_e(md.summary)}${_eventReminderHtml(md)}${_eventSourceHtml(md)}</div>`;
       barSlot++;
     }
     h += '</div>';
@@ -1749,7 +1777,7 @@ async function _renderWeek() {
       colsHtml += `<div class="cal-wk-block-name">${_e(ev.summary)}${_eventReminderHtml(ev)}${_eventSourceHtml(ev)}</div>`;
       colsHtml += `<div class="cal-wk-block-time">${t}</div>`;
       colsHtml += `</div>`;
-      colsHtml += `<div class="cal-wk-block-resize" title="Drag to resize"></div>`;
+      if (!ev.read_only) colsHtml += `<div class="cal-wk-block-resize" title="Drag to resize"></div>`;
       colsHtml += `</div>`;
     }
     colsHtml += `</div></div>`;  // /cal-wk-grid /cal-wk-col
@@ -1815,10 +1843,11 @@ async function _renderWeek() {
     block.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (e.target.classList.contains('cal-wk-block-resize')) return; // resize wins
-      e.preventDefault();
       const uid = block.dataset.uid;
       const ev = _events.find(x => x.uid === uid);
-      if (!ev) return;
+      // Wings (patch 0025): events from a calendar added by link cannot move.
+      if (!ev || ev.read_only) return;
+      e.preventDefault();
       const cols = Array.from(body.querySelectorAll('.cal-wk-grid'));
       if (!cols.length) return;
       // Local/display timing
@@ -1940,7 +1969,7 @@ async function _renderWeek() {
       const ds = grid.dataset.date;
       const uid = block.dataset.uid;
       const ev = _events.find(x => x.uid === uid);
-      if (!ev || !grid || !ds) return;
+      if (!ev || !grid || !ds || ev.read_only) return;
       const startMin = _timeToMin(ev.dtstart) ?? 0;
       const initialTop = parseFloat(block.style.top || '0');
       const gridRect = grid.getBoundingClientRect();
@@ -3129,6 +3158,7 @@ async function _showCalSettings() {
             ${cals.map(c => `
               <div class="cal-settings-row" data-id="${_e(c.href)}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:color-mix(in srgb, var(--fg) 4%, transparent);">
                 <input type="text" value="${_e(c.name)}" class="cal-s-name" style="flex:1;min-width:0;background:none;border:1px solid ${_calendarSettingsColor(c.color)};border-radius:4px;padding:3px 6px;color:var(--fg);font-size:12px;" />
+                ${c.read_only ? '<span title="Added by link: OpenWings shows it but cannot change it" style="font-size:10px;opacity:0.6;white-space:nowrap;">read only</span>' : ''}
                 <input type="color" value="${_calendarSettingsColor(c.color)}" class="cal-s-color" title="Calendar color" aria-label="Calendar color for ${_e(c.name)}" style="width:24px;height:24px;border:none;background:none;cursor:pointer;padding:0;border-radius:50%;overflow:hidden;flex-shrink:0;" />
                 <button class="cal-s-del" title="Delete calendar" style="background:none;border:none;color:var(--accent, var(--red));opacity:0.75;cursor:pointer;padding:2px;display:flex;position:relative;top:4px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
               </div>
@@ -3142,7 +3172,16 @@ async function _showCalSettings() {
           </div>
         </div>
         <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Import calendar</div>
+          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Add a calendar</div>
+          <div style="font-size:10px;opacity:0.4;margin-bottom:6px;">From your accounts: a share link works for Google, Outlook, iCloud and most calendar apps (read only). Sign in with Google, or connect iCloud with an app password, to change events too.</div>
+          <div class="cal-settings-actions" style="gap:6px;flex-wrap:wrap;">
+            <button class="memory-toolbar-btn" data-ow-cal-accounts="calendar-link" style="cursor:pointer;">By link (read only)</button>
+            <button class="memory-toolbar-btn" data-ow-cal-accounts="google" style="cursor:pointer;">Google Calendar</button>
+            <button class="memory-toolbar-btn" data-ow-cal-accounts="icloud" style="cursor:pointer;">iCloud Calendar</button>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:12px;">
+          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Import calendar (other / manual)</div>
           <div style="font-size:10px;opacity:0.4;margin-bottom:6px;">Upload a .ics file to import events. Google Calendar, Apple Calendar, and Outlook all export .ics files.</div>
           <div class="cal-settings-actions" style="gap:8px;align-items:center;">
             <span id="cal-import-status" style="font-size:11px;opacity:0.6;"></span>
@@ -3373,6 +3412,13 @@ async function _showCalSettings() {
     btn.disabled = false;
   });
 
+  // Wings (patch 0025): the "Add a calendar" buttons open Connect your accounts.
+  overlay.querySelectorAll('[data-ow-cal-accounts]').forEach((b) => b.addEventListener('click', (e) => {
+    e.preventDefault();
+    cleanup();
+    closeCalendar();
+    if (window.owGoToAccounts) window.owGoToAccounts(b.dataset.owCalAccounts);
+  }));
   // Integrations link — close this overlay and open Settings → Integrations.
   overlay.querySelector('#cal-settings-open-caldav')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -3438,7 +3484,11 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
   // Default to all-day when dragging across multiple days
   const ad = existing ? existing.all_day : (defaultEndDate && defaultEndDate !== defaultDate);
 
-  let calOpts = _calendars.filter(c => !_hiddenCals.has(c.href)).map(c =>
+  // Wings (patch 0025): calendars added by link are read only. Their
+  // events open as a read-only view; new events go to other calendars.
+  const _readOnly = !!(existing && (existing.read_only || (_calendars.find(c => c.href === existing.calendar_href) || {}).read_only));
+  const _writableCals = _calendars.filter(c => !c.read_only || (existing && existing.calendar_href === c.href));
+  let calOpts = _writableCals.filter(c => !_hiddenCals.has(c.href)).map(c =>
     `<option value="${_e(c.href)}" ${existing && existing.calendar_href === c.href ? 'selected' : ''}>${_e(c.name)}</option>`
   ).join('');
 
@@ -3473,6 +3523,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
     <div class="cal-form-today" id="cal-form-today">Today is <span id="cal-form-today-text">${_clockDate(_today())} · ${_nowClock()}</span></div>
+    ${_readOnly ? '<div class="cal-f-readonly" role="note" style="font-size:12.5px;line-height:1.45;padding:8px 10px;margin:4px 0 8px;border:1px solid var(--border);border-left:3px solid var(--accent, var(--red));border-radius:8px;background:color-mix(in srgb, var(--fg) 4%, transparent);"><strong>Read only.</strong> This event comes from a calendar added by link. Change it in the app that owns the calendar.</div>' : ''}
     <div class="cal-hero">
       <button type="button" class="cal-hero-time" id="cal-hero-time" title="Change time">
         <span class="cal-hero-clock" id="cal-hero-clock">${_clockFace(ad ? '' : st)}</span>
@@ -3593,13 +3644,14 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
           }).join('')}
         </div>
       </div>
-      ${_calendars.length > 1 ? `<select id="cal-f-cal" class="cal-input cal-f-cal-select">${calOpts}</select>` : ''}
+      ${_writableCals.length > 1 ? `<select id="cal-f-cal" class="cal-input cal-f-cal-select">${calOpts}</select>` : ''}
+      <label id="cal-f-meet-row" class="cal-f-meet-row" hidden style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px;cursor:pointer;"><input type="checkbox" id="cal-f-meet"> Add a Google Meet link</label>
     </div>
 
     <div class="cal-form-actions">
-      ${isEdit ? `<button id="cal-f-del" class="cal-btn cal-btn-danger" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</button>` : ''}
+      ${isEdit && !_readOnly ? `<button id="cal-f-del" class="cal-btn cal-btn-danger" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</button>` : ''}
       <button id="cal-f-cancel" class="cal-btn" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Cancel</button>
-      <button id="cal-f-save" class="cal-btn cal-btn-primary" style="display:inline-flex;align-items:center;gap:5px;">${isEdit
+      <button id="cal-f-save" class="cal-btn cal-btn-primary" style="display:${_readOnly ? 'none' : 'inline-flex'};align-items:center;gap:5px;">${isEdit
         ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Save'
         : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create'}</button>
     </div>
@@ -3638,6 +3690,28 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
         if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
       });
     });
+  }
+  // Wings (patch 0025): "Add a Google Meet link" for Google calendars.
+  const _selectedCal = () => _calendars.find(c => c.href === (document.getElementById('cal-f-cal')?.value || _writableCals[0]?.href || ''));
+  const _syncMeetRow = () => {
+    const row = document.getElementById('cal-f-meet-row');
+    if (!row) return;
+    const g = _selectedCal();
+    const already = !!(existing && /https:\/\/meet\.google\.com\//.test(`${existing.location || ''} ${existing.description || ''}`));
+    row.hidden = !(g && g.google) || _readOnly || already;
+    row.style.display = row.hidden ? 'none' : 'flex';
+  };
+  document.getElementById('cal-f-cal')?.addEventListener('change', _syncMeetRow);
+  _syncMeetRow();
+  // Wings (patch 0025): a read-only event shows its details without fields
+  // that look editable (only Cancel / close stay active).
+  if (_readOnly) {
+    document.querySelectorAll('.cal-form-bespoke input, .cal-form-bespoke select, .cal-form-bespoke textarea, .cal-form-bespoke .cal-hero button, .cal-form-bespoke [data-color]').forEach((el) => {
+      el.disabled = true;
+      el.setAttribute('aria-disabled', 'true');
+    });
+    document.querySelector('.cal-form-bespoke')?.classList.add('is-expanded');
+    document.getElementById('cal-form-details')?.setAttribute('aria-hidden', 'false');
   }
   // Tint the calendar-picker select with the chosen calendar's colour so it's
   // clear which calendar the event lands in.
@@ -3863,7 +3937,9 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
       description: document.getElementById('cal-f-desc').value,
       location: document.getElementById('cal-f-loc').value,
 	      rrule: document.getElementById('cal-f-rrule').value || '',
-	      calendar_href: document.getElementById('cal-f-cal')?.value || (_calendars[0]?.href || ''),
+	      // Wings (patch 0025): with no picker, the first calendar that can
+	      // take new events (never a read-only one added by link).
+	      calendar_href: document.getElementById('cal-f-cal')?.value || ((isEdit ? existing.calendar_href : '') || (_writableCals.find(c => !c.read_only) || {}).href || ''),
 	      color: colorVal || undefined,
 	      event_type: document.getElementById('cal-f-type')?.value || '',
 	    };
@@ -3875,6 +3951,24 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
     }
     try {
       const saved = isEdit ? await _updateEvent(existing.uid, payload) : await _createEvent(payload);
+      // Wings (patch 0025): add the Meet link once the event is in Google.
+      const _wantMeet = !!document.getElementById('cal-f-meet')?.checked && !document.getElementById('cal-f-meet-row')?.hidden;
+      const _meetUid = (saved && saved.uid && !String(saved.uid).startsWith('temp-')) ? saved.uid : (existing && existing.uid);
+      if (_wantMeet && _meetUid) {
+        fetch('/api/wings/accounts/google/meet', {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid: String(_meetUid).split('::')[0] }),
+        }).then(r => r.json().catch(() => ({}))).then(d => {
+          if (d && d.ok) {
+            uiModule.showToast('Google Meet link added.');
+            _allEvents = {}; _fetchedRanges = [];
+            try { localStorage.removeItem(LS_KEY); } catch (_) {}
+            if (_open) _render();
+          } else {
+            uiModule.showToast((d && d.message) || 'Google did not add a Meet link.');
+          }
+        }).catch(() => uiModule.showToast('Google did not add a Meet link.'));
+      }
       // Custom exact-time reminders are still note-backed because they do not
       // map to a stable "N minutes before" value.
       if (remindVal === 'custom') {

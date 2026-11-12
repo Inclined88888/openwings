@@ -1,0 +1,22 @@
+# TEST ONLY (owconnect stack, patch 0025): local stand-ins for Google, Gmail,
+# iCloud and Yahoo mail servers, Google CalDAV and calendar feeds
+# (tests/e2e/accounts_stubs.py). WINGS_TEST_ENDPOINTS and
+# WINGS_TEST_ALLOW_HOSTS exist only for tests and are never set in a real
+# install; the app ignores them unless WINGS_TEST_MODE=1 is set too, and logs
+# a warning at start-up while they are active. The authorize page is reached by the test browser on the host
+# (127.0.0.1:9100); everything else by the app on the stack network.
+services:
+  openwings:
+    environment:
+      - 'WINGS_TEST_ENDPOINTS={"https://accounts.google.com": "http://127.0.0.1:9100/accounts", "https://oauth2.googleapis.com": "http://stubs:9100/oauth2", "https://openidconnect.googleapis.com": "http://stubs:9100/oidc", "https://www.googleapis.com": "http://stubs:9100/googleapis", "https://apidata.googleusercontent.com": "http://stubs:9101", "imap.gmail.com:993": "stubs:1143:none", "smtp.gmail.com:465": "stubs:1025:none", "smtp.gmail.com:587": "stubs:1025:none", "imap.mail.me.com:993": "stubs:1143:none", "smtp.mail.me.com:587": "stubs:1025:none", "imap.mail.yahoo.com:993": "stubs:1143:none", "smtp.mail.yahoo.com:465": "stubs:1025:none"}'
+      - WINGS_TEST_ALLOW_HOSTS=stubs
+      - WINGS_TEST_MODE=1
+  stubs:
+    image: docker.io/tomsquest/docker-radicale:3.8.3.0@sha256:a3b1b452f4bc3d1aee43015b85bc2d9ee5de0ff7e96d5d2b47f1d889aa682409
+    entrypoint: ["/venv/bin/python", "-u", "/t/accounts_stubs.py"]
+    volumes:
+      - ./tests/e2e:/t:ro
+    ports:
+      - "127.0.0.1:9100:9100"
+    networks:
+      wings:

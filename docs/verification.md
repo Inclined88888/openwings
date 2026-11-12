@@ -50,7 +50,7 @@ tmux or README in the image; no network).
 
 ## OpenWings unit tests
 
-`./tests/unit/run.sh`: 171 tests (44 at first release) for the email gate (human vs agent loopback vs
+`./tests/unit/run.sh`: 370 tests (2026-11-12; 171 before patch 0025) (44 at first release) for the email gate (human vs agent loopback vs
 API token vs auth disabled; self address allowlist; the SMTP chokepoint),
 environment scrubbing, per agent tool allowlists (including MCP tools and fail
 closed handling), the encryption key patch (env key used, no file written,
@@ -581,6 +581,149 @@ resized once; healthy 8 GB, a missing context, and a foreign DOCKER_HOST
 need no restart; Docker Desktop with an unused Colima is left alone; a
 Colima that never brings Docker up stops after two tries with Colima's own
 error and advice. A full Linux install still passes. Not run on a real Mac.
+
+## Connect your accounts (patch 0025, 2026-11-12)
+
+What was proven, how, and what only a real account can prove.
+
+**Unit tests** (`tests/unit/test_wings_accounts.py`, every outside service
+stubbed, network off): the install-wide client store (encrypted, masked,
+admin only, a saved key wins over `.env`); per-person tokens (encrypted,
+refresh near expiry, a refused refresh asks for a new sign-in, nobody else
+gets the token, admins included; revoke then forget); sign-in flows (state
+bound to the person, used once, ten minutes, S256 PKCE, Google's
+`access_type=offline` and `include_granted_scopes`, only the ticked scopes);
+the origin bounce (only to the origin stored with the attempt, only if still
+trusted, never from the request); Google's redirect URI rules; app passwords
+(IMAP and SMTP login tested first, spaces stripped, plain errors, iCloud
+user name fallback, nothing saved on failure, upstream's own account route
+used); calendar links (schemes, private, loopback, link-local and shared
+addresses refused, re-checked after every redirect, 5 MB cap, redirect
+limit, encrypted link, read only, refresh keeps the last good events on
+failure, removal removes the events, the 30 minute loop); Google sign-in end
+to end against stubs (mail account with XOAUTH2, CalDAV account on Google's
+endpoint with a bearer token, missing scopes reported); Meet through the
+Calendar API (`conferenceDataVersion=1`, `hangoutsMeet`, link saved);
+Drive search and read (Docs/Sheets/Slides export, PDF through upstream's
+reader, 10 MB cap, this person only); the assistant's email MCP server
+signing in with XOAUTH2; tool registration (schemas, handlers, turn
+families, native call conversion, safety gate classification).
+`upstream tests/test_email_oauth.py` callback tests now start a real flow.
+
+**End to end** (`tests/e2e/accounts_run.sh` on the owconnect test stack with
+`tests/e2e/accounts.stubs.yml`): 53 checks passed, 0 failed, 4 skipped. The
+stubs (`tests/e2e/accounts_stubs.py`) stand in for accounts.google.com
+(checks client id, PKCE S256, offline, include_granted_scopes),
+oauth2.googleapis.com (checks the verifier against the challenge and the
+client secret), OpenID userinfo, Google CalDAV (Radicale behind a wrapper
+that accepts only Bearer tokens it issued), the Calendar API, Drive, an
+IMAP server (LOGIN and AUTHENTICATE XOAUTH2) and an SMTP server (AUTH
+PLAIN/LOGIN and XOAUTH2), and calendar feeds. The app reaches them through
+`WINGS_TEST_ENDPOINTS` and `WINGS_TEST_ALLOW_HOSTS`, which exist only for
+tests and are honoured only with `WINGS_TEST_MODE=1` (the app logs a warning
+at start-up while they are active). Proven: Gmail, iCloud and Yahoo app passwords (wrong password refused
+in plain words after a real login attempt, nothing saved; right one creates
+the account; iCloud adds `caldav.icloud.com`); a calendar link (refused when
+it redirects to 10.20.30.40 or 127.0.0.1; read only through every route;
+Refresh now; removal removes its events); the Google key saved by an admin
+from `localhost` (secret never returned, stored encrypted); Sign in with
+Google from `127.0.0.1` (the registered `localhost` callback bounces back to
+`127.0.0.1` with the same query and finishes with the person's session; used
+once); mail with XOAUTH2; calendar pull and push over CalDAV with a bearer
+token; Add a Google Meet link; the assistant's tools (manage_calendar sees
+the linked calendar and creates an event with a Meet link; google_drive_search
+and google_drive_read; the email MCP server's list_emails over XOAUTH2),
+called through the assistant's own tool functions and registry as the
+person, inside the app container; Disconnect revokes at Google. The 4
+skipped checks drive the same tools through a chat with the mock model
+(`E2E_CHAT=1`); they passed in earlier runs but depend on the mock model and
+the app's model host cooldown, so they are not part of the proof.
+
+**Upstream regression tests** (after the fix round below; 274 upstream test
+files: every file that touches a module or script 0025 changes, network off,
+unpatched base image vs the new image with `WINGS_FORCE_EMAIL_CONFIRM=0
+WINGS_ALLOW_UNOFFICIAL_SIGNIN=1`): new image 38 failed, 6112 passed; base
+39 failed, 6070 passed, 41 errors. Failing on the new image only: two tests
+already recorded for earlier patches, `test_clean_agent_preview.py::test_v3_browser_schema_does_not_offer_batch_or_current_tab_authority`
+(patch 0018, the browser's batch action) and
+`test_skill_audit_utility.py::test_audit_persists_saved_turn_estimate_from_baseline_comparison`
+(patch 0007, drafted skills wait for a person). Failing on the base only: the
+41 errors of the rewritten `test_email_oauth.py` (it now needs OpenWings),
+two tests whose expected wording earlier patches changed, and one test that
+already failed only on the base. Everything else fails the same way on both
+(no network, no docs or website in the image). An earlier version of this
+section said only one test failed on the new image alone; that missed
+`test_external_context_tool_gate.py::test_all_fence_tools_have_explicit_capabilities`,
+which failed once app start-up had run in the same process (the Drive tools
+were added after the test had read the list of known tools). The Drive tools
+are now declared in upstream's safety table (`src/tool_capabilities.py`), and
+the test passes. Upstream's original `test_email_oauth.py` still fails 12 of
+its callback tests on the new image, on purpose: a bare signed state no
+longer finishes a Google sign-in (the rewritten tests keep every upstream
+assertion and add three).
+
+**Fix round** (after an independent check and two reviews, 2026-11-12). Each
+fix has a unit test and was re-checked in the running app (main stack, a
+temporary test override and local stubs, removed afterwards):
+* Back from Google, the Google card opens and a note says what was connected,
+  which part Google did not allow, or why the sign-in failed (it said nothing
+  before). The Sign in dialog asks to leave every box ticked on Google's page.
+* Escape on a dialog (and on its "Remove?" question) closes that dialog, never
+  the Settings window behind it (the dialogs join upstream's Escape order);
+  Tab stays inside a dialog and focus returns to the button that opened it.
+* Calendar by link: recurring events are expanded in their own time zone
+  (a weekly 09:00 in Berlin stays 09:00 after the October change), with
+  deleted, moved and cancelled occurrences applied; checked with a feed in
+  the app (07:00 UTC before the change, 08:00 UTC after, the cancelled and
+  deleted ones gone, a moved one shown once).
+* A calendar added by link never becomes the default: a person whose only
+  calendar came by link gets a "Personal" calendar for new events (the event
+  form, the API and the assistant).
+* Link events show "View (read only)" instead of Edit and Delete, cannot be
+  dragged or resized, open with greyed fields and a note at the top, and a
+  refusal shows the server's reason instead of "HTTP 409".
+* Members see a work app as "Connected by your admin" only when the admin's
+  connection is up, else "Not set up yet. Ask your OpenWings admin."
+* A Google sign-in only reuses a mail account that is that same Gmail mailbox
+  on Google's servers (a relay account with the same From address stays as
+  it was), always writes Google's servers, and a mail token is only handed out
+  for an account on its provider's own mail servers.
+* Calendar links: the whole fetch ends after 20 seconds even when a server
+  sends one byte at a time (checked: 20.0 s for a dripping body and for
+  dripping headers); at most two fetches per person and four in all at once
+  (12 parallel slow links from one member: 10 refused at once, 2 cut at 20 s,
+  other people's pages answered in 0.01 s); at most 25 link calendars a person.
+* Account routes accept only JSON and refuse requests marked as coming from
+  another site or with an untrusted Origin (text/plain 415, same-site 403).
+* Pending sign-ins: at most five per person, so nobody can push out another
+  person's sign-in (70 starts by a member did not end the admin's).
+* Text from link calendars counts as outside text for the safety gate; the
+  Drive tools are offered only to people who connected Drive.
+* Test hooks need `WINGS_TEST_MODE=1`. The Google key wizard states Google's
+  redirect rules (public domain, no bare IP), warns when sign-in would only
+  work on the OpenWings computer, offers "Use this address instead" when
+  OpenWings moved, and explains Testing, verification notices and the AI agent
+  box. Signing in again with fewer ticks keeps what is connected. Each app
+  password dialog says what to do when the account has no app passwords.
+  Google Calendar copy says "your main Google calendar" (only that one
+  syncs). Contrast of the new small texts is 4.5:1 or more under Lichen.
+The end to end script (`tests/e2e/accounts_run.sh`) was not rerun in this
+round: its test stack was in use by other work.
+
+**Real Google**: a well formed authorize request to accounts.google.com with
+a made up client id is answered with `invalid_client` ("The OAuth client was
+not found."), not a malformed request error.
+
+**Browser** (Chromium, Lichen, 1440 and 390 wide): every card and dialog;
+screenshots in the work folder `accounts/shots-0025/`, and after the fix
+round in `accounts/final-0025/`. No horizontal overflow and no console errors
+at either width.
+
+**Not verified here** (no accounts, and the session cannot reach these
+hosts): a real Gmail, iCloud or Yahoo login with an app password; a real
+Google sign-in, CalDAV, Calendar API and Drive with a real key; Google's
+"unverified app" screen. Please connect one real account of each kind on
+your own server.
 
 ## Not verified: please check on your server
 

@@ -7676,27 +7676,14 @@ def setup_email_routes():
 
     @router.get("/oauth/google/authorize")
     async def google_oauth_authorize(account_id: str = Query(...), request: Request = None, owner: str = Depends(require_user)):
-        import urllib.parse
+        # Wings (patch 0025): the same Google sign-in as Connect your
+        # accounts: a random state bound to this person, used once within ten
+        # minutes, S256 PKCE, and the Google client an admin saved (or the
+        # .env GOOGLE_OAUTH_* values). See wings/accounts_google.py.
         _assert_owns_account(account_id, owner)
-        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-        if not client_id:
-            raise HTTPException(400, "GOOGLE_OAUTH_CLIENT_ID not set — add it to .env")
-        redirect_uri = (
-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
-            or f"{request.url.scheme}://{request.headers.get('host', 'localhost:7000')}/api/email/oauth/google/callback"
-        )
-        state = make_oauth_state(account_id, owner)
-        params = urllib.parse.urlencode({
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": "https://mail.google.com/ email",
-            "access_type": "offline",
-            "prompt": "consent",
-            "state": state,
-        })
+        from wings.accounts_google import email_account_authorize_url
         from fastapi.responses import RedirectResponse as _RR
-        return _RR(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+        return _RR(email_account_authorize_url(request, owner, account_id))
 
     @router.get("/oauth/google/callback")
     async def google_oauth_callback(
@@ -7705,116 +7692,10 @@ def setup_email_routes():
         error: str = Query(None),
         request: Request = None,
     ):
-        import urllib.parse
-        from fastapi.responses import RedirectResponse as _RR
-        if error:
-            return _RR("/?section=integrations&email_oauth_error=google_error")
-        if not code or not state:
-            return _RR("/?section=integrations&email_oauth_error=missing_code")
-        state_data = verify_oauth_state(state)
-        if not state_data:
-            return _RR("/?section=integrations&email_oauth_error=invalid_state")
-        account_id = state_data.get("a", "")
-        owner = state_data.get("o", "")
-        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-        client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
-        redirect_uri = (
-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
-            or f"{request.url.scheme}://{request.headers.get('host', 'localhost:7000')}/api/email/oauth/google/callback"
-        )
-        import httpx as _httpx
-        try:
-            resp = _httpx.post("https://oauth2.googleapis.com/token", data={
-                "code": code,
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "redirect_uri": redirect_uri,
-                "grant_type": "authorization_code",
-            }, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception:
-            logger.warning("Google token exchange failed")
-            return _RR("/?section=integrations&email_oauth_error=token_exchange_failed")
-        access_token = data.get("access_token", "")
-        refresh_token = data.get("refresh_token", "")
-        if not access_token or not refresh_token:
-            logger.warning("Google token exchange omitted required offline credentials")
-            return _RR("/?section=integrations&email_oauth_error=token_exchange_failed")
-        expiry = str(int(time.time()) + data.get("expires_in", 3600))
-        # Fetch the email address from userinfo so we can auto-fill imap_user.
-        email_addr = ""
-        display_name = ""
-        try:
-            ui = _httpx.get("https://www.googleapis.com/oauth2/v1/userinfo",
-                            headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
-            if ui.is_success:
-                ui_data = ui.json()
-                email_addr = ui_data.get("email", "")
-                display_name = ui_data.get("name", "")
-        except Exception:
-            pass
-        from core.database import SessionLocal, EmailAccount
-        from src.secret_storage import encrypt as _enc
-        db = SessionLocal()
-        try:
-            row = db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
-            if not row:
-                return _RR("/?section=integrations&email_oauth_error=account_not_found")
-            # SECURITY: verify the account belongs to the initiating user.
-            if owner and row.owner and row.owner != owner:
-                logger.warning("OAuth callback owner mismatch — rejecting token write")
-                return _RR("/?section=integrations&email_oauth_error=ownership_error")
-
-            # A reconnect must prove that the token belongs to the mailbox
-            # already configured on this row. Otherwise authenticating a
-            # different Google account leaves the saved IMAP/SMTP usernames
-            # paired with credentials for another identity.
-            verified_email = (
-                email_addr.strip().casefold()
-                if isinstance(email_addr, str)
-                else ""
-            )
-            configured_logins = {
-                value.strip().casefold()
-                for value in (row.imap_user or "", row.smtp_user or "")
-                if value.strip()
-            }
-            if not verified_email or any(
-                login != verified_email for login in configured_logins
-            ):
-                logger.warning(
-                    "Google OAuth mailbox identity verification failed for account %s",
-                    account_id,
-                )
-                return _RR("/?section=integrations&email_oauth_error=identity_verification_failed")
-
-            row.oauth_provider = "google"
-            row.oauth_access_token = _enc(access_token)
-            row.oauth_refresh_token = _enc(refresh_token)
-            row.oauth_token_expiry = expiry
-            # Auto-fill Google IMAP/SMTP settings if not already configured.
-            if not row.imap_host:
-                row.imap_host = "imap.gmail.com"
-                row.imap_port = 993
-                row.imap_starttls = False
-            if not row.smtp_host:
-                row.smtp_host = "smtp.gmail.com"
-                row.smtp_port = 587
-            if email_addr:
-                if not row.imap_user:
-                    row.imap_user = email_addr
-                if not row.smtp_user:
-                    row.smtp_user = email_addr
-                if not row.from_address:
-                    row.from_address = email_addr
-                if not row.name or row.name == row.id:
-                    row.name = email_addr
-            if display_name and not row.display_name:
-                row.display_name = display_name
-            db.commit()
-        finally:
-            db.close()
-        return _RR("/?section=integrations&email_oauth_success=1")
+        # Wings (patch 0025): every Google sign-in returns here; the flow
+        # record (not the URL) says which person and account it is for, and
+        # the browser is sent back to the address it started from first.
+        from wings.accounts_google import callback as _wings_google_callback
+        return await _wings_google_callback(request, code, state, error)
 
     return router

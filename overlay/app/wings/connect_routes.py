@@ -7,6 +7,8 @@
   POST /api/wings/connect/apps/{slug}           Connect Notion / Linear / Jira
   /api/wings/connect/chatgpt/...                Continue with ChatGPT (patch
                                                 0022, wings/chatgpt_routes.py)
+  /api/wings/accounts/...                       Connect your accounts (patch
+                                                0025, wings/accounts_routes.py)
 
 OpenRouter: its documented OAuth PKCE flow
 (https://openrouter.ai/docs/guides/overview/auth/oauth). The browser goes to
@@ -208,10 +210,9 @@ def _is_person_admin(request: Request) -> bool:
 
 
 def _create_endpoint_route(request: Request):
-    for route in request.app.router.routes:
-        if getattr(route, "path", "") == "/api/model-endpoints" and "POST" in (getattr(route, "methods", None) or ()):
-            return route.endpoint
-    return None
+    # FastAPI 0.16x keeps included routers nested (patch 0025 fix).
+    from wings.accounts import route_endpoint
+    return route_endpoint(request, "/api/model-endpoints", "POST")
 
 
 async def add_openrouter_endpoint(request: Request, key: str) -> dict:
@@ -326,6 +327,7 @@ CALLBACK_PATHS = (
     "/api/wings/connect/chatgpt/callback",
     OPENROUTER_CALLBACK_PATH,
     "/api/mcp/oauth/callback",
+    "/api/email/oauth/google/callback",
 )
 
 
@@ -354,6 +356,9 @@ def setup_connect_routes(mcp_manager=None) -> APIRouter:
     router = APIRouter(tags=["wings-connect"])
     from wings.chatgpt_routes import setup_chatgpt_routes
     router.include_router(setup_chatgpt_routes())
+    # Connect your accounts (patch 0025): mail, calendars, Google own key.
+    from wings.accounts_routes import setup_accounts_routes
+    router.include_router(setup_accounts_routes(mcp_manager))
 
     @router.get("/api/wings/connect/status")
     def connect_status(request: Request):

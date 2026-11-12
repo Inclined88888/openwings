@@ -69,6 +69,16 @@ def _decide(body: dict):
     text = _text(last.get("content"))
     if role == "tool":
         return ("text", "TOOL_RESULT: " + text[:300].replace("\n", " "))
+    # A result already answered the latest WINGS_CALL: the app may add
+    # context after it (a tool result whose text came from outside, such as
+    # a mail or a file, is passed back as a marked untrusted block).
+    calls = [i for i, m in enumerate(msgs) if m.get("role") == "user" and CALL_RE.search(_text(m.get("content")))]
+    if calls:
+        after = msgs[calls[-1] + 1:]
+        results = [m for m in after if m.get("role") == "tool"
+                   or (m.get("role") == "user" and "untrusted" in _text(m.get("content")).lower())]
+        if results:
+            return ("text", "TOOL_RESULT: " + _text(results[-1].get("content"))[:300].replace("\n", " "))
     # Agent loops often re-send the conversation with the user turn earlier.
     if role != "user":
         for m in reversed(msgs):

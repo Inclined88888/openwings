@@ -32,6 +32,7 @@ OpenWings is a hardened deployment of [Odysseus](https://github.com/odysseus-dev
 * [Install](#install)
 * [First run](#first-run)
 * [Models: local and hosted](#models)
+* [Connect your accounts](#accounts)
 * [Email](#email)
 * [Calendar](#calendar)
 * [Agents and tool access](#agents)
@@ -145,10 +146,34 @@ Rough sizing for local chat models: a 4B model at 4 bit needs about 4 GB of free
 
 **Embeddings** (file search and memory) use a built in FastEmbed model, downloaded once on first start. To use Ollama instead, set `EMBEDDING_URL=http://ollama:11434/v1/embeddings` and `EMBEDDING_MODEL=nomic-embed-text` in `.env` (pull that model first).
 
+<a id="accounts"></a>
+## Connect your accounts
+
+Everything lives in one place: **Settings → Integrations → Connect your accounts**. Each person connects their own accounts, and what you connect is used only for you: other people on the same OpenWings, admins included, cannot read your mail, calendars or files. The cards:
+
+| Card | What you do | What you get |
+| --- | --- | --- |
+| **Gmail** | Make an app password in your Google Account (the card has the two links), paste it | Gmail in Email; the assistant can read and draft mail |
+| **iCloud** | Make an app-specific password at account.apple.com, paste it | iCloud Mail, and with the tick also your iCloud calendars (two way) |
+| **Yahoo** | Make an app password in Yahoo Account Security, paste it | Yahoo Mail |
+| **Calendar by link** | Paste a calendar's share link: Google's "Secret address in iCal format", an Outlook.com or Microsoft 365 published ICS link, an iCloud public calendar link, or any `.ics` / `webcal://` address | That calendar in your Calendar, **read only**, refreshed every 30 minutes and on "Refresh now". The assistant sees its events |
+| **Google Calendar and Drive** | **Sign in with Google**, after a one-time setup by your admin | Gmail, your main Google calendar two way with "Add a Google Meet link" (other Google calendars: add them by link), and the assistant can search and read your Google Drive (read only) |
+| **Notion, Linear, Jira and Confluence** | Your admin presses Connect once | The assistant can use them, for everyone on this OpenWings. Members see whether the admin's connection is up |
+
+**One step for you:** app passwords and calendar links. OpenWings checks the password with the provider first (it says plainly when it is wrong, and each dialog explains what to do when your account has no app passwords, as with most work or school Google accounts and Advanced Protection), and saves nothing until it works. Passwords, links and sign-ins are stored encrypted on your server and never shown again.
+
+**Once by the admin, then one click for everyone: Google.** Google charges for the yearly review that a shared one-click Gmail sign-in needs, and does not let open source projects hand out one key, so each OpenWings uses its own free Google key. The admin makes it once in about 10 minutes (the app walks through it; details in [docs/google-own-key.md](docs/google-own-key.md)). After that, everyone gets **Sign in with Google** with ticks for Mail, Calendar and Drive; Google's own page opens and shows a note that it has not verified the app (that is your own key: choose Advanced, then continue). Leave every box ticked on Google's page; back in OpenWings a note says what was connected, or why not.
+
+**Read only:** calendars added by link (OpenWings shows them but cannot change them; change events in the app that owns the calendar; recurring events keep their own time zone across daylight saving changes; new events go to one of your other calendars, or to a "Personal" calendar OpenWings makes) and Google Drive. A secret calendar link works like a password: anyone with it can see the calendar, so keep it to yourself, and reset it in the calendar's settings if it leaked.
+
+**Outlook and Microsoft 365** mail is coming next. Until then, add an Outlook calendar by link (read only). **Not possible:** Google Keep and Apple Notes have no way for other apps to read them; Zoom needs its own app registration.
+
+The Email "add account" form and the Calendar's "Add a calendar" point to these cards; the old forms stay as "Other / manual" for any other mail server or CalDAV calendar.
+
 <a id="email"></a>
 ## Email
 
-Add accounts in **Settings → Email** (provider presets for common services). The Email view (sidebar) reads, searches, summarizes and drafts replies with AI; agents can do the same through tools.
+Gmail, iCloud and Yahoo are easiest under [Connect your accounts](#accounts). Any other mailbox: **Settings → Integrations → Add Integration → Email** ("Other / manual", with provider presets for common services). The Email view (sidebar) reads, searches, summarizes and drafts replies with AI; agents can do the same through tools.
 
 **Gmail** (simplest, no Google Cloud project):
 
@@ -156,7 +181,7 @@ Add accounts in **Settings → Email** (provider presets for common services). T
 2. Create an app password at <https://myaccount.google.com/apppasswords>.
 3. In OpenWings use the Gmail preset, or: IMAP `imap.gmail.com` port 993 SSL; SMTP `smtp.gmail.com` port 465 SSL; user = your full address; password = the app password.
 
-Gmail through "Connect with Google" (OAuth) needs your own Google Cloud OAuth client; set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `GOOGLE_OAUTH_REDIRECT_URI` in `.env` (the button appears under the "Google Workspace / .edu" preset). Note: upstream's agent email tools cannot use OAuth accounts, only password accounts.
+Gmail through Sign in with Google needs your own free Google key, made once by the admin ([docs/google-own-key.md](docs/google-own-key.md)); a key already set in `.env` (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`) keeps working. Accounts signed in with Google work for the assistant's email tools too (OpenWings adds XOAUTH2 to them).
 
 **Outlook.com and Microsoft 365**: upstream has no Microsoft sign in, and Microsoft no longer accepts plain passwords for these mailboxes. Workaround: run a local OAuth proxy such as [DavMail](https://davmail.sourceforge.net/) or [email-oauth2-proxy](https://github.com/simonrob/email-oauth2-proxy) on the host, point the account at it, and set `EMAIL_ALLOW_PRIVATE_IPS=true`. Not tested in OpenWings.
 
@@ -178,7 +203,7 @@ The switch lives only in `.env`; nothing inside the app, including an agent with
 <a id="calendar"></a>
 ## Calendar
 
-Sidebar **Calendar** (Ctrl+Alt+C): week, month, year and agenda views, .ics import and export. CalDAV accounts are added in **Settings → Integrations** (Test, then Save). The AI answers schedule questions and creates events through the `manage_calendar` tool.
+Sidebar **Calendar** (Ctrl+Alt+C): week, month, year and agenda views, .ics import and export. Add calendars under [Connect your accounts](#accounts) (iCloud, Google, or any calendar by link); other CalDAV servers in **Settings → Integrations → Add Integration** (Test, then Save). The AI answers schedule questions and creates events through the `manage_calendar` tool.
 
 | Calendar | How |
 | --- | --- |
@@ -186,8 +211,8 @@ Sidebar **Calendar** (Ctrl+Alt+C): week, month, year and agenda views, .ics impo
 | Fastmail | URL `https://caldav.fastmail.com/dav/`, an app password |
 | Nextcloud | URL `https://your.cloud/remote.php/dav` |
 | Bundled Radicale (`setup.sh --with-caldav`) | In OpenWings: URL `http://radicale:5232/<user>/`, user and password from `.env` (`RADICALE_USER`, `RADICALE_PASSWORD`). On your phone: `http://<server-lan-ip>:5232/` after setting `RADICALE_BIND` to that IP, or `https://<domain>/dav/` with the HTTPS profile |
-| Google Calendar | Not supported for sync: Google's CalDAV requires OAuth, which upstream does not implement. Use iCloud or Radicale as the shared calendar, or import .ics files |
-| Microsoft 365 / Outlook.com | Not supported for sync (Microsoft has no CalDAV). Same options as Google |
+| Google Calendar | Your main Google calendar two way with **Sign in with Google** under [Connect your accounts](#accounts) (needs the admin's one-time Google key); any Google calendar read only by its secret iCal link (Calendar by link) |
+| Microsoft 365 / Outlook.com | Read only by its published ICS link (Calendar by link). Two way sync comes with the Outlook sign-in |
 
 Know before you rely on it (upstream behaviour, not changed by OpenWings): sync pulls when you open the calendar or press "Sync now" (there is no background polling); local changes are pushed immediately, last write wins; recurring series with one edited instance can collapse. `ODYSSEUS_ALLOW_PRIVATE_CALDAV=1` is needed for CalDAV servers on private addresses (`setup.sh --with-caldav` sets it).
 

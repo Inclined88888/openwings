@@ -236,10 +236,17 @@ def _read_accounts_from_db() -> list:
         columns = {r[1] for r in conn.execute("PRAGMA table_info(email_accounts)").fetchall()}
         owner_select = "owner" if "owner" in columns else "NULL AS owner"
         smtp_security_select = "smtp_security" if "smtp_security" in columns else "'' AS smtp_security"
+        # Wings (patch 0025): OAuth accounts (Google; Microsoft later) sign
+        # in with XOAUTH2, so the assistant reads their provider and tokens.
+        oauth_select = ", ".join(
+            col if col in columns else f"NULL AS {col}"
+            for col in ("oauth_provider", "oauth_access_token", "oauth_refresh_token", "oauth_token_expiry")
+        )
         rows = conn.execute(f"""
             SELECT id, {owner_select}, name, is_default, enabled,
                    imap_host, imap_port, imap_user, imap_password, imap_starttls,
-                   smtp_host, smtp_port, {smtp_security_select}, smtp_user, smtp_password, from_address
+                   smtp_host, smtp_port, {smtp_security_select}, smtp_user, smtp_password, from_address,
+                   {oauth_select}
             FROM email_accounts WHERE enabled = 1
             ORDER BY is_default DESC, created_at ASC
         """).fetchall()
@@ -376,6 +383,12 @@ def _load_config(account: str | None = None) -> dict:
         cfg["smtp_user"] = row["smtp_user"] or cfg["smtp_user"]
         cfg["smtp_password"] = _decrypt(row["smtp_password"]) if row["smtp_password"] else cfg["smtp_password"]
         cfg["from_address"] = row["from_address"] or row["imap_user"] or cfg["from_address"]
+        # Wings (patch 0025): XOAUTH2 accounts; tokens stay encrypted here and
+        # are decrypted only by wings.accounts.mail_token when signing in.
+        cfg["oauth_provider"] = row.get("oauth_provider") or ""
+        cfg["oauth_access_token"] = row.get("oauth_access_token") or ""
+        cfg["oauth_refresh_token"] = row.get("oauth_refresh_token") or ""
+        cfg["oauth_token_expiry"] = row.get("oauth_token_expiry") or ""
     else:
         # Legacy fallback: settings.json flat keys
         try:
@@ -431,7 +444,13 @@ def _imap_connect(account: str | None = None):
     if getattr(conn, "sock", None):
         conn.sock.settimeout(EMAIL_SOCKET_TIMEOUT)
     try:
-        conn.login(cfg["imap_user"], cfg["imap_password"])
+        if cfg.get("oauth_provider"):
+            # Wings (patch 0025): sign in with the person's OAuth token
+            # (refreshed when due), not a password.
+            token = _wings_mail_token(cfg)
+            conn.authenticate("XOAUTH2", lambda _challenge: _wings_xoauth2(cfg["imap_user"], token).encode())
+        else:
+            conn.login(cfg["imap_user"], cfg["imap_password"])
     except Exception:
         # A failed login otherwise orphans the connected socket; close it
         # before propagating (shutdown() is the pre-auth low-level close). (#3174)
@@ -2495,7 +2514,26 @@ def _read_email_across_accounts(uid=None, message_id=None, folder="INBOX"):
 
 
 def _smtp_ready(cfg: dict) -> bool:
-    return bool(cfg.get("smtp_host") and cfg.get("smtp_user") and cfg.get("smtp_password"))
+    # Wings (patch 0025): an OAuth account needs no password.
+    return bool(cfg.get("smtp_host") and cfg.get("smtp_user")
+                and (cfg.get("smtp_password") or cfg.get("oauth_provider")))
+
+
+def _wings_mail_token(cfg: dict) -> str:
+    """Current XOAUTH2 token for an OAuth mail account (wings/accounts.py)."""
+    from wings.accounts import mail_token
+    token = mail_token(cfg)
+    if not token:
+        raise ValueError(
+            "This mail account's sign-in has expired. Sign in again in Settings > "
+            "Integrations > Connect your accounts."
+        )
+    return token
+
+
+def _wings_xoauth2(user: str, token: str) -> str:
+    from wings.accounts import xoauth2
+    return xoauth2(user, token)
 
 
 def _resolve_send_config(account=None):
@@ -2555,7 +2593,20 @@ def _smtp_connect(account=None, cfg=None):
             port,
             timeout=EMAIL_SOCKET_TIMEOUT,
         )
-    if cfg["smtp_user"] and cfg["smtp_password"]:
+    if cfg.get("oauth_provider") and cfg["smtp_user"]:
+        # Wings (patch 0025): XOAUTH2 for OAuth accounts.
+        try:
+            token = _wings_mail_token(cfg)
+            conn.ehlo()
+            conn.auth("XOAUTH2", lambda challenge=None: _wings_xoauth2(cfg["smtp_user"], token),
+                      initial_response_ok=True)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise
+    elif cfg["smtp_user"] and cfg["smtp_password"]:
         try:
             conn.login(cfg["smtp_user"], cfg["smtp_password"])
         except Exception:

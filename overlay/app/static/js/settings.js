@@ -2528,7 +2528,8 @@ async function initEmailAccountsSettings() {
       .join('');
     const _smtpSecurity = (acct) => acct?.smtp_security || ((parseInt(acct?.smtp_port || 465) === 587) ? 'starttls' : 'ssl');
     formEl.innerHTML = `
-      <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Account' : 'New Account'}</h3>
+      <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Account' : 'Other / manual account'}</h3>
+      ${isEdit ? '' : _owAccountsPointer()}
       <div class="settings-col">
         <div class="settings-row"><label class="settings-label">Provider${_hint('Pick a known provider to auto-fill the IMAP and SMTP host/port. Choose Custom to type your own.')}</label><select id="eaf-provider" class="settings-select"><option value="">Custom…</option>${_providerOptions}</select></div>
         <div id="eaf-provider-note" style="display:none;font-size:11px;line-height:1.5;padding:8px 10px;margin:2px 0 4px;border:1px solid color-mix(in srgb, var(--fg) 15%, transparent);border-left:3px solid var(--accent, var(--red));border-radius:4px;background:color-mix(in srgb, var(--fg) 4%, transparent);"></div>
@@ -3203,6 +3204,18 @@ function _owToggleAccountFields(noteEl, buttonEl, hide) {
 // go to each provider's own page: Google's app passwords page and Apple's
 // account page (both named on their help pages, support.google.com/accounts/
 // answer/185833 and support.apple.com/102654), Yahoo's Account Security page.
+// Wings (patch 0025): the email forms point to Connect your accounts
+// (Settings > Integrations) for Gmail, iCloud, Yahoo and Google sign-in; the
+// form itself stays for other or manual setups.
+function _owAccountsPointer() {
+  const b = (id, label) => `<button type="button" class="admin-btn-sm" data-ow-open-accounts="${id}">${label}</button>`;
+  return `<div class="ow-acct-pointer" style="font-size:11.5px;line-height:1.5;padding:8px 10px;margin:0 0 8px;border:1px solid var(--border);border-left:3px solid var(--accent, var(--red));border-radius:6px;background:color-mix(in srgb, var(--fg) 4%, transparent);">
+      <div style="margin-bottom:6px;">Gmail, iCloud or Yahoo? Connect your accounts does it in a few steps and tests the password first.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${b('gmail', 'Gmail')}${b('icloud', 'iCloud')}${b('yahoo', 'Yahoo')}${b('google', 'Sign in with Google')}</div>
+      <div style="margin-top:6px;opacity:0.75;">The form below is for any other mail server.</div>
+    </div>`;
+}
+
 const OW_EMAIL_PROVIDER_NOTES = {
   gmail: {
     title: 'Gmail needs an app password',
@@ -4099,7 +4112,8 @@ async function initUnifiedIntegrations() {
     const _smtpSecurity = (acct) => acct?.smtp_security || ((parseInt(acct?.smtp_port || 465) === 587) ? 'starttls' : 'ssl');
     formEl.innerHTML = `
       <div class="admin-card" style="margin-top:8px">
-        <h2 style="font-size:13px">${isEdit ? 'Edit' : 'Add'} Email Account</h2>
+        <h2 style="font-size:13px">${isEdit ? 'Edit Email Account' : 'Other / manual email account'}</h2>
+        ${isEdit ? '' : _owAccountsPointer()}
         <div class="settings-col">
           <div class="settings-row"><label class="settings-label">Provider${_hint('Pick a known provider to auto-fill the IMAP and SMTP host/port. Choose Custom to type your own.')}</label>
             <div class="ufp-wrap" style="position:relative;flex:1;min-width:0;">

@@ -1,0 +1,2463 @@
+OpenWings patch 0025: Connect your accounts (the free connections)
+
+Mail, calendars and files in one place, each person connecting their own,
+with nothing to pay and nothing for the project owner to run. The flows,
+storage and rules live in OpenWings' own modules (wings/accounts.py, the
+shared plumbing patch 0026 reuses for Microsoft; wings/accounts_mail.py,
+wings/ics_feeds.py, wings/accounts_google.py, wings/accounts_routes.py);
+this patch wires them into upstream:
+
+  * static/js/wings-connect.js: "Connect your apps" in Settings >
+    Integrations becomes "Connect your accounts", grouped as Mail and
+    calendar (Gmail, Google Calendar and Drive, iCloud, Yahoo, Calendar by
+    link; the card list lets patch 0026 add Outlook / Microsoft 365 after
+    Yahoo), Files and notes (Notion) and Work apps (Linear, Jira and
+    Confluence), plus one line on what is not possible (Google Keep, Apple
+    Notes; Zoom later). Each card shows this person's state (Connected as,
+    Connect, Disconnect, Refresh now); members see a work app as connected
+    only when the admin's connection is up.
+    Dialogs: app password with numbered steps and the providers' own pages,
+    Calendar by link (read only, a secret link works like a password),
+    Sign in with Google with ticks for Mail, Calendar and Drive, and the
+    admin's one-time Google key wizard (console links, the exact redirect
+    URI with a copy button and Google's rules for it, Publish the app).
+    Dialogs close with Escape before the window behind them, keep Tab
+    inside and give focus back. Coming back from Google, the card opens
+    and a note says what was connected, or why not.
+  * static/js/settings.js, static/js/calendar.js: the Email "add account"
+    forms and the Calendar's empty state and settings point to those cards;
+    upstream's forms stay as "Other / manual". Events from a calendar added
+    by link open read only (no Edit, Delete or dragging; the server's reason
+    is shown); "Add a Google Meet link" on Google calendars.
+  * routes/email/email_routes.py: upstream's "Connect with Google" and its
+    callback run through wings/accounts_google.py: one callback for every
+    Google sign-in, a state bound to the person who started it, used once
+    within ten minutes, S256 PKCE, and the Google client an admin saved
+    (encrypted) or the .env GOOGLE_OAUTH_* values. Upstream's checks stay:
+    owner, a fresh refresh token, the same mailbox identity.
+  * app.py: a provider callback that arrives without a session on another
+    trusted address than the one the sign-in started from (localhost vs
+    127.0.0.1) is sent back there, same path and query, from the address
+    stored with the attempt; start-up adds the per-person assistant tools
+    and the 30 minute refresh of calendars added by link.
+  * routes/email/email_helpers.py, mcp_servers/email_server.py: IMAP and
+    SMTP sign in with XOAUTH2 for any OAuth mail account (wings.accounts.
+    mail_token), so the assistant's mail tools work with Google accounts
+    too, and a token is only ever sent to that provider's own mail servers;
+    Google token refresh uses the saved client.
+  * src/caldav_sync.py, src/caldav_writeback.py: a CalDAV account signed in
+    with Google uses an OAuth bearer token against Google's CalDAV endpoint
+    (two way, through upstream's own sync and write-back).
+  * routes/calendar_routes.py, src/tools/calendar.py, src/tool_schemas.py:
+    calendars added by link are read only for the routes and the
+    assistant and never become the default calendar; calendars list
+    read_only and google; manage_calendar create_event takes google_meet
+    and marks link calendar text as outside text for the safety gate;
+    deleting a link calendar forgets the link.
+  * routes/chat_routes.py, src/tool_capabilities.py: the Google Drive tools
+    are offered only to a person who connected Drive, and the safety gate
+    knows them from import (read private, outside text).
+  * tests/test_email_oauth.py: the callback tests start a real sign-in
+    flow (state, PKCE, person) instead of a bare signed state.
+
+Applies to: odysseus-dev/odysseus@9d0d3720f4ca181d87bef94da826d730acc6d483
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/app.py b/app.py
+index 4fd185a..0c4c331 100644
+--- a/app.py
++++ b/app.py
+@@ -474,6 +474,18 @@ if AUTH_ENABLED:
+             # --- Cookie-based session auth ---
+             token = request.cookies.get(SESSION_COOKIE)
+             if not auth_manager.validate_token(token):
++                # Wings (patch 0025): a sign-in whose registered callback is on
++                # another address than the one the person started from (for
++                # example localhost vs 127.0.0.1) goes back to that address,
++                # stored server side with the attempt, to finish there with
++                # the person's session (wings/accounts.py bounce).
++                try:
++                    from wings.accounts import bounce_unauthenticated as _wings_bounce
++                    _bounced = _wings_bounce(request)
++                except Exception:
++                    _bounced = None
++                if _bounced is not None:
++                    return _bounced
+                 if path.startswith("/api/"):
+                     return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+                 return RedirectResponse(
+@@ -1183,6 +1195,13 @@ async def _startup_event():
+     global upload_cleanup_task
+     logger.info("Application starting up...")
+     webhook_manager.set_loop(asyncio.get_running_loop())
++    # Wings (patch 0025): per-person assistant tools for connected accounts
++    # and the 30 minute refresh of calendars added by link.
++    try:
++        from wings.accounts_routes import on_startup as _wings_accounts_startup
++        _wings_accounts_startup()
++    except Exception:
++        logger.exception("Connect your accounts start-up failed")
+     # Wipe any leftover incognito sessions from previous process — they're
+     # ephemeral by design and must not survive a restart.
+     try:
+diff --git a/mcp_servers/email_server.py b/mcp_servers/email_server.py
+index 8902b4a..9ce51ae 100644
+--- a/mcp_servers/email_server.py
++++ b/mcp_servers/email_server.py
+@@ -236,10 +236,17 @@ def _read_accounts_from_db() -> list:
+         columns = {r[1] for r in conn.execute("PRAGMA table_info(email_accounts)").fetchall()}
+         owner_select = "owner" if "owner" in columns else "NULL AS owner"
+         smtp_security_select = "smtp_security" if "smtp_security" in columns else "'' AS smtp_security"
++        # Wings (patch 0025): OAuth accounts (Google; Microsoft later) sign
++        # in with XOAUTH2, so the assistant reads their provider and tokens.
++        oauth_select = ", ".join(
++            col if col in columns else f"NULL AS {col}"
++            for col in ("oauth_provider", "oauth_access_token", "oauth_refresh_token", "oauth_token_expiry")
++        )
+         rows = conn.execute(f"""
+             SELECT id, {owner_select}, name, is_default, enabled,
+                    imap_host, imap_port, imap_user, imap_password, imap_starttls,
+-                   smtp_host, smtp_port, {smtp_security_select}, smtp_user, smtp_password, from_address
++                   smtp_host, smtp_port, {smtp_security_select}, smtp_user, smtp_password, from_address,
++                   {oauth_select}
+             FROM email_accounts WHERE enabled = 1
+             ORDER BY is_default DESC, created_at ASC
+         """).fetchall()
+@@ -376,6 +383,12 @@ def _load_config(account: str | None = None) -> dict:
+         cfg["smtp_user"] = row["smtp_user"] or cfg["smtp_user"]
+         cfg["smtp_password"] = _decrypt(row["smtp_password"]) if row["smtp_password"] else cfg["smtp_password"]
+         cfg["from_address"] = row["from_address"] or row["imap_user"] or cfg["from_address"]
++        # Wings (patch 0025): XOAUTH2 accounts; tokens stay encrypted here and
++        # are decrypted only by wings.accounts.mail_token when signing in.
++        cfg["oauth_provider"] = row.get("oauth_provider") or ""
++        cfg["oauth_access_token"] = row.get("oauth_access_token") or ""
++        cfg["oauth_refresh_token"] = row.get("oauth_refresh_token") or ""
++        cfg["oauth_token_expiry"] = row.get("oauth_token_expiry") or ""
+     else:
+         # Legacy fallback: settings.json flat keys
+         try:
+@@ -431,7 +444,13 @@ def _imap_connect(account: str | None = None):
+     if getattr(conn, "sock", None):
+         conn.sock.settimeout(EMAIL_SOCKET_TIMEOUT)
+     try:
+-        conn.login(cfg["imap_user"], cfg["imap_password"])
++        if cfg.get("oauth_provider"):
++            # Wings (patch 0025): sign in with the person's OAuth token
++            # (refreshed when due), not a password.
++            token = _wings_mail_token(cfg)
++            conn.authenticate("XOAUTH2", lambda _challenge: _wings_xoauth2(cfg["imap_user"], token).encode())
++        else:
++            conn.login(cfg["imap_user"], cfg["imap_password"])
+     except Exception:
+         # A failed login otherwise orphans the connected socket; close it
+         # before propagating (shutdown() is the pre-auth low-level close). (#3174)
+@@ -2495,7 +2514,26 @@ def _read_email_across_accounts(uid=None, message_id=None, folder="INBOX"):
+ 
+ 
+ def _smtp_ready(cfg: dict) -> bool:
+-    return bool(cfg.get("smtp_host") and cfg.get("smtp_user") and cfg.get("smtp_password"))
++    # Wings (patch 0025): an OAuth account needs no password.
++    return bool(cfg.get("smtp_host") and cfg.get("smtp_user")
++                and (cfg.get("smtp_password") or cfg.get("oauth_provider")))
++
++
++def _wings_mail_token(cfg: dict) -> str:
++    """Current XOAUTH2 token for an OAuth mail account (wings/accounts.py)."""
++    from wings.accounts import mail_token
++    token = mail_token(cfg)
++    if not token:
++        raise ValueError(
++            "This mail account's sign-in has expired. Sign in again in Settings > "
++            "Integrations > Connect your accounts."
++        )
++    return token
++
++
++def _wings_xoauth2(user: str, token: str) -> str:
++    from wings.accounts import xoauth2
++    return xoauth2(user, token)
+ 
+ 
+ def _resolve_send_config(account=None):
+@@ -2555,7 +2593,20 @@ def _smtp_connect(account=None, cfg=None):
+             port,
+             timeout=EMAIL_SOCKET_TIMEOUT,
+         )
+-    if cfg["smtp_user"] and cfg["smtp_password"]:
++    if cfg.get("oauth_provider") and cfg["smtp_user"]:
++        # Wings (patch 0025): XOAUTH2 for OAuth accounts.
++        try:
++            token = _wings_mail_token(cfg)
++            conn.ehlo()
++            conn.auth("XOAUTH2", lambda challenge=None: _wings_xoauth2(cfg["smtp_user"], token),
++                      initial_response_ok=True)
++        except Exception:
++            try:
++                conn.close()
++            except Exception:
++                pass
++            raise
++    elif cfg["smtp_user"] and cfg["smtp_password"]:
+         try:
+             conn.login(cfg["smtp_user"], cfg["smtp_password"])
+         except Exception:
+diff --git a/routes/calendar_routes.py b/routes/calendar_routes.py
+index df86c2b..123659e 100644
+--- a/routes/calendar_routes.py
++++ b/routes/calendar_routes.py
+@@ -277,7 +277,11 @@ def _ensure_default_calendar(db, owner: str = None) -> CalendarCal:
+     remains usable and atomic.
+     """
+     owner = owner or FALLBACK_OWNER
+-    cal = db.query(CalendarCal).filter(CalendarCal.owner == owner).first()
++    # Wings (patch 0025): a calendar added by link is read only, so it never
++    # becomes the default; a person whose only calendar is one gets a local
++    # "Personal" calendar for new events.
++    _writable = or_(CalendarCal.source.is_(None), CalendarCal.source != "ics")
++    cal = db.query(CalendarCal).filter(CalendarCal.owner == owner, _writable).first()
+     if cal:
+         return cal
+ 
+@@ -285,7 +289,7 @@ def _ensure_default_calendar(db, owner: str = None) -> CalendarCal:
+     if dialect == "sqlite":
+         _begin_sqlite_default_write(db)
+         # Another worker may have committed while BEGIN IMMEDIATE waited.
+-        cal = db.query(CalendarCal).filter(CalendarCal.owner == owner).first()
++        cal = db.query(CalendarCal).filter(CalendarCal.owner == owner, _writable).first()
+         if cal:
+             return cal
+ 
+@@ -790,6 +794,8 @@ def _event_to_dict(ev: CalendarEvent, db=None, owner: str | None = None) -> dict
+         "source_email_folder": getattr(ev, "source_email_folder", None),
+         "source_email_account_id": getattr(ev, "source_email_account_id", None),
+         "source_email_message_id": getattr(ev, "source_email_message_id", None),
++        # Wings (patch 0025): events from a calendar added by link.
++        "read_only": bool(ev.calendar and getattr(ev.calendar, "source", None) == "ics"),
+     }
+ 
+ 
+@@ -1044,6 +1050,8 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+                 "url": acc.get("url", "") or "",
+                 "username": acc.get("username", "") or "",
+                 "has_password": has_pw,
++                # Wings (patch 0025): signed in with Google instead of a password.
++                "signed_in_with": (acc.get("wings_oauth") or {}).get("provider", ""),
+             })
+         return {"accounts": safe}
+ 
+@@ -1239,6 +1247,10 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+             db.query(CalendarEvent).filter(CalendarEvent.calendar_id == cal_id).delete()
+             db.delete(cal)
+             db.commit()
++            # Wings (patch 0025): a calendar added by link stops refreshing.
++            if cal.source == "ics":
++                from wings.ics_feeds import on_calendar_deleted
++                on_calendar_deleted(owner, cal_id)
+             return {"ok": True}
+         except HTTPException:
+             raise
+@@ -1260,8 +1272,16 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+             # Other callers commit it with the event they are creating.
+             db.commit()
+             cals = db.query(CalendarCal).filter(CalendarCal.owner == owner).all()
++            # Wings (patch 0025): calendars added by link are read only; Google
++            # calendars (signed in with Google) can get a Meet link.
++            try:
++                from wings.accounts_google import is_google_calendar as _wings_is_google
++            except Exception:
++                _wings_is_google = lambda _o, _c: False  # noqa: E731
+             return {"calendars": [
+-                {"name": c.name, "href": c.id, "color": c.color, "source": c.source}
++                {"name": c.name, "href": c.id, "color": c.color, "source": c.source,
++                 "read_only": c.source == "ics",
++                 "google": bool(c.source == "caldav" and _wings_is_google(owner, c))}
+                 for c in cals
+             ]}
+         except HTTPException:
+@@ -1355,6 +1375,10 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+                 # `_get_or_404_calendar`.
+                 if cal and (cal.owner is None or cal.owner != owner):
+                     raise HTTPException(404, "Calendar not found")
++                # Wings (patch 0025): calendars added by link are read only.
++                if cal and cal.source == "ics":
++                    from wings.ics_feeds import READ_ONLY_MESSAGE
++                    raise HTTPException(409, READ_ONLY_MESSAGE)
+             if not cal:
+                 cal = _ensure_default_calendar(db, owner)
+ 
+@@ -1432,6 +1456,9 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+         db = SessionLocal()
+         try:
+             ev = _get_or_404_event(db, base_uid, owner)
++            if ev.calendar and ev.calendar.source == "ics":
++                from wings.ics_feeds import READ_ONLY_MESSAGE
++                raise HTTPException(409, READ_ONLY_MESSAGE)
+             if data.summary is not None:
+                 ev.summary = data.summary
+             if data.description is not None:
+@@ -1494,6 +1521,9 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+         db = SessionLocal()
+         try:
+             ev = _get_or_404_event(db, base_uid, owner)
++            if ev.calendar and ev.calendar.source == "ics":
++                from wings.ics_feeds import READ_ONLY_MESSAGE
++                raise HTTPException(409, READ_ONLY_MESSAGE)
+             is_occurrence_delete = scope in {"occurrence", "instance"} and "::" in uid and bool(ev.rrule)
+             is_caldav = ev.calendar and ev.calendar.source == "caldav"
+             if scope in {"occurrence", "instance"} and not is_occurrence_delete:
+@@ -1600,6 +1630,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
+             target_cal = db.query(CalendarCal).filter(
+                 CalendarCal.name == cal_display,
+                 CalendarCal.owner == owner,
++                CalendarCal.source != "ics",  # Wings (patch 0025): link calendars are read only
+             ).first()
+             if not target_cal:
+                 target_cal = CalendarCal(
+diff --git a/routes/chat_routes.py b/routes/chat_routes.py
+index 2c1df2c..0326629 100644
+--- a/routes/chat_routes.py
++++ b/routes/chat_routes.py
+@@ -3500,6 +3500,13 @@ def setup_chat_routes(
+         disabled_tools.update(agent_denied_tools(
+             preset_id, str(form_data.get("wings_agent_template_id") or "") or None,
+         ))
++        # Wings (patch 0025): tools for connected accounts (Google Drive)
++        # only for a person who connected that account.
++        try:
++            from wings.accounts import unavailable_tools as _wings_unavailable_tools
++            disabled_tools.update(_wings_unavailable_tools(effective_user(request) or ""))
++        except Exception:
++            logger.debug("Account tools check skipped", exc_info=True)
+ 
+         # Light auto-escalation: the user is in chat mode and just expressed a
+         # notes/calendar/email intent. Grant the relevant managers but withhold
+diff --git a/routes/email/email_helpers.py b/routes/email/email_helpers.py
+index 5aa9748..2ea5e76 100644
+--- a/routes/email/email_helpers.py
++++ b/routes/email/email_helpers.py
+@@ -107,8 +107,11 @@ def _refresh_google_token(account_id: str) -> str | None:
+     import httpx
+     from core.database import SessionLocal as _SL, EmailAccount as _EA
+     from src.secret_storage import encrypt as _enc, decrypt as _dec
+-    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+-    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
++    # Wings (patch 0025): the Google client an admin saved in Connect your
++    # accounts (encrypted), else upstream's .env GOOGLE_OAUTH_* values.
++    from wings.accounts_google import client_credentials as _wings_google_client
++    from wings.accounts import test_url as _wings_test_url
++    client_id, client_secret = _wings_google_client()
+     if not client_id or not client_secret:
+         return None
+     db = _SL()
+@@ -119,7 +122,7 @@ def _refresh_google_token(account_id: str) -> str | None:
+         refresh_token = _dec(row.oauth_refresh_token or "")
+         if not refresh_token:
+             return None
+-        resp = httpx.post("https://oauth2.googleapis.com/token", data={
++        resp = httpx.post(_wings_test_url("https://oauth2.googleapis.com/token"), data={
+             "client_id": client_id,
+             "client_secret": client_secret,
+             "refresh_token": refresh_token,
+@@ -264,10 +267,13 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
+     password = cfg.get("smtp_password") or ""
+ 
+     def _auth_smtp(smtp):
+-        if cfg.get("oauth_provider") == "google":
+-            token = _get_valid_google_token(cfg.get("account_id"), cfg)
++        if cfg.get("oauth_provider"):
++            # Wings (patch 0025): any OAuth mail account (Google now,
++            # Microsoft later) through wings.accounts.mail_token.
++            from wings.accounts import mail_token as _wings_mail_token
++            token = _wings_mail_token(cfg)
+             if not token:
+-                raise RuntimeError("Google OAuth token unavailable — reconnect the account")
++                raise RuntimeError("Mail sign-in has expired. Sign in again: Settings > Integrations > Connect your accounts.")
+             smtp.ehlo()
+             smtp.auth("XOAUTH2", lambda challenge=None: _xoauth2_raw(user, token), initial_response_ok=True)
+         elif user and password:
+@@ -1388,10 +1394,12 @@ def _imap_connect(account_id: str | None = None, owner: str = "",
+         owner=cfg.get("owner"),
+     )
+     try:
+-        if cfg.get("oauth_provider") == "google":
+-            token = _get_valid_google_token(cfg.get("account_id"), cfg)
++        if cfg.get("oauth_provider"):
++            # Wings (patch 0025): any OAuth mail account, see _auth_smtp.
++            from wings.accounts import mail_token as _wings_mail_token
++            token = _wings_mail_token(cfg)
+             if not token:
+-                raise RuntimeError("Google OAuth token unavailable — reconnect the account in Settings → Integrations")
++                raise RuntimeError("Mail sign-in has expired. Sign in again: Settings > Integrations > Connect your accounts.")
+             conn.authenticate("XOAUTH2", lambda x: _xoauth2_bytes(cfg["imap_user"], token))
+         else:
+             conn.login(cfg["imap_user"], cfg["imap_password"])
+diff --git a/routes/email/email_routes.py b/routes/email/email_routes.py
+index 74f2951..0cf3b2b 100644
+--- a/routes/email/email_routes.py
++++ b/routes/email/email_routes.py
+@@ -7676,27 +7676,14 @@ def setup_email_routes():
+ 
+     @router.get("/oauth/google/authorize")
+     async def google_oauth_authorize(account_id: str = Query(...), request: Request = None, owner: str = Depends(require_user)):
+-        import urllib.parse
++        # Wings (patch 0025): the same Google sign-in as Connect your
++        # accounts: a random state bound to this person, used once within ten
++        # minutes, S256 PKCE, and the Google client an admin saved (or the
++        # .env GOOGLE_OAUTH_* values). See wings/accounts_google.py.
+         _assert_owns_account(account_id, owner)
+-        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+-        if not client_id:
+-            raise HTTPException(400, "GOOGLE_OAUTH_CLIENT_ID not set — add it to .env")
+-        redirect_uri = (
+-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
+-            or f"{request.url.scheme}://{request.headers.get('host', 'localhost:7000')}/api/email/oauth/google/callback"
+-        )
+-        state = make_oauth_state(account_id, owner)
+-        params = urllib.parse.urlencode({
+-            "client_id": client_id,
+-            "redirect_uri": redirect_uri,
+-            "response_type": "code",
+-            "scope": "https://mail.google.com/ email",
+-            "access_type": "offline",
+-            "prompt": "consent",
+-            "state": state,
+-        })
++        from wings.accounts_google import email_account_authorize_url
+         from fastapi.responses import RedirectResponse as _RR
+-        return _RR(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
++        return _RR(email_account_authorize_url(request, owner, account_id))
+ 
+     @router.get("/oauth/google/callback")
+     async def google_oauth_callback(
+@@ -7705,116 +7692,10 @@ def setup_email_routes():
+         error: str = Query(None),
+         request: Request = None,
+     ):
+-        import urllib.parse
+-        from fastapi.responses import RedirectResponse as _RR
+-        if error:
+-            return _RR("/?section=integrations&email_oauth_error=google_error")
+-        if not code or not state:
+-            return _RR("/?section=integrations&email_oauth_error=missing_code")
+-        state_data = verify_oauth_state(state)
+-        if not state_data:
+-            return _RR("/?section=integrations&email_oauth_error=invalid_state")
+-        account_id = state_data.get("a", "")
+-        owner = state_data.get("o", "")
+-        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+-        client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+-        redirect_uri = (
+-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
+-            or f"{request.url.scheme}://{request.headers.get('host', 'localhost:7000')}/api/email/oauth/google/callback"
+-        )
+-        import httpx as _httpx
+-        try:
+-            resp = _httpx.post("https://oauth2.googleapis.com/token", data={
+-                "code": code,
+-                "client_id": client_id,
+-                "client_secret": client_secret,
+-                "redirect_uri": redirect_uri,
+-                "grant_type": "authorization_code",
+-            }, timeout=10)
+-            resp.raise_for_status()
+-            data = resp.json()
+-        except Exception:
+-            logger.warning("Google token exchange failed")
+-            return _RR("/?section=integrations&email_oauth_error=token_exchange_failed")
+-        access_token = data.get("access_token", "")
+-        refresh_token = data.get("refresh_token", "")
+-        if not access_token or not refresh_token:
+-            logger.warning("Google token exchange omitted required offline credentials")
+-            return _RR("/?section=integrations&email_oauth_error=token_exchange_failed")
+-        expiry = str(int(time.time()) + data.get("expires_in", 3600))
+-        # Fetch the email address from userinfo so we can auto-fill imap_user.
+-        email_addr = ""
+-        display_name = ""
+-        try:
+-            ui = _httpx.get("https://www.googleapis.com/oauth2/v1/userinfo",
+-                            headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+-            if ui.is_success:
+-                ui_data = ui.json()
+-                email_addr = ui_data.get("email", "")
+-                display_name = ui_data.get("name", "")
+-        except Exception:
+-            pass
+-        from core.database import SessionLocal, EmailAccount
+-        from src.secret_storage import encrypt as _enc
+-        db = SessionLocal()
+-        try:
+-            row = db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
+-            if not row:
+-                return _RR("/?section=integrations&email_oauth_error=account_not_found")
+-            # SECURITY: verify the account belongs to the initiating user.
+-            if owner and row.owner and row.owner != owner:
+-                logger.warning("OAuth callback owner mismatch — rejecting token write")
+-                return _RR("/?section=integrations&email_oauth_error=ownership_error")
+-
+-            # A reconnect must prove that the token belongs to the mailbox
+-            # already configured on this row. Otherwise authenticating a
+-            # different Google account leaves the saved IMAP/SMTP usernames
+-            # paired with credentials for another identity.
+-            verified_email = (
+-                email_addr.strip().casefold()
+-                if isinstance(email_addr, str)
+-                else ""
+-            )
+-            configured_logins = {
+-                value.strip().casefold()
+-                for value in (row.imap_user or "", row.smtp_user or "")
+-                if value.strip()
+-            }
+-            if not verified_email or any(
+-                login != verified_email for login in configured_logins
+-            ):
+-                logger.warning(
+-                    "Google OAuth mailbox identity verification failed for account %s",
+-                    account_id,
+-                )
+-                return _RR("/?section=integrations&email_oauth_error=identity_verification_failed")
+-
+-            row.oauth_provider = "google"
+-            row.oauth_access_token = _enc(access_token)
+-            row.oauth_refresh_token = _enc(refresh_token)
+-            row.oauth_token_expiry = expiry
+-            # Auto-fill Google IMAP/SMTP settings if not already configured.
+-            if not row.imap_host:
+-                row.imap_host = "imap.gmail.com"
+-                row.imap_port = 993
+-                row.imap_starttls = False
+-            if not row.smtp_host:
+-                row.smtp_host = "smtp.gmail.com"
+-                row.smtp_port = 587
+-            if email_addr:
+-                if not row.imap_user:
+-                    row.imap_user = email_addr
+-                if not row.smtp_user:
+-                    row.smtp_user = email_addr
+-                if not row.from_address:
+-                    row.from_address = email_addr
+-                if not row.name or row.name == row.id:
+-                    row.name = email_addr
+-            if display_name and not row.display_name:
+-                row.display_name = display_name
+-            db.commit()
+-        finally:
+-            db.close()
+-        return _RR("/?section=integrations&email_oauth_success=1")
++        # Wings (patch 0025): every Google sign-in returns here; the flow
++        # record (not the URL) says which person and account it is for, and
++        # the browser is sent back to the address it started from first.
++        from wings.accounts_google import callback as _wings_google_callback
++        return await _wings_google_callback(request, code, state, error)
+ 
+     return router
+diff --git a/src/caldav_sync.py b/src/caldav_sync.py
+index 47fb333..03033d6 100644
+--- a/src/caldav_sync.py
++++ b/src/caldav_sync.py
+@@ -228,7 +228,7 @@ def _open_url_as_calendar(client, url: str):
+     return client.calendar(url=target)
+ 
+ 
+-def _build_dav_client(url: str, username: str, password: str):
++def _build_dav_client(url: str, username: str, password: str, bearer: bool = False):
+     """Construct a CalDAV client with automatic redirects disabled.
+ 
+     ``validate_caldav_url`` resolves and vets the *initial* host, but caldav's
+@@ -245,7 +245,11 @@ def _build_dav_client(url: str, username: str, password: str):
+     """
+     import caldav
+ 
+-    client = caldav.DAVClient(url=url, username=username, password=password)
++    # Wings (patch 0025): an account signed in with OAuth (Google's CalDAV
++    # accepts only OAuth 2.0 bearer tokens); `password` is then the current
++    # access token from wings.accounts.
++    extra = {"auth_type": "bearer"} if bearer else {}
++    client = caldav.DAVClient(url=url, username=username, password=password, **extra)
+     # Unconditional: a redirect-disable that only sometimes applies is not a
+     # control. The session exists right after __init__ on every real client;
+     # test_build_dav_client_disables_redirects asserts it against installed
+@@ -268,7 +272,8 @@ def _should_prune_window(seen_uids: set, parse_failed: bool) -> bool:
+     return not parse_failed
+ 
+ 
+-def _sync_blocking(owner: str, url: str, username: str, password: str, account_id: str = "") -> dict:
++def _sync_blocking(owner: str, url: str, username: str, password: str, account_id: str = "",
++                   bearer: bool = False) -> dict:
+     """The actual sync — synchronous, intended to run in a threadpool.
+     Returns counts: {calendars, events, deleted, errors}."""
+     # Lazy imports so a missing `caldav` dep doesn't break app startup —
+@@ -279,7 +284,7 @@ def _sync_blocking(owner: str, url: str, username: str, password: str, account_i
+ 
+     result = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
+ 
+-    client = _build_dav_client(url, username, password)
++    client = _build_dav_client(url, username, password, bearer=bearer)
+     try:
+         # Discovery: try principal → calendars first; if the server doesn't
+         # support discovery (or the URL points directly at a calendar), fall
+@@ -633,6 +638,29 @@ async def sync_caldav(owner: str) -> dict:
+         pw = acc.get("password") or ""
+         account_id = acc.get("id") or ""
+         label = acc.get("label") or url or account_id
++        bearer = False
++        if acc.get("wings_oauth"):
++            # Wings (patch 0025): signed in with Google (Connect your
++            # accounts); the URL is the provider's fixed CalDAV endpoint and
++            # the token comes from the person's own sign-in.
++            try:
++                from wings.accounts_google import caldav_bearer
++                url, pw = await asyncio.to_thread(caldav_bearer, owner, acc)
++                bearer = True
++            except Exception as e:
++                totals["errors"].append(f"{label}: {getattr(e, 'message', None) or 'sign in again'}")
++                continue
++            try:
++                result = await asyncio.to_thread(_sync_blocking, owner, url, user, pw, account_id, True)
++            except Exception as e:
++                logger.exception("CalDAV sync raised for account %s", label)
++                result = {"calendars": 0, "events": 0, "deleted": 0, "errors": [str(e)[:200]]}
++            totals["calendars"] += result.get("calendars", 0)
++            totals["events"] += result.get("events", 0)
++            totals["deleted"] += result.get("deleted", 0)
++            for err in result.get("errors", []):
++                totals["errors"].append(f"{label}: {err}")
++            continue
+         try:
+             pw = decrypt(pw)
+         except Exception:
+diff --git a/src/caldav_writeback.py b/src/caldav_writeback.py
+index 7aba17e..0bd37e2 100644
+--- a/src/caldav_writeback.py
++++ b/src/caldav_writeback.py
+@@ -187,11 +187,11 @@ def _discover_calendars(client):
+ 
+ 
+ def _writeback_blocking(local_cal_id, ev, delete, url, username, password,
+-                        owner="", account_id="") -> dict:
++                        owner="", account_id="", bearer=False) -> dict:
+     from src.caldav_sync import _build_dav_client
+     # Redirects disabled here too: the write-back path opens its own DAVClient,
+     # so it needs the same SSRF-via-redirect protection as the pull path.
+-    client = _build_dav_client(url, username, password)
++    client = _build_dav_client(url, username, password, bearer=bearer)
+     try:
+         calendars = _discover_calendars(client)
+         if not calendars:
+@@ -287,6 +287,21 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
+ 
+         url = (acc.get("url") or "").strip()
+         user = (acc.get("username") or "").strip()
++        acc_id = acc.get("id") or ""
++        if acc.get("wings_oauth"):
++            # Wings (patch 0025): Google sign-in, see sync_caldav.
++            from wings.accounts_google import caldav_bearer
++            try:
++                url, token = await asyncio.to_thread(caldav_bearer, owner, acc)
++            except Exception as e:
++                return {"ok": False, "error": (getattr(e, "message", None) or "sign in again")[:200]}
++            result = await asyncio.to_thread(
++                _writeback_blocking, calendar_id, ev, delete, url, user, token, owner, acc_id, True
++            )
++            _persist_writeback_result(owner, calendar_id, (ev or {}).get("uid", ""), result, delete=delete)
++            if not result.get("ok"):
++                logger.warning("CalDAV write-back did not apply: %s", result.get("error") or result)
++            return result
+         pw = decrypt(acc.get("password") or "")
+         if not (url and user and pw):
+             return {"skipped": "caldav account credentials incomplete"}
+@@ -296,7 +311,6 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
+         except ValueError as e:
+             logger.warning("CalDAV write-back URL rejected: %s", e)
+             return {"ok": False, "error": str(e)[:200]}
+-        acc_id = acc.get("id") or ""
+         result = await asyncio.to_thread(
+             _writeback_blocking, calendar_id, ev, delete, url, user, pw, owner, acc_id
+         )
+diff --git a/src/tool_capabilities.py b/src/tool_capabilities.py
+index 790ed07..63adcdf 100644
+--- a/src/tool_capabilities.py
++++ b/src/tool_capabilities.py
+@@ -139,6 +139,15 @@ _register(
+     ToolEffect.READ_PRIVATE,
+     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+ )
++# Wings (patch 0025): the Google Drive tools a person gets after connecting
++# Drive (wings/accounts_google.py). They are added to the tool catalog at
++# start-up; their safety entry is declared here so it is known from import:
++# a Drive file is outside text, like an email's.
++_register(
++    {"google_drive_search", "google_drive_read"},
++    ToolEffect.READ_PRIVATE,
++    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
++)
+ _register(
+     {"bash", "host_shell", "manage_bg_jobs", "python"},
+     ToolEffect.EXECUTE_CODE,
+diff --git a/src/tool_schemas.py b/src/tool_schemas.py
+index 840b676..5a75b13 100644
+--- a/src/tool_schemas.py
++++ b/src/tool_schemas.py
+@@ -1077,6 +1077,7 @@ FUNCTION_TOOL_SCHEMAS = [
+                     "event_type": {"type": "string", "description": "Tag / category for the event. Common values: work, personal, health, travel, meal, social, admin, other. Aliases accepted: tag, category, type. For update_event, omit this unless the user explicitly asks to tag, retag, categorize, or clear the tag; omitting preserves manual tags."},
+                     "importance": {"type": "string", "enum": ["low", "normal", "high", "critical"], "description": "Priority level (defaults to 'normal')"},
+                     "reminder_minutes": {"type": "integer", "description": "For create_event/update_event: create or replace the reminder this many minutes before the event, e.g. 5 for 'reminder 5 min before'. For update_event, use reminder='off' to remove the reminder."},
++                    "google_meet": {"type": "boolean", "description": "create_event in a Google calendar only (list_calendars marks them): also add a Google Meet video link. Use only when the user asks for a Meet or video call link."},
+                     "rrule": {"type": "string", "description": "Recurrence rule in iCalendar RRULE format, e.g. 'FREQ=WEEKLY;BYDAY=MO' for weekly on Monday, 'FREQ=MONTHLY;BYMONTHDAY=1' for the first day of each month, 'FREQ=MONTHLY;BYDAY=1MO,-1MO' for the first and last Monday of each month, 'FREQ=MONTHLY;BYDAY=2TH' for the second Thursday of each month, or 'FREQ=MONTHLY;BYDAY=-1SU' for the last Sunday of each month. Use with create_event or update_event. For update_event, pass an explicit empty string to remove recurrence and make the event single-occurrence."}
+                 },
+                 "required": ["action"]
+diff --git a/src/tools/calendar.py b/src/tools/calendar.py
+index 3eeacda..02125e6 100644
+--- a/src/tools/calendar.py
++++ b/src/tools/calendar.py
+@@ -4,6 +4,7 @@ Extracted from tool_implementations.py as part of slice 1 (#4082/#4071).
+ Holds the manage_calendar tool (CalDAV-backed event CRUD).
+ ``src.tool_implementations`` re-exports these for backward compatibility.
+ """
++import asyncio
+ import json
+ import logging
+ import re
+@@ -342,14 +343,35 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+             db.commit()
+             cals = _calendar_query().all()
+             result = [{"name": c.name, "href": c.id} for c in cals]
++            # Wings (patch 0025): say which calendars are read only (added by
++            # link) and which are Google calendars (google_meet works there).
++            _wings_notes = {}
++            for c in cals:
++                if c.source == "ics":
++                    _wings_notes[c.id] = " [read only]"
++                else:
++                    try:
++                        from wings.accounts_google import is_google_calendar
++                        if is_google_calendar(owner, c):
++                            _wings_notes[c.id] = " [Google: google_meet available]"
++                    except Exception:
++                        pass
++            for item in result:
++                if item["href"] in _wings_notes:
++                    item["note"] = _wings_notes[item["href"]].strip(" []")
+             if result:
+                 lines = [f"Found {len(result)} calendar(s):"]
+                 for c in result:
+-                    lines.append(f"- {c['name']} ({c['href'][:8]})")
++                    lines.append(f"- {c['name']} ({c['href'][:8]}){_wings_notes.get(c['href'], '')}")
+                 response_text = "\n".join(lines)
+             else:
+                 response_text = "No calendars found."
+-            return {"response": response_text, "calendars": result, "exit_code": 0}
++            out = {"response": response_text, "calendars": result, "exit_code": 0}
++            # Wings (patch 0025): a calendar added by link is named by
++            # whoever publishes it, so its name is outside text.
++            if any(c.source == "ics" for c in cals):
++                out["untrusted_content"] = True
++            return out
+ 
+         elif action == "list_events":
+             try:
+@@ -439,7 +461,13 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+                         line += f"\n    {desc}"
+                     lines.append(line)
+                 response_text = "\n".join(lines)
+-            return {"response": response_text, "events": events, "exit_code": 0}
++            out = {"response": response_text, "events": events, "exit_code": 0}
++            # Wings (patch 0025): events from a calendar added by link are
++            # written by whoever publishes that calendar (outside text), so
++            # upstream's safety gate treats them like an email's text.
++            if any(ev.calendar is not None and ev.calendar.source == "ics" for ev in rows):
++                out["untrusted_content"] = True
++            return out
+ 
+         elif action == "create_event":
+             summary = args.get("summary")
+@@ -470,6 +498,10 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+                            .first())
+             if not cal:
+                 cal = _ensure_default_calendar(db, owner)
++            if cal.source == "ics":
++                # Wings (patch 0025): calendars added by link are read only.
++                from wings.ics_feeds import READ_ONLY_MESSAGE
++                return {"error": READ_ONLY_MESSAGE + " Pick another calendar.", "exit_code": 1}
+ 
+             all_day = bool(args.get("all_day", False))
+             try:
+@@ -641,6 +673,16 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+             db.commit()
+             if cal.source == "caldav":
+                 await _push_caldav_event_after_commit(owner, uid, "create")
++            # Wings (patch 0025): "Add a Google Meet link" for an event in a
++            # Google calendar (Calendar API, conferenceDataVersion=1).
++            meet_blurb = ""
++            if args.get("google_meet") in (True, "true", "yes", 1):
++                try:
++                    from wings.accounts_google import add_meet
++                    meet = await asyncio.to_thread(add_meet, owner, uid)
++                    meet_blurb = f" with Google Meet link {meet['meet_link']}"
++                except Exception as _meet_error:
++                    meet_blurb = f" (no Google Meet link: {getattr(_meet_error, 'message', None) or type(_meet_error).__name__})"
+             tag_blurb = f" [{event_type}]" if event_type else ""
+             if minutes_before is None:
+                 reminder_blurb = ""
+@@ -652,7 +694,7 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+             # that opens the calendar on that day. See the markdown
+             # anchor convention ([Name](#event-<uid>)).
+             return {
+-                "response": f"Created event [{summary}](#event-{uid}){tag_blurb} on {_saved_event_times(ev)['dtstart']}{reminder_blurb}",
++                "response": f"Created event [{summary}](#event-{uid}){tag_blurb} on {_saved_event_times(ev)['dtstart']}{reminder_blurb}{meet_blurb}",
+                 "uid": uid,
+                 **_saved_event_times(ev),
+                 "anchor": f"[{summary}](#event-{uid})",
+@@ -697,6 +739,9 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+                     }
+             if not ev:
+                 return {"error": f"Event {uid} not found", "exit_code": 1}
++            if ev.calendar and ev.calendar.source == "ics":
++                from wings.ics_feeds import READ_ONLY_MESSAGE
++                return {"error": READ_ONLY_MESSAGE, "exit_code": 1}
+             missing_id = reserve_upload_references(
+                 get_upload_handler(),
+                 owner,
+@@ -827,6 +872,9 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None, *, impor
+                     break
+             if not ev:
+                 return {"error": f"Event {uid} not found", "exit_code": 1}
++            if ev.calendar and ev.calendar.source == "ics":
++                from wings.ics_feeds import READ_ONLY_MESSAGE
++                return {"error": READ_ONLY_MESSAGE, "exit_code": 1}
+             is_caldav = ev.calendar and ev.calendar.source == "caldav" and ev.remote_href
+             if is_caldav:
+                 _record_caldav_delete_tombstone(db, ev, owner)
+diff --git a/static/js/calendar.js b/static/js/calendar.js
+index 2e1521b..ae581fd 100644
+--- a/static/js/calendar.js
++++ b/static/js/calendar.js
+@@ -179,6 +179,15 @@ function _prefetchAdjacent() {
+   }
+ }
+ 
++// Wings (patch 0025): Connect your accounts added or removed a calendar
++// (by link, iCloud or Google): drop the cached events so the next render
++// shows them.
++window.addEventListener('ow-calendars-changed', () => {
++  _allEvents = {}; _fetchedRanges = [];
++  try { localStorage.removeItem(LS_KEY); } catch (_) {}
++  if (_open) { _fetchCalendars().then(() => _render()).catch(() => {}); }
++});
++
+ let _calendarsError = null;
+ // Guard so we only trigger an on-open CalDAV pull once per page load —
+ // every list/render path calls _fetchCalendars, but we only want to
+@@ -263,6 +272,17 @@ function _optimisticEvent(data, uid) {
+ // resolved the promise and the optimistic state got promoted to truth.
+ // All three flows now inspect `r.ok` and roll back the optimistic
+ // state + surface a toast on the failure path.
++// Wings (patch 0025): say why the server refused (for example "This calendar
++// is read only ...") instead of a bare "HTTP 409".
++async function _httpError(r) {
++  let msg = 'HTTP ' + r.status;
++  try {
++    const d = await r.clone().json();
++    if (r.status === 409 && d && typeof d.detail === 'string' && d.detail) msg = d.detail;
++  } catch (_) {}
++  return new Error(msg);
++}
++
+ async function _createEvent(data) {
+   const tempUid = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+   _allEvents[tempUid] = _optimisticEvent(data, tempUid);
+@@ -271,7 +291,7 @@ async function _createEvent(data) {
+       method: 'POST', credentials: 'same-origin',
+       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+     });
+-    if (!r.ok) throw new Error('HTTP ' + r.status);
++    if (!r.ok) throw await _httpError(r);
+     const d = await r.json();
+     if (d.uid) {
+       delete _allEvents[tempUid];
+@@ -303,7 +323,7 @@ async function _updateEvent(uid, data) {
+       method: 'PUT', credentials: 'same-origin',
+       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+     });
+-    if (!r.ok) throw new Error('HTTP ' + r.status);
++    if (!r.ok) throw await _httpError(r);
+     const d = await r.json().catch(() => ({}));
+     if (d.event && d.event.uid) _allEvents[d.event.uid] = d.event;
+     if (isRecurring) {
+@@ -351,12 +371,12 @@ async function _deleteEvent(uid, { scope = 'series' } = {}) {
+   const scopeParam = scope === 'occurrence' ? '?scope=occurrence' : '';
+   fetch(`${API_BASE}/api/calendar/events/${encodeURIComponent(uid)}${scopeParam}`, {
+     method: 'DELETE', credentials: 'same-origin',
+-  }).then(r => {
++  }).then(async r => {
+     // 404 = the event was already deleted by another session/device. That's
+     // exactly the state we want, so treat it as success — don't restore the
+     // row, otherwise the user can never clear stale cached events that were
+     // deleted from desktop while mobile was open (and vice versa).
+-    if (!r.ok && r.status !== 404) throw new Error('HTTP ' + r.status);
++    if (!r.ok && r.status !== 404) throw await _httpError(r);
+     if (isRecurring) {
+       _fetchedRanges = [];
+       localStorage.removeItem(LS_KEY);
+@@ -646,12 +666,14 @@ function _showEventMoreMenu(ev, anchor) {
+ 
+   const _editIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+ 
+-  dropdown.appendChild(_item(_editIcon, 'Edit', () => {
++  // Wings (patch 0025): an event from a calendar added by link can only be
++  // looked at here; it changes in the app that owns the calendar.
++  dropdown.appendChild(_item(_editIcon, ev.read_only ? 'View (read only)' : 'Edit', () => {
+     closeMenu();
+     _showEventForm(ev);
+   }));
+ 
+-  dropdown.appendChild(_item(_trashIcon, 'Delete', async () => {
++  if (!ev.read_only) dropdown.appendChild(_item(_trashIcon, 'Delete', async () => {
+     closeMenu();
+     await _confirmAndDeleteEvent(ev);
+   }, true));
+@@ -971,15 +993,16 @@ function _renderEmpty() {
+         <line x1="3" y1="10" x2="21" y2="10"/>
+       </svg>
+       <div class="cal-empty-title">${hasError ? 'Calendar unavailable' : 'No calendars yet'}</div>
+-      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Create a local calendar, import an .ics file, or sync via CalDAV.'}</div>
++      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Add your Google, iCloud or Outlook calendar, create a calendar here, or import an .ics file.'}</div>
+       ${hasError ? `
+         <button class="cal-btn cal-btn-primary" id="cal-goto-settings">Open Settings</button>
+       ` : `
+         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
+-          <button class="cal-btn cal-btn-primary" id="cal-empty-new">New calendar</button>
++          <button class="cal-btn cal-btn-primary" id="cal-empty-accounts" data-ow-cal-accounts="calendar-link">Add a calendar</button>
++          <button class="cal-btn" id="cal-empty-new">New calendar</button>
+           <button class="cal-btn" id="cal-empty-import">Import .ics</button>
+         </div>
+-        <div style="margin-top:10px;font-size:11px;opacity:0.55;">Or <a href="#" id="cal-empty-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">set up CalDAV sync</a>.</div>
++        <div style="margin-top:10px;font-size:11px;opacity:0.55;">Other / manual: <a href="#" id="cal-empty-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">set up CalDAV sync</a>.</div>
+       `}
+     </div>`;
+   document.getElementById('cal-goto-settings')?.addEventListener('click', () => {
+@@ -994,6 +1017,11 @@ function _renderEmpty() {
+   // New / Import open the calendar settings panel; the panel already
+   // has the "New calendar" button and the .ics file picker. Import
+   // triggers the file picker immediately so it's a one-click flow.
++  // Wings (patch 0025): "Add a calendar" opens Connect your accounts.
++  document.getElementById('cal-empty-accounts')?.addEventListener('click', () => {
++    closeCalendar();
++    if (window.owGoToAccounts) window.owGoToAccounts('calendar-link');
++  });
+   document.getElementById('cal-empty-new')?.addEventListener('click', () => {
+     _showCalSettings();
+     setTimeout(() => document.getElementById('cal-settings-add')?.click(), 50);
+@@ -1207,7 +1235,7 @@ async function _renderMonth() {
+           const _impMark = ev.importance === 'critical' ? '<span style="color:var(--red);margin-right:2px" title="critical">!!</span>'
+                          : ev.importance === 'high' ? '<span style="color:var(--orange,#e5a33a);margin-right:2px" title="high">!</span>' : '';
+           const _typeBadge = ev.event_type ? `<span class="cal-event-type-badge" data-type="${_e(ev.event_type)}" title="${_e(ev.event_type)}"></span>` : '';
+-          h += `<div class="cal-event-row" draggable="true" data-uid="${_e(ev.uid)}" title="${_e(ev.summary)}${ev.event_type ? ' · ' + ev.event_type : ''}${ev.importance && ev.importance !== 'normal' ? ' · ' + ev.importance : ''}">
++          h += `<div class="cal-event-row" draggable="${ev.read_only ? 'false' : 'true'}" data-uid="${_e(ev.uid)}" title="${_e(ev.summary)}${ev.event_type ? ' · ' + ev.event_type : ''}${ev.importance && ev.importance !== 'normal' ? ' · ' + ev.importance : ''}">
+             <span class="cal-event-row-dot" style="background:${_calColor(ev)}"></span>
+             ${_typeBadge}
+             ${t ? `<span class="cal-event-row-time">${t}</span>` : ''}
+@@ -1268,7 +1296,7 @@ async function _renderMonth() {
+           }
+         } catch (_) { startFrac = 0; endFrac = 1; }
+       }
+-      h += `<div class="cal-multiday" style="--col:${startColInt};--span:${span};--slot:${barSlot};--start-frac:${startFrac.toFixed(4)};--end-frac:${endFrac.toFixed(4)};background:${_calColor(md)};--cal-event-fg:${_calEventFg(md)}" draggable="true" data-uid="${_e(md.uid)}" title="${_e(md.summary)}">${_e(md.summary)}${_eventReminderHtml(md)}${_eventSourceHtml(md)}</div>`;
++      h += `<div class="cal-multiday" style="--col:${startColInt};--span:${span};--slot:${barSlot};--start-frac:${startFrac.toFixed(4)};--end-frac:${endFrac.toFixed(4)};background:${_calColor(md)};--cal-event-fg:${_calEventFg(md)}" draggable="${md.read_only ? 'false' : 'true'}" data-uid="${_e(md.uid)}" title="${_e(md.summary)}">${_e(md.summary)}${_eventReminderHtml(md)}${_eventSourceHtml(md)}</div>`;
+       barSlot++;
+     }
+     h += '</div>';
+@@ -1749,7 +1777,7 @@ async function _renderWeek() {
+       colsHtml += `<div class="cal-wk-block-name">${_e(ev.summary)}${_eventReminderHtml(ev)}${_eventSourceHtml(ev)}</div>`;
+       colsHtml += `<div class="cal-wk-block-time">${t}</div>`;
+       colsHtml += `</div>`;
+-      colsHtml += `<div class="cal-wk-block-resize" title="Drag to resize"></div>`;
++      if (!ev.read_only) colsHtml += `<div class="cal-wk-block-resize" title="Drag to resize"></div>`;
+       colsHtml += `</div>`;
+     }
+     colsHtml += `</div></div>`;  // /cal-wk-grid /cal-wk-col
+@@ -1815,10 +1843,11 @@ async function _renderWeek() {
+     block.addEventListener('mousedown', (e) => {
+       if (e.button !== 0) return;
+       if (e.target.classList.contains('cal-wk-block-resize')) return; // resize wins
+-      e.preventDefault();
+       const uid = block.dataset.uid;
+       const ev = _events.find(x => x.uid === uid);
+-      if (!ev) return;
++      // Wings (patch 0025): events from a calendar added by link cannot move.
++      if (!ev || ev.read_only) return;
++      e.preventDefault();
+       const cols = Array.from(body.querySelectorAll('.cal-wk-grid'));
+       if (!cols.length) return;
+       // Local/display timing
+@@ -1940,7 +1969,7 @@ async function _renderWeek() {
+       const ds = grid.dataset.date;
+       const uid = block.dataset.uid;
+       const ev = _events.find(x => x.uid === uid);
+-      if (!ev || !grid || !ds) return;
++      if (!ev || !grid || !ds || ev.read_only) return;
+       const startMin = _timeToMin(ev.dtstart) ?? 0;
+       const initialTop = parseFloat(block.style.top || '0');
+       const gridRect = grid.getBoundingClientRect();
+@@ -3129,6 +3158,7 @@ async function _showCalSettings() {
+             ${cals.map(c => `
+               <div class="cal-settings-row" data-id="${_e(c.href)}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:color-mix(in srgb, var(--fg) 4%, transparent);">
+                 <input type="text" value="${_e(c.name)}" class="cal-s-name" style="flex:1;min-width:0;background:none;border:1px solid ${_calendarSettingsColor(c.color)};border-radius:4px;padding:3px 6px;color:var(--fg);font-size:12px;" />
++                ${c.read_only ? '<span title="Added by link: OpenWings shows it but cannot change it" style="font-size:10px;opacity:0.6;white-space:nowrap;">read only</span>' : ''}
+                 <input type="color" value="${_calendarSettingsColor(c.color)}" class="cal-s-color" title="Calendar color" aria-label="Calendar color for ${_e(c.name)}" style="width:24px;height:24px;border:none;background:none;cursor:pointer;padding:0;border-radius:50%;overflow:hidden;flex-shrink:0;" />
+                 <button class="cal-s-del" title="Delete calendar" style="background:none;border:none;color:var(--accent, var(--red));opacity:0.75;cursor:pointer;padding:2px;display:flex;position:relative;top:4px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+               </div>
+@@ -3142,7 +3172,16 @@ async function _showCalSettings() {
+           </div>
+         </div>
+         <div style="border-top:1px solid var(--border);padding-top:12px;">
+-          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Import calendar</div>
++          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Add a calendar</div>
++          <div style="font-size:10px;opacity:0.4;margin-bottom:6px;">From your accounts: a share link works for Google, Outlook, iCloud and most calendar apps (read only). Sign in with Google, or connect iCloud with an app password, to change events too.</div>
++          <div class="cal-settings-actions" style="gap:6px;flex-wrap:wrap;">
++            <button class="memory-toolbar-btn" data-ow-cal-accounts="calendar-link" style="cursor:pointer;">By link (read only)</button>
++            <button class="memory-toolbar-btn" data-ow-cal-accounts="google" style="cursor:pointer;">Google Calendar</button>
++            <button class="memory-toolbar-btn" data-ow-cal-accounts="icloud" style="cursor:pointer;">iCloud Calendar</button>
++          </div>
++        </div>
++        <div style="border-top:1px solid var(--border);padding-top:12px;">
++          <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Import calendar (other / manual)</div>
+           <div style="font-size:10px;opacity:0.4;margin-bottom:6px;">Upload a .ics file to import events. Google Calendar, Apple Calendar, and Outlook all export .ics files.</div>
+           <div class="cal-settings-actions" style="gap:8px;align-items:center;">
+             <span id="cal-import-status" style="font-size:11px;opacity:0.6;"></span>
+@@ -3373,6 +3412,13 @@ async function _showCalSettings() {
+     btn.disabled = false;
+   });
+ 
++  // Wings (patch 0025): the "Add a calendar" buttons open Connect your accounts.
++  overlay.querySelectorAll('[data-ow-cal-accounts]').forEach((b) => b.addEventListener('click', (e) => {
++    e.preventDefault();
++    cleanup();
++    closeCalendar();
++    if (window.owGoToAccounts) window.owGoToAccounts(b.dataset.owCalAccounts);
++  }));
+   // Integrations link — close this overlay and open Settings → Integrations.
+   overlay.querySelector('#cal-settings-open-caldav')?.addEventListener('click', (e) => {
+     e.preventDefault();
+@@ -3438,7 +3484,11 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+   // Default to all-day when dragging across multiple days
+   const ad = existing ? existing.all_day : (defaultEndDate && defaultEndDate !== defaultDate);
+ 
+-  let calOpts = _calendars.filter(c => !_hiddenCals.has(c.href)).map(c =>
++  // Wings (patch 0025): calendars added by link are read only. Their
++  // events open as a read-only view; new events go to other calendars.
++  const _readOnly = !!(existing && (existing.read_only || (_calendars.find(c => c.href === existing.calendar_href) || {}).read_only));
++  const _writableCals = _calendars.filter(c => !c.read_only || (existing && existing.calendar_href === c.href));
++  let calOpts = _writableCals.filter(c => !_hiddenCals.has(c.href)).map(c =>
+     `<option value="${_e(c.href)}" ${existing && existing.calendar_href === c.href ? 'selected' : ''}>${_e(c.name)}</option>`
+   ).join('');
+ 
+@@ -3473,6 +3523,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+     </button>
+     <div class="cal-form-today" id="cal-form-today">Today is <span id="cal-form-today-text">${_clockDate(_today())} · ${_nowClock()}</span></div>
++    ${_readOnly ? '<div class="cal-f-readonly" role="note" style="font-size:12.5px;line-height:1.45;padding:8px 10px;margin:4px 0 8px;border:1px solid var(--border);border-left:3px solid var(--accent, var(--red));border-radius:8px;background:color-mix(in srgb, var(--fg) 4%, transparent);"><strong>Read only.</strong> This event comes from a calendar added by link. Change it in the app that owns the calendar.</div>' : ''}
+     <div class="cal-hero">
+       <button type="button" class="cal-hero-time" id="cal-hero-time" title="Change time">
+         <span class="cal-hero-clock" id="cal-hero-clock">${_clockFace(ad ? '' : st)}</span>
+@@ -3593,13 +3644,14 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+           }).join('')}
+         </div>
+       </div>
+-      ${_calendars.length > 1 ? `<select id="cal-f-cal" class="cal-input cal-f-cal-select">${calOpts}</select>` : ''}
++      ${_writableCals.length > 1 ? `<select id="cal-f-cal" class="cal-input cal-f-cal-select">${calOpts}</select>` : ''}
++      <label id="cal-f-meet-row" class="cal-f-meet-row" hidden style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px;cursor:pointer;"><input type="checkbox" id="cal-f-meet"> Add a Google Meet link</label>
+     </div>
+ 
+     <div class="cal-form-actions">
+-      ${isEdit ? `<button id="cal-f-del" class="cal-btn cal-btn-danger" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</button>` : ''}
++      ${isEdit && !_readOnly ? `<button id="cal-f-del" class="cal-btn cal-btn-danger" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</button>` : ''}
+       <button id="cal-f-cancel" class="cal-btn" style="display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Cancel</button>
+-      <button id="cal-f-save" class="cal-btn cal-btn-primary" style="display:inline-flex;align-items:center;gap:5px;">${isEdit
++      <button id="cal-f-save" class="cal-btn cal-btn-primary" style="display:${_readOnly ? 'none' : 'inline-flex'};align-items:center;gap:5px;">${isEdit
+         ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Save'
+         : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create'}</button>
+     </div>
+@@ -3639,6 +3691,28 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+       });
+     });
+   }
++  // Wings (patch 0025): "Add a Google Meet link" for Google calendars.
++  const _selectedCal = () => _calendars.find(c => c.href === (document.getElementById('cal-f-cal')?.value || _writableCals[0]?.href || ''));
++  const _syncMeetRow = () => {
++    const row = document.getElementById('cal-f-meet-row');
++    if (!row) return;
++    const g = _selectedCal();
++    const already = !!(existing && /https:\/\/meet\.google\.com\//.test(`${existing.location || ''} ${existing.description || ''}`));
++    row.hidden = !(g && g.google) || _readOnly || already;
++    row.style.display = row.hidden ? 'none' : 'flex';
++  };
++  document.getElementById('cal-f-cal')?.addEventListener('change', _syncMeetRow);
++  _syncMeetRow();
++  // Wings (patch 0025): a read-only event shows its details without fields
++  // that look editable (only Cancel / close stay active).
++  if (_readOnly) {
++    document.querySelectorAll('.cal-form-bespoke input, .cal-form-bespoke select, .cal-form-bespoke textarea, .cal-form-bespoke .cal-hero button, .cal-form-bespoke [data-color]').forEach((el) => {
++      el.disabled = true;
++      el.setAttribute('aria-disabled', 'true');
++    });
++    document.querySelector('.cal-form-bespoke')?.classList.add('is-expanded');
++    document.getElementById('cal-form-details')?.setAttribute('aria-hidden', 'false');
++  }
+   // Tint the calendar-picker select with the chosen calendar's colour so it's
+   // clear which calendar the event lands in.
+   const _calSel = document.getElementById('cal-f-cal');
+@@ -3863,7 +3937,9 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+       description: document.getElementById('cal-f-desc').value,
+       location: document.getElementById('cal-f-loc').value,
+ 	      rrule: document.getElementById('cal-f-rrule').value || '',
+-	      calendar_href: document.getElementById('cal-f-cal')?.value || (_calendars[0]?.href || ''),
++	      // Wings (patch 0025): with no picker, the first calendar that can
++	      // take new events (never a read-only one added by link).
++	      calendar_href: document.getElementById('cal-f-cal')?.value || ((isEdit ? existing.calendar_href : '') || (_writableCals.find(c => !c.read_only) || {}).href || ''),
+ 	      color: colorVal || undefined,
+ 	      event_type: document.getElementById('cal-f-type')?.value || '',
+ 	    };
+@@ -3875,6 +3951,24 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
+     }
+     try {
+       const saved = isEdit ? await _updateEvent(existing.uid, payload) : await _createEvent(payload);
++      // Wings (patch 0025): add the Meet link once the event is in Google.
++      const _wantMeet = !!document.getElementById('cal-f-meet')?.checked && !document.getElementById('cal-f-meet-row')?.hidden;
++      const _meetUid = (saved && saved.uid && !String(saved.uid).startsWith('temp-')) ? saved.uid : (existing && existing.uid);
++      if (_wantMeet && _meetUid) {
++        fetch('/api/wings/accounts/google/meet', {
++          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
++          body: JSON.stringify({ uid: String(_meetUid).split('::')[0] }),
++        }).then(r => r.json().catch(() => ({}))).then(d => {
++          if (d && d.ok) {
++            uiModule.showToast('Google Meet link added.');
++            _allEvents = {}; _fetchedRanges = [];
++            try { localStorage.removeItem(LS_KEY); } catch (_) {}
++            if (_open) _render();
++          } else {
++            uiModule.showToast((d && d.message) || 'Google did not add a Meet link.');
++          }
++        }).catch(() => uiModule.showToast('Google did not add a Meet link.'));
++      }
+       // Custom exact-time reminders are still note-backed because they do not
+       // map to a stable "N minutes before" value.
+       if (remindVal === 'custom') {
+diff --git a/static/js/settings.js b/static/js/settings.js
+index 2f631b9..0d32722 100644
+--- a/static/js/settings.js
++++ b/static/js/settings.js
+@@ -2528,7 +2528,8 @@ async function initEmailAccountsSettings() {
+       .join('');
+     const _smtpSecurity = (acct) => acct?.smtp_security || ((parseInt(acct?.smtp_port || 465) === 587) ? 'starttls' : 'ssl');
+     formEl.innerHTML = `
+-      <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Account' : 'New Account'}</h3>
++      <h3 style="font-size:12px;margin:0 0 8px">${isEdit ? 'Edit Account' : 'Other / manual account'}</h3>
++      ${isEdit ? '' : _owAccountsPointer()}
+       <div class="settings-col">
+         <div class="settings-row"><label class="settings-label">Provider${_hint('Pick a known provider to auto-fill the IMAP and SMTP host/port. Choose Custom to type your own.')}</label><select id="eaf-provider" class="settings-select"><option value="">Custom…</option>${_providerOptions}</select></div>
+         <div id="eaf-provider-note" style="display:none;font-size:11px;line-height:1.5;padding:8px 10px;margin:2px 0 4px;border:1px solid color-mix(in srgb, var(--fg) 15%, transparent);border-left:3px solid var(--accent, var(--red));border-radius:4px;background:color-mix(in srgb, var(--fg) 4%, transparent);"></div>
+@@ -3203,6 +3204,18 @@ function _owToggleAccountFields(noteEl, buttonEl, hide) {
+ // go to each provider's own page: Google's app passwords page and Apple's
+ // account page (both named on their help pages, support.google.com/accounts/
+ // answer/185833 and support.apple.com/102654), Yahoo's Account Security page.
++// Wings (patch 0025): the email forms point to Connect your accounts
++// (Settings > Integrations) for Gmail, iCloud, Yahoo and Google sign-in; the
++// form itself stays for other or manual setups.
++function _owAccountsPointer() {
++  const b = (id, label) => `<button type="button" class="admin-btn-sm" data-ow-open-accounts="${id}">${label}</button>`;
++  return `<div class="ow-acct-pointer" style="font-size:11.5px;line-height:1.5;padding:8px 10px;margin:0 0 8px;border:1px solid var(--border);border-left:3px solid var(--accent, var(--red));border-radius:6px;background:color-mix(in srgb, var(--fg) 4%, transparent);">
++      <div style="margin-bottom:6px;">Gmail, iCloud or Yahoo? Connect your accounts does it in a few steps and tests the password first.</div>
++      <div style="display:flex;gap:6px;flex-wrap:wrap;">${b('gmail', 'Gmail')}${b('icloud', 'iCloud')}${b('yahoo', 'Yahoo')}${b('google', 'Sign in with Google')}</div>
++      <div style="margin-top:6px;opacity:0.75;">The form below is for any other mail server.</div>
++    </div>`;
++}
++
+ const OW_EMAIL_PROVIDER_NOTES = {
+   gmail: {
+     title: 'Gmail needs an app password',
+@@ -4099,7 +4112,8 @@ async function initUnifiedIntegrations() {
+     const _smtpSecurity = (acct) => acct?.smtp_security || ((parseInt(acct?.smtp_port || 465) === 587) ? 'starttls' : 'ssl');
+     formEl.innerHTML = `
+       <div class="admin-card" style="margin-top:8px">
+-        <h2 style="font-size:13px">${isEdit ? 'Edit' : 'Add'} Email Account</h2>
++        <h2 style="font-size:13px">${isEdit ? 'Edit Email Account' : 'Other / manual email account'}</h2>
++        ${isEdit ? '' : _owAccountsPointer()}
+         <div class="settings-col">
+           <div class="settings-row"><label class="settings-label">Provider${_hint('Pick a known provider to auto-fill the IMAP and SMTP host/port. Choose Custom to type your own.')}</label>
+             <div class="ufp-wrap" style="position:relative;flex:1;min-width:0;">
+diff --git a/static/js/wings-connect.js b/static/js/wings-connect.js
+index 60c8389..8822abb 100644
+--- a/static/js/wings-connect.js
++++ b/static/js/wings-connect.js
+@@ -4,8 +4,10 @@
+ //   shows a short "Connect your AI" panel in #welcome-setup (left empty
+ //   upstream) to an admin, and one line saying whom to ask to a member.
+ // * Settings > Add Models: the same choices as a "Connect your AI" card.
+-// * Settings > Integrations: a "Connect your apps" card grid at the top.
+-// * Coming back from OpenRouter (?ow_connect=...): a short note.
++// * Settings > Integrations: "Connect your accounts" at the top (patch 0025):
++//   mail and calendar, files and notes, work apps (the 0021 app cards).
++// * Coming back from OpenRouter (?ow_connect=...) or from Sign in with
++//   Google (?ow_accounts=..., patch 0025): a short note.
+ // * Use your ChatGPT plan (patch 0022): OpenAI's official Sign in with
+ //   ChatGPT (wings/chatgpt_plan.py), a "Continue with ChatGPT" button, the
+ //   first-use note, and "Using ChatGPT plan" beside the model picker.
+@@ -17,6 +19,10 @@
+ // styles these too; the few rules below only lay them out.
+ import uiModule from './ui.js?v=20260916largetoolscroll1';
+ import settingsModule from './settings.js?v=20260912writingstyle3';
++// Same module instance as ui.js's (same URL): upstream's Escape arbiter
++// closes the newest registered layer first, so a dialog here closes before
++// the Settings window behind it.
++import { registerEscapeLayer } from './escMenuStack.js';
+ 
+ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+ 
+@@ -174,6 +180,44 @@ function injectStyle() {
+     .ow-gpt-chip a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+     .ow-gpt-chip .ow-gpt-mark { display: inline-flex; width: 14px; height: 14px; border-radius: 50%; background: #000; align-items: center; justify-content: center; }
+     .ow-connect .ow-choice.ow-flash { outline: 2px solid var(--accent, var(--red)); outline-offset: 1px; }
++    /* Connect your accounts (patch 0025). */
++    .ow-acct-group { margin-top: 10px; }
++    .ow-acct-group:first-child { margin-top: 0; }
++    .ow-acct-group-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg); margin: 0 0 6px 2px; }
++    .ow-apps-grid .intg-card.ow-flash { outline: 2px solid var(--accent, var(--red)); outline-offset: 1px; }
++    .ow-feed-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
++    .ow-feed-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; }
++    .ow-feed-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
++    .ow-feed-name { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
++    .ow-feed-sub { display: block; font-weight: 400; opacity: 0.65; font-size: 10.5px; }
++    .ow-acct-dialog .modal-content { max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
++    .ow-acct-body { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.45; }
++    .ow-acct-body a, .ow-apps-grid a:not(.admin-btn-add) { color: var(--accent, var(--red)); text-decoration: underline; text-underline-offset: 2px; opacity: 1; }
++    .ow-acct-lead { opacity: 0.9; }
++    .ow-acct-steps { margin: 0 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
++    .ow-acct-wizard li { line-height: 1.5; }
++    .ow-acct-label { font-size: 12px; font-weight: 600; margin-bottom: -4px; }
++    .ow-acct-body .settings-input { width: 100%; box-sizing: border-box; }
++    .ow-acct-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; cursor: pointer; }
++    .ow-acct-check input { margin-top: 3px; flex-shrink: 0; }
++    .ow-acct-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
++    .ow-acct-warn { font-size: 12px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); border-left: 3px solid var(--accent, var(--red)); background: color-mix(in srgb, var(--fg) 4%, transparent); }
++    .ow-acct-or { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg); text-align: center; margin: 4px 0; }
++    .ow-acct-choice { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
++    .ow-acct-details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--fg); opacity: 1; }
++    .ow-acct-details > div { margin-top: 6px; font-size: 13px; }
++    .ow-acct-dl { margin: 6px 0 0; font-size: 13px; }
++    .ow-acct-dl dt { font-weight: 600; margin-top: 6px; }
++    .ow-acct-dl dd { margin: 2px 0 0; font-size: 13px; }
++    .ow-acct-dl dd a { font-size: 13px; }
++    .ow-acct-notpossible { font-size: 11.5px; line-height: 1.45; margin-top: 10px; color: var(--fg); }
++    .ow-acct-copy { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
++    .ow-acct-copy code { flex: 1 1 200px; min-width: 0; padding: 5px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 7%, transparent); font-size: 11.5px; word-break: break-all; user-select: all; }
++    .ow-acct-body .adm-ep-inline-msg:empty, .ow-apps-grid .adm-ep-inline-msg:empty { display: none; }
++    @media (max-width: 560px) {
++      .ow-apps-grid { grid-template-columns: 1fr; }
++      .ow-acct-dialog .modal-content { width: calc(100vw - 16px) !important; }
++    }
+     #ow-gpt-welcome .modal-content { max-width: 420px; }
+     #ow-gpt-welcome .ow-gpt-welcome-logo { display: flex; justify-content: center; margin: 4px 0 10px; }
+     #ow-gpt-welcome .ow-gpt-welcome-logo span { display: inline-flex; width: 44px; height: 44px; border-radius: 50%; background: #000; align-items: center; justify-content: center; }
+@@ -971,37 +1015,6 @@ async function loadServers() {
+ const AI_ICON = '<svg class="ow-card-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
+ const APP_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
+ 
+-async function renderAppsGrid(card) {
+-  const st = await fetchStatus();
+-  const grid = card.querySelector('.ow-apps-grid');
+-  if (!grid) return;
+-  const servers = await loadServers();
+-  grid.innerHTML = (st.apps || []).map((app) => {
+-    const s = appState(app, servers);
+-    const connected = s.dot === 'on';
+-    const buttons = [];
+-    const finishUrl = s.srv && s.srv.status === 'needs_auth' ? safeAuthUrl(s.srv.auth_url) : null;
+-    if (!s.srv || (s.fresh && !finishUrl)) {
+-      buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">${s.error ? 'Try again' : 'Connect'}</button>`);
+-    } else {
+-      if (finishUrl) {
+-        buttons.push(`<a class="admin-btn-add" style="text-decoration:none;" href="${esc(finishUrl)}" target="_blank" rel="noopener noreferrer">Finish sign-in</a>`);
+-        buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-connect="${esc(app.slug)}">Start over</button>`);
+-      } else if (!connected) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Reconnect</button>`);
+-      buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-disconnect="${esc(s.srv.id)}" data-ow-app-name="${esc(app.name)}">Disconnect</button>`);
+-    }
+-    return `<div class="intg-card" data-ow-app="${esc(app.slug)}">
+-      <div class="ow-app-head"><span style="color:var(--accent, var(--red));display:inline-flex;">${APP_ICON}</span>${esc(app.name)}</div>
+-      <div class="ow-app-about">${esc(app.about)}</div>
+-      <div class="ow-app-state"><span class="ow-app-dot ${s.dot}"></span><span data-ow-app-label>${esc(s.label)}</span></div>
+-      ${s.error ? `<div class="ow-app-error">${esc(s.error)}</div>` : ''}
+-      <div class="ow-app-actions">${buttons.join('')}</div>
+-      <div class="adm-ep-inline-msg" data-ow-app-msg></div>
+-      ${app.note ? `<div class="ow-app-note">${esc(app.note)}</div>` : ''}
+-    </div>`;
+-  }).join('');
+-}
+-
+ function safeAuthUrl(u) {
+   try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; }
+ }
+@@ -1039,14 +1052,14 @@ async function connectApp(card, slug) {
+     if (d.connected || d.status === 'connected') {
+       if (tab) tab.close();
+       setMsg(msg, 'Connected.', 'ok');
+-      return renderAppsGrid(card);
++      return renderAccounts(card);
+     }
+     let authUrl = safeAuthUrl(d.auth_url);
+     for (let i = 0; !authUrl && i < 20; i++) {
+       await new Promise((res) => setTimeout(res, 1500));
+       const s = (await loadServers()).find((x) => x.id === serverId);
+       if (s && s.status === 'error') throw new Error(s.error || 'the app did not answer');
+-      if (s && s.status === 'connected') { if (tab) tab.close(); return renderAppsGrid(card); }
++      if (s && s.status === 'connected') { if (tab) tab.close(); return renderAccounts(card); }
+       authUrl = safeAuthUrl(s && s.auth_url);
+     }
+     if (!authUrl) throw new Error('the sign-in page did not come up');
+@@ -1083,20 +1096,20 @@ async function connectApp(card, slug) {
+       await new Promise((res) => setTimeout(res, 2000));
+       const s = (await loadServers()).find((x) => x.id === serverId);
+       if (!s) break;
+-      if (s.status === 'connected') { await renderAppsGrid(card); return; }
++      if (s.status === 'connected') { await renderAccounts(card); return; }
+       if (s.status === 'error') throw new Error(s.error || 'sign-in failed');
+       if (s.status !== 'needs_auth' && s.status !== 'connecting') {
+         // Cancelled on the app's own page: the server ended the sign-in.
+-        await renderAppsGrid(card);
++        await renderAccounts(card);
+         const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
+         setMsg(m, 'Sign-in cancelled. Nothing was connected.');
+         return;
+       }
+     }
+-    await renderAppsGrid(card);
++    await renderAccounts(card);
+   } catch (e) {
+     if (tab && !tab.closed) { try { tab.close(); } catch (_) {} }
+-    await renderAppsGrid(card);
++    await renderAccounts(card);
+     const m = card.querySelector(`[data-ow-app="${CSS.escape(slug)}"] [data-ow-app-msg]`);
+     // The card itself now shows the reason under its label.
+     if (!m || !m.closest('[data-ow-app]')?.querySelector('.ow-app-error')) {
+@@ -1111,35 +1124,605 @@ async function disconnectApp(card, serverId, name) {
+     : window.confirm(`Disconnect ${name}?`);
+   if (!ok) return;
+   try { await fetch(`/api/mcp/servers/${encodeURIComponent(serverId)}`, { method: 'DELETE', credentials: 'same-origin' }); } catch (_) {}
+-  await renderAppsGrid(card);
++  await renderAccounts(card);
++}
++
++// ------------------------------------------------------------ Connect your accounts (patch 0025)
++//
++// One card in Settings > Integrations for every account a person can
++// connect: mail and calendar, files and notes, work apps. Each person
++// connects their own (the work apps are connected by an admin for everyone,
++// as in patch 0021). Back end: wings/accounts_routes.py.
++//
++// Cards are an ordered list so a later patch can add one in its place:
++// patch 0026 puts "Outlook / Microsoft 365" right after Yahoo (see
++// ACCOUNT_CARDS and addAccountCard).
++
++const ACCOUNT_GROUPS = [
++  { id: 'mail', title: 'Mail and calendar' },
++  { id: 'files', title: 'Files and notes' },
++  { id: 'work', title: 'Work apps' },
++];
++
++const MAIL_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>';
++const CAL_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
++const LINK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
++
++// Card list. kind: 'mail' (app password), 'google', 'feed', 'app' (0021 apps).
++const ACCOUNT_CARDS = [
++  { id: 'gmail', group: 'mail', kind: 'mail', provider: 'gmail', name: 'Gmail', icon: MAIL_ICON, about: 'Your Gmail inbox and sending, with an app password.' },
++  { id: 'google', group: 'mail', kind: 'google', name: 'Google Calendar and Drive', icon: CAL_ICON, about: 'Sign in with Google: Gmail, your main Google calendar with Meet links, and Drive. Needs a free one-time setup by your admin.', aboutReady: 'Sign in with Google: Gmail, your main Google calendar with Meet links, and Drive.' },
++  { id: 'icloud', group: 'mail', kind: 'mail', provider: 'icloud', name: 'iCloud', icon: MAIL_ICON, about: 'iCloud Mail and, if you like, iCloud Calendar.' },
++  { id: 'yahoo', group: 'mail', kind: 'mail', provider: 'yahoo', name: 'Yahoo', icon: MAIL_ICON, about: 'Your Yahoo inbox and sending, with an app password.' },
++  // Patch 0026 adds { id: 'microsoft', ... } "Outlook / Microsoft 365" here.
++  { id: 'calendar-link', group: 'mail', kind: 'feed', name: 'Calendar by link', icon: LINK_ICON, about: 'Any calendar with a share link: Google, Outlook, iCloud and more. Read only.' },
++  { id: 'notion', group: 'files', kind: 'app', slug: 'notion' },
++  { id: 'linear', group: 'work', kind: 'app', slug: 'linear' },
++  { id: 'atlassian', group: 'work', kind: 'app', slug: 'atlassian' },
++];
++
++// For a later patch: add a card after another one (or at the end).
++function addAccountCard(card, { after } = {}) {
++  if (ACCOUNT_CARDS.some((c) => c.id === card.id)) return;
++  const at = after ? ACCOUNT_CARDS.findIndex((c) => c.id === after) : -1;
++  if (at < 0) ACCOUNT_CARDS.push(card);
++  else ACCOUNT_CARDS.splice(at + 1, 0, card);
++  const host = document.getElementById('ow-connect-apps-card');
++  if (host) renderAccounts(host);
++}
++window.owAccounts = { addAccountCard, open: (id) => openAccountCard(id) };
++
++const ACCOUNT_ERRORS = {
++  denied: 'Google sign-in was cancelled. Nothing was changed.',
++  expired: 'That sign-in ran out of time or was already used. Press Sign in with Google again.',
++  other_user: 'That sign-in was started by another OpenWings account. Press Sign in with Google again.',
++  not_signed_in: 'Sign in to OpenWings in this browser first, then try again.',
++  no_client: 'Sign in with Google is not set up on this OpenWings yet. Ask your admin.',
++  invalid_client: 'Google did not accept this OpenWings\' client ID or secret. Ask your admin to check them.',
++  redirect_mismatch: 'Google says the redirect address does not match. Ask your admin to check the redirect URI in the Google console.',
++  exchange_failed: 'Google did not hand over access. Please try again.',
++  no_email: 'Google did not say which account signed in. Please try again.',
++  save_failed: 'You signed in, but the account could not be saved. Please try again.',
++  missing_code: 'The sign-in came back without a code. Please try again.',
++  no_code: 'The sign-in came back without a code. Please try again.',
++};
++const FEATURE_NAMES = { mail: 'Mail', calendar: 'Calendar', drive: 'Drive' };
++const listWords = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
++
++let _accounts = null;
++
++async function fetchAccounts() {
++  try {
++    const r = await fetch('/api/wings/accounts/status', { credentials: 'same-origin' });
++    _accounts = r.ok ? await r.json() : null;
++  } catch (_) { _accounts = null; }
++  return _accounts;
++}
++
++async function postJson(url, body, method = 'POST') {
++  const r = await fetch(url, {
++    method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
++    body: body === undefined ? undefined : JSON.stringify(body),
++  });
++  const d = await r.json().catch(() => ({}));
++  return { ok: r.ok && d.ok !== false, status: r.status, data: d };
++}
++
++function cardShell(c, { label, dot = '', buttons = [], error = '', note = '' }) {
++  return `<div class="intg-card" data-ow-acct="${esc(c.id)}">
++    <div class="ow-app-head"><span style="color:var(--accent, var(--red));display:inline-flex;">${c.icon || APP_ICON}</span>${esc(c.name)}</div>
++    <div class="ow-app-about">${esc(c.about || '')}</div>
++    <div class="ow-app-state"><span class="ow-app-dot ${dot}"></span><span data-ow-app-label>${esc(label)}</span></div>
++    ${error ? `<div class="ow-app-error">${esc(error)}</div>` : ''}
++    <div class="ow-app-actions">${buttons.join('')}</div>
++    <div class="adm-ep-inline-msg" data-ow-app-msg></div>
++    ${note ? `<div class="ow-app-note">${esc(note)}</div>` : ''}
++  </div>`;
++}
++
++const btn = (label, attrs, primary = false) => `<button type="button" class="${primary ? 'admin-btn-add' : 'admin-btn-sm'}" ${attrs}>${esc(label)}</button>`;
++
++function mailCardHtml(c, acc) {
++  const mine = (acc.mail || []).filter((m) => m.provider === c.provider);
++  if (!mine.length) {
++    const gmailOAuth = c.provider === 'gmail' && (acc.mail || []).some((m) => m.provider === 'google_oauth');
++    return cardShell(c, {
++      label: gmailOAuth ? 'Connected with Sign in with Google' : 'Not connected',
++      dot: gmailOAuth ? 'on' : '',
++      buttons: gmailOAuth ? [] : [btn('Connect', `data-ow-acct-open="${esc(c.id)}"`, true)],
++    });
++  }
++  const buttons = [btn('Add another', `data-ow-acct-open="${esc(c.id)}"`)];
++  mine.forEach((m) => buttons.push(btn(mine.length > 1 ? `Disconnect ${m.address}` : 'Disconnect',
++    `data-ow-mail-remove="${esc(m.id)}" data-ow-name="${esc(m.address)}"`)));
++  const cal = c.provider === 'icloud' && (acc.caldav || []).some((x) => x.kind === 'icloud');
++  return cardShell(c, {
++    label: `Connected as ${mine.map((m) => m.address).join(', ')}${cal ? ' · Calendar too' : ''}`,
++    dot: 'on', buttons,
++  });
++}
++
++function googleCardHtml(c, acc) {
++  const g = acc.google || {};
++  const links = g.links || [];
++  if (g.configured && c.aboutReady) c = { ...c, about: c.aboutReady };
++  if (!g.configured) {
++    const buttons = acc.admin ? [btn('Set up (admin, once)', 'data-ow-google-setup', true)] : [];
++    return cardShell(c, {
++      label: acc.admin ? 'Needs a one-time setup' : 'Ask your OpenWings admin to set this up',
++      buttons,
++      note: 'Google charges for the review that a shared one-click Gmail needs, so each OpenWings uses its own free Google key. The admin makes it once, for everyone here.',
++    });
++  }
++  if (!links.length) {
++    const buttons = [btn('Sign in with Google', `data-ow-acct-open="google"`, true)];
++    if (acc.admin) buttons.push(btn('Google key', 'data-ow-google-setup'));
++    return cardShell(c, { label: 'Not connected', buttons });
++  }
++  const buttons = [btn('Sign in again or add more', `data-ow-acct-open="google"`)];
++  links.forEach((l) => buttons.push(btn(links.length > 1 ? `Disconnect ${l.account}` : 'Disconnect',
++    `data-ow-google-remove="${esc(l.id)}" data-ow-name="${esc(l.account)}"`)));
++  if (acc.admin) buttons.push(btn('Google key', 'data-ow-google-setup'));
++  const what = (l) => ['mail', 'calendar', 'drive'].filter((k) => l[k]).map((k) => ({ mail: 'Mail', calendar: 'Calendar', drive: 'Drive' }[k])).join(', ') || 'nothing yet';
++  const needs = links.some((l) => l.needs_signin);
++  return cardShell(c, {
++    label: needs ? 'Needs a new sign-in' : `Connected as ${links.map((l) => `${l.account} (${what(l)})`).join('; ')}`,
++    dot: needs ? 'warn' : 'on', buttons,
++  });
++}
++
++function feedCardHtml(c, acc) {
++  const feeds = acc.feeds || [];
++  const buttons = [btn(feeds.length ? 'Add another' : 'Add a calendar', `data-ow-acct-open="calendar-link"`, !feeds.length)];
++  if (!feeds.length) return cardShell(c, { label: 'No calendars added', buttons });
++  const rows = feeds.map((f) => `<div class="ow-feed-row" data-ow-feed="${esc(f.id)}">
++      <span class="ow-feed-dot" style="background:${/^#[0-9a-f]{6}$/i.test(f.color || '') ? f.color : 'var(--accent, var(--red))'}"></span>
++      <span class="ow-feed-name">${esc(f.name)}<span class="ow-feed-sub">${f.error ? esc(f.error) : `${f.events} events · read only`}</span></span>
++      <button type="button" class="admin-btn-sm" data-ow-feed-refresh="${esc(f.id)}">Refresh now</button>
++      <button type="button" class="admin-btn-sm" data-ow-feed-remove="${esc(f.id)}" data-ow-name="${esc(f.name)}">Remove</button>
++    </div>`).join('');
++  return cardShell(c, { label: `${feeds.length} calendar${feeds.length > 1 ? 's' : ''} added`, dot: feeds.some((f) => f.error) ? 'warn' : 'on', buttons })
++    .replace('<div class="ow-app-actions">', `<div class="ow-feed-list">${rows}</div><div class="ow-app-actions">`);
++}
++
++function appCardHtml(c, app, servers, admin) {
++  const card = { ...c, name: app.name, about: app.about, icon: APP_ICON };
++  if (!admin) {
++    // Only what is true right now: connected by the admin, or not set up yet.
++    return app.connected
++      ? cardShell(card, { label: 'Connected by your admin for everyone', dot: 'on', note: 'Your OpenWings admin connected this once for everyone here.' })
++      : cardShell(card, { label: 'Not set up yet. Ask your OpenWings admin.', note: 'Your OpenWings admin connects this once for everyone here.' });
++  }
++  const s = appState(app, servers);
++  const connected = s.dot === 'on';
++  const buttons = [];
++  const finishUrl = s.srv && s.srv.status === 'needs_auth' ? safeAuthUrl(s.srv.auth_url) : null;
++  if (!s.srv || (s.fresh && !finishUrl)) {
++    buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">${s.error ? 'Try again' : 'Connect'}</button>`);
++  } else {
++    if (finishUrl) {
++      buttons.push(`<a class="admin-btn-add" style="text-decoration:none;" href="${esc(finishUrl)}" target="_blank" rel="noopener noreferrer">Finish sign-in</a>`);
++      buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-connect="${esc(app.slug)}">Start over</button>`);
++    } else if (!connected) buttons.push(`<button type="button" class="admin-btn-add" data-ow-app-connect="${esc(app.slug)}">Reconnect</button>`);
++    buttons.push(`<button type="button" class="admin-btn-sm" data-ow-app-disconnect="${esc(s.srv.id)}" data-ow-app-name="${esc(app.name)}">Disconnect</button>`);
++  }
++  return cardShell(card, { label: s.label, dot: s.dot, buttons, error: s.error, note: app.note || 'Everyone on this OpenWings can use it with your account.' })
++    .replace(`data-ow-acct="${esc(c.id)}"`, `data-ow-acct="${esc(c.id)}" data-ow-app="${esc(app.slug)}"`);
++}
++
++async function renderAccounts(card) {
++  const [acc, st] = await Promise.all([fetchAccounts(), fetchStatus()]);
++  const body = card.querySelector('.ow-acct-groups');
++  if (!body) return;
++  if (!acc) { body.innerHTML = '<div class="ow-app-note">Could not load your accounts. Reload the page to try again.</div>'; return; }
++  const apps = acc.apps || [];
++  const servers = acc.admin ? await loadServers() : [];
++  body.innerHTML = ACCOUNT_GROUPS.map((g) => {
++    const cards = ACCOUNT_CARDS.filter((c) => c.group === g.id).map((c) => {
++      if (c.render) return c.render(c, acc);
++      if (c.kind === 'mail') return mailCardHtml(c, acc);
++      if (c.kind === 'google') return googleCardHtml(c, acc);
++      if (c.kind === 'feed') return feedCardHtml(c, acc);
++      if (c.kind === 'app') {
++        const app = apps.find((a) => a.slug === c.slug);
++        return app ? appCardHtml(c, app, servers, acc.admin) : '';
++      }
++      return '';
++    }).join('');
++    return cards ? `<div class="ow-acct-group"><div class="ow-acct-group-title">${esc(g.title)}</div><div class="ow-apps-grid">${cards}</div></div>` : '';
++  }).join('') + '<div class="ow-acct-notpossible">Not possible: Google Keep and Apple Notes, because Google and Apple offer no way for other apps to open them. Zoom needs its own app setup, so it comes later.</div>';
++  void st;
++}
++
++// ---- dialogs
++
++// Dialogs: upstream's window look (modal, modal-content), on top of Settings.
++// Escape closes the newest one through upstream's Escape arbiter (never the
++// window behind it), Tab stays inside, and focus goes back to the button
++// that opened it.
++const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
++const _openDialogs = [];
++
++function openDialog(id, title, html, { wide = false } = {}) {
++  const old = document.getElementById(id);
++  if (old) { if (typeof old.close === 'function') old.close({ keepFocus: true }); else old.remove(); }
++  const opener = document.activeElement;
++  const openerCard = (opener && opener.closest && opener.closest('[data-ow-acct]')?.dataset.owAcct) || opener?.dataset?.owAcctOpen || '';
++  const overlay = document.createElement('div');
++  overlay.id = id;
++  overlay.className = 'modal ow-acct-dialog';
++  overlay.style.zIndex = '300';
++  overlay.innerHTML = `<div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="${id}-title" style="width:${wide ? 560 : 460}px;max-width:calc(100vw - 24px);">
++      <div class="modal-header"><h4 id="${id}-title">${esc(title)}</h4><button type="button" class="close-btn" data-ow-close aria-label="Close">✖</button></div>
++      <div class="modal-body ow-acct-body">${html}</div>
++    </div>`;
++  document.body.appendChild(overlay);
++  overlay.classList.remove('hidden');
++  overlay.style.display = 'flex';
++  const box = overlay.querySelector('.modal-content');
++  let closed = false;
++  let unregister = () => {};
++  const close = ({ keepFocus = false } = {}) => {
++    if (closed) return;
++    closed = true;
++    unregister();
++    document.removeEventListener('keydown', onKey);
++    const i = _openDialogs.indexOf(overlay);
++    if (i !== -1) _openDialogs.splice(i, 1);
++    overlay.remove();
++    if (!keepFocus) {
++      const back = (opener && opener.isConnected && opener !== document.body) ? opener
++        : (openerCard && document.querySelector(`#ow-connect-apps-card [data-ow-acct="${CSS.escape(openerCard)}"] button`));
++      try { back?.focus(); } catch (_) {}
++    }
++  };
++  unregister = registerEscapeLayer(() => close(), () => !closed && overlay.isConnected);
++  const onKey = (e) => {
++    if (_openDialogs[_openDialogs.length - 1] !== overlay) return;
++    const confirmOpen = document.getElementById('styled-confirm-overlay');
++    if (confirmOpen && !confirmOpen.classList.contains('hidden') && confirmOpen.style.display !== 'none') return;
++    if (e.key === 'Escape' && !e.defaultPrevented) {
++      // Fallback only: upstream's arbiter normally handles Escape first.
++      e.preventDefault(); e.stopPropagation(); close();
++      return;
++    }
++    if (e.key !== 'Tab') return;
++    const items = [...box.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
++    if (!items.length) return;
++    const first = items[0];
++    const last = items[items.length - 1];
++    if (e.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
++    else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
++  };
++  _openDialogs.push(overlay);
++  document.addEventListener('keydown', onKey);
++  overlay.addEventListener('click', (e) => {
++    if (e.target === overlay || e.target.closest('[data-ow-close]')) close();
++  });
++  overlay.close = close;
++  setTimeout(() => (overlay.querySelector('input:not([type=checkbox]), button.admin-btn-add') || box)?.focus(), 30);
++  return overlay;
++}
++
++// upstream's styledConfirm, as the newest Escape layer: Escape closes the
++// question, not the dialog or window under it.
++async function askConfirm(text, opts) {
++  if (!window.styledConfirm) return window.confirm(text);
++  const unregister = registerEscapeLayer(() => {
++    document.getElementById('styled-confirm-cancel')?.click();
++  }, () => {
++    const o = document.getElementById('styled-confirm-overlay');
++    return !!o && !o.classList.contains('hidden');
++  });
++  try { return await window.styledConfirm(text, opts); } finally { unregister(); }
++}
++
++function stepsHtml(steps) {
++  return `<ol class="ow-acct-steps">${steps.map((s) => `<li>${esc(s.text)}${s.url ? ` <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.link || 'Open')}</a>` : ''}</li>`).join('')}</ol>`;
++}
++
++async function openMailDialog(providerKey) {
++  const acc = _accounts || await fetchAccounts();
++  const p = ((acc && acc.mail_providers) || []).find((x) => x.key === providerKey);
++  if (!p) return;
++  const google = providerKey === 'gmail' && acc.google && acc.google.configured;
++  const html = `
++    ${google ? `<div class="ow-acct-choice"><div class="ow-acct-lead">Easiest: Sign in with Google. Google's own page opens; no password to copy.</div>
++      <button type="button" class="admin-btn-add" data-ow-goto-google>Sign in with Google</button></div>
++      <div class="ow-acct-or">Or use an app password</div>` : ''}
++    <div class="ow-acct-lead">${esc(p.intro)}</div>
++    ${stepsHtml(p.steps)}
++    ${p.unavailable ? `<details class="ow-acct-details" data-ow-unavailable><summary>No App passwords option?</summary><div>${esc(p.unavailable)}</div></details>` : ''}
++    <label class="ow-acct-label" for="ow-mail-address">Email address</label>
++    <input id="ow-mail-address" class="settings-input" type="email" autocomplete="email" placeholder="${esc(p.example)}">
++    <label class="ow-acct-label" for="ow-mail-password">App password</label>
++    <input id="ow-mail-password" class="settings-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the app password">
++    ${p.calendar ? `<label class="ow-acct-check"><input type="checkbox" id="ow-mail-calendar" checked> Also sync my ${esc(p.name)} calendars</label>` : ''}
++    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-mail-connect>Connect</button><button type="button" class="admin-btn-sm" data-ow-close>Cancel</button></div>
++    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>
++    <div class="ow-app-note">OpenWings tests the password with ${esc(p.name)} first and saves it encrypted. It is used only for your mailbox. <a href="${esc(p.help)}" target="_blank" rel="noopener noreferrer">${esc(p.name)} help</a></div>`;
++  const dlg = openDialog('ow-mail-dialog', `Connect ${p.name}`, html);
++  const msg = dlg.querySelector('[data-ow-dialog-msg]');
++  dlg.querySelector('[data-ow-goto-google]')?.addEventListener('click', () => { dlg.close(); openGoogleDialog(); });
++  dlg.querySelector('#ow-mail-password').addEventListener('input', (e) => {
++    const v = e.target.value; const clean = v.replace(/\s+/g, '');
++    if (v !== clean) e.target.value = clean;
++  });
++  const go = async () => {
++    const address = dlg.querySelector('#ow-mail-address').value.trim();
++    const password = dlg.querySelector('#ow-mail-password').value.replace(/\s+/g, '');
++    if (!address) return setMsg(msg, 'Type your email address.', 'err');
++    if (!password) return setMsg(msg, 'Paste the app password.', 'err');
++    const b = dlg.querySelector('[data-ow-mail-connect]');
++    b.disabled = true;
++    setMsg(msg, `Checking with ${p.name}…`);
++    const r = await postJson('/api/wings/accounts/mail/connect', {
++      provider: providerKey, address, password, calendar: !!dlg.querySelector('#ow-mail-calendar')?.checked,
++    });
++    b.disabled = false;
++    if (!r.ok) {
++      // A refused password: the account may simply have no app passwords.
++      if (r.data.error === 'wrong_password') { const d = dlg.querySelector('[data-ow-unavailable]'); if (d) d.open = true; }
++      return setMsg(msg, r.data.message || r.data.detail || 'That did not work. Please try again.', 'err');
++    }
++    let done = `Connected ${r.data.address}. Your mail shows up in Email in a minute.`;
++    if (r.data.calendar === 'syncing') done += ' Your calendars are syncing.';
++    if (r.data.calendar === 'failed') done += ` Calendars were not added: ${r.data.calendar_error || 'please try again'}.`;
++    setMsg(msg, done, 'ok');
++    dlg.querySelector('#ow-mail-password').value = '';
++    const host = document.getElementById('ow-connect-apps-card');
++    if (host) renderAccounts(host);
++    setTimeout(() => dlg.close(), 1800);
++  };
++  dlg.querySelector('[data-ow-mail-connect]').addEventListener('click', go);
++  dlg.querySelector('#ow-mail-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
++}
++
++async function openFeedDialog() {
++  const acc = _accounts || await fetchAccounts();
++  const help = (acc && acc.feed_help) || [];
++  const html = `
++    <div class="ow-acct-lead">Paste a calendar's share link. OpenWings shows its events in your Calendar and refreshes them every 30 minutes.</div>
++    <div class="ow-acct-warn"><strong>Read only.</strong> OpenWings and the assistant can see these events but cannot change them. A secret link works like a password: anyone who has it can see the calendar, so keep it to yourself.</div>
++    <details class="ow-acct-details"><summary>Where do I find the link?</summary>
++      <dl class="ow-acct-dl">${help.map((h) => `<dt>${esc(h.name)}</dt><dd>${esc(h.steps)}${h.url ? ` <a href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">${esc(h.link || 'Steps')}</a>` : ''}</dd>`).join('')}</dl>
++    </details>
++    <label class="ow-acct-label" for="ow-feed-url">Calendar link</label>
++    <input id="ow-feed-url" class="settings-input" type="url" autocomplete="off" spellcheck="false" placeholder="https://…/basic.ics or webcal://…">
++    <label class="ow-acct-label" for="ow-feed-name">Name (optional)</label>
++    <input id="ow-feed-name" class="settings-input" type="text" maxlength="80" placeholder="For example Family or Work">
++    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-feed-add>Add calendar</button><button type="button" class="admin-btn-sm" data-ow-close>Cancel</button></div>
++    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>`;
++  const dlg = openDialog('ow-feed-dialog', 'Add a calendar by link', html);
++  const msg = dlg.querySelector('[data-ow-dialog-msg]');
++  const go = async () => {
++    const url = dlg.querySelector('#ow-feed-url').value.trim();
++    if (!url) return setMsg(msg, 'Paste the calendar link.', 'err');
++    const b = dlg.querySelector('[data-ow-feed-add]');
++    b.disabled = true;
++    setMsg(msg, 'Loading the calendar…');
++    const r = await postJson('/api/wings/accounts/calendar-link', { url, name: dlg.querySelector('#ow-feed-name').value.trim() });
++    b.disabled = false;
++    if (!r.ok) return setMsg(msg, r.data.message || r.data.detail || 'That link did not work.', 'err');
++    setMsg(msg, `Added "${r.data.name}" with ${r.data.events} events. It is in your Calendar now.`, 'ok');
++    try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {}
++    const host = document.getElementById('ow-connect-apps-card');
++    if (host) renderAccounts(host);
++    setTimeout(() => dlg.close(), 1800);
++  };
++  dlg.querySelector('[data-ow-feed-add]').addEventListener('click', go);
++  dlg.querySelector('#ow-feed-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
++}
++
++async function openGoogleDialog() {
++  const acc = _accounts || await fetchAccounts();
++  const g = (acc && acc.google) || {};
++  if (!g.configured) {
++    if (acc && acc.admin) return openGoogleSetup();
++    openDialog('ow-google-dialog', 'Sign in with Google', `<div class="ow-acct-lead">Sign in with Google needs a one-time setup by your OpenWings admin. Google charges for the review that a shared one-click Gmail needs, so each OpenWings uses its own free Google key.</div>
++      <div class="ow-acct-lead">Until then: Gmail works with an app password, and any Google calendar can be added with Calendar by link (read only).</div>
++      <div class="ow-acct-actions"><button type="button" class="admin-btn-sm" data-ow-close>Close</button></div>`);
++    return undefined;
++  }
++  const connected = (g.links || []).length > 0;
++  const html = `
++    <div class="ow-acct-lead">Google's own sign-in page opens. Choose what OpenWings may use for you:</div>
++    <label class="ow-acct-check"><input type="checkbox" data-ow-scope="mail" checked> Mail: read, sort and send your Gmail</label>
++    <label class="ow-acct-check"><input type="checkbox" data-ow-scope="calendar" checked> Calendar: see and change your main Google calendar, add Meet links</label>
++    <label class="ow-acct-check"><input type="checkbox" data-ow-scope="drive" checked> Drive: the assistant can find and read your files (read only)</label>
++    <div class="ow-acct-lead">On Google's page, leave every box ticked. A box you untick there is not connected.</div>
++    ${connected ? '<div class="ow-acct-lead">What is connected already stays connected. To remove it, use Disconnect on the card.</div>' : ''}
++    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-google-go>Sign in with Google</button><button type="button" class="admin-btn-sm" data-ow-close>Cancel</button></div>
++    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>
++    <div class="ow-app-note">Google may say it has not verified this app: that is your own OpenWings' key. Choose Advanced, then continue. Only you can use what you connect here. Other Google calendars than your main one: add them with Calendar by link.</div>`;
++  const dlg = openDialog('ow-google-dialog', 'Sign in with Google', html);
++  const msg = dlg.querySelector('[data-ow-dialog-msg]');
++  dlg.querySelector('[data-ow-google-go]').addEventListener('click', async () => {
++    const pick = {};
++    dlg.querySelectorAll('[data-ow-scope]').forEach((x) => { pick[x.dataset.owScope] = x.checked; });
++    if (!pick.mail && !pick.calendar && !pick.drive) return setMsg(msg, 'Tick at least one.', 'err');
++    setMsg(msg, 'Opening Google…');
++    const r = await postJson('/api/wings/accounts/google/start', pick);
++    if (!r.ok || !r.data.authorize_url) return setMsg(msg, r.data.message || 'Could not start the sign-in.', 'err');
++    window.location.href = r.data.authorize_url;
++    return undefined;
++  });
++  return undefined;
++}
++
++async function copyText(text) {
++  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
++  const ta = document.createElement('textarea');
++  ta.value = text; ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0;';
++  document.body.appendChild(ta); ta.select();
++  let ok = false; try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
++  ta.remove(); return ok;
+ }
+ 
++async function openGoogleSetup() {
++  let info;
++  try {
++    const r = await fetch('/api/wings/accounts/google/setup', { credentials: 'same-origin' });
++    info = r.ok ? await r.json() : null;
++  } catch (_) { info = null; }
++  if (!info) { uiModule.showError('Only an OpenWings admin can set up the Google key.'); return; }
++  const c = info.console || {};
++  const client = info.client || {};
++  const link = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`;
++  const current = client.configured
++    ? `<div class="ow-acct-warn">${client.source === 'env' ? 'Set in .env' : 'Saved here'}: Client ID ${esc(client.client_id)}${client.source === 'env' ? '. A key saved below takes its place.' : ''}
++        ${client.source === 'stored' ? '<button type="button" class="admin-btn-sm" data-ow-google-forget style="margin-left:6px;">Remove</button>' : ''}</div>`
++    : '';
++  const html = `
++    <div class="ow-acct-lead">About 10 minutes, once, for everyone on this OpenWings. It is free. Each step opens Google's console in a new tab; sign in with any Google account you control.</div>
++    ${current}
++    <ol class="ow-acct-steps ow-acct-wizard">
++      <li><strong>Create a project.</strong> ${link(c.project, 'Open the new project page')}. Any name, for example OpenWings.</li>
++      <li><strong>Turn on the APIs</strong> for that project. Press Enable on each: ${link(c.gmail_api, 'Gmail API')}, ${link(c.calendar_api, 'Google Calendar API')}, ${link(c.caldav_api, 'CalDAV API')}, ${link(c.drive_api, 'Google Drive API')}.</li>
++      <li><strong>Set up the sign-in screen.</strong> ${link(c.branding, 'Branding')}: press Get started. App name: OpenWings. Support and contact email: yours. Audience: <strong>External</strong>. Agree to the policy, then Create.</li>
++      <li><strong>Publish it.</strong> ${link(c.audience, 'Audience')}: press Publish app. While it says Testing, only people you list there as test users can sign in, and only for 7 days at a time. If Google asks for a home page and privacy policy link first, add them under Branding (your own page or this OpenWings address). After you publish, Google may say the app needs verification: you can ignore that for your own OpenWings (up to 100 people can sign in without it). It costs nothing.</li>
++      <li><strong>Make the key.</strong> ${link(c.clients, 'Clients')}: Create client. Application type: <strong>Web application</strong>. Name: OpenWings. If the form shows "Use this client for an AI-powered agent", leave it unticked. Under Authorized redirect URIs press Add URI and paste exactly:
++        <div class="ow-acct-copy"><code data-ow-uri>${esc(info.redirect_uri)}</code><button type="button" class="admin-btn-sm" data-ow-copy-uri>Copy</button></div>
++        ${info.redirect_ok ? '' : `<div class="ow-acct-warn">${esc(info.redirect_rules || '')} Open OpenWings at such an address and open this guide again.</div>`}
++        ${info.only_this_computer ? '<div class="ow-acct-warn">With this address, Sign in with Google only works in a browser on the OpenWings computer itself. For phones and other computers, give OpenWings an https address (setup.sh --domain), then open this guide there.</div>' : ''}
++        ${info.current_uri ? `<div class="ow-acct-warn">OpenWings is now opened at another address. To sign in from here, use <code>${esc(info.current_uri)}</code> instead and add it in Google's console too. <button type="button" class="admin-btn-sm" data-ow-use-current style="margin-left:6px;">Use this address instead</button></div>` : ''}
++        Then press Create.</li>
++      <li><strong>Paste the key here.</strong> Google shows the Client secret only once, so copy it right away.</li>
++    </ol>
++    <label class="ow-acct-label" for="ow-g-id">Client ID</label>
++    <input id="ow-g-id" class="settings-input" type="text" autocomplete="off" spellcheck="false" placeholder="…apps.googleusercontent.com">
++    <label class="ow-acct-label" for="ow-g-secret">Client secret</label>
++    <input id="ow-g-secret" class="settings-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the client secret">
++    <div class="ow-acct-actions"><button type="button" class="admin-btn-add" data-ow-g-save>Save</button><button type="button" class="admin-btn-sm" data-ow-close>Close</button></div>
++    <div class="adm-ep-inline-msg" data-ow-dialog-msg></div>
++    <div class="ow-app-note">Saved encrypted on this server and never shown again. A new key usually works within minutes; Google says it can take up to five hours. Steps follow ${link(c.guide, 'Google\'s guide')}.</div>`;
++  const dlg = openDialog('ow-google-setup', 'Set up Sign in with Google', html, { wide: true });
++  const msg = dlg.querySelector('[data-ow-dialog-msg]');
++  dlg.querySelector('[data-ow-copy-uri]').addEventListener('click', async (e) => {
++    const ok = await copyText(info.redirect_uri);
++    e.target.textContent = ok ? 'Copied' : 'Copy failed';
++    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
++  });
++  dlg.querySelector('[data-ow-use-current]')?.addEventListener('click', async () => {
++    const r = await postJson('/api/wings/accounts/google/setup/redirect', {});
++    if (!r.ok) return setMsg(msg, r.data.message || 'Could not change the address.', 'err');
++    dlg.close({ keepFocus: true });
++    await openGoogleSetup();
++    const m = document.querySelector('#ow-google-setup [data-ow-dialog-msg]');
++    setMsg(m, 'Address changed. Add it under Authorized redirect URIs in Google\'s console too.', 'ok');
++    return undefined;
++  });
++  dlg.querySelector('[data-ow-google-forget]')?.addEventListener('click', async () => {
++    const ok = await askConfirm('Remove the saved Google key? People who signed in with Google stay signed in until their access runs out.', { confirmText: 'Remove', danger: true });
++    if (!ok) return;
++    await postJson('/api/wings/accounts/google/setup', undefined, 'DELETE');
++    dlg.close();
++    const host = document.getElementById('ow-connect-apps-card');
++    if (host) renderAccounts(host);
++  });
++  dlg.querySelector('[data-ow-g-save]').addEventListener('click', async () => {
++    const client_id = dlg.querySelector('#ow-g-id').value.trim();
++    const client_secret = dlg.querySelector('#ow-g-secret').value.trim();
++    if (!client_id || !client_secret) return setMsg(msg, 'Paste both the Client ID and the Client secret.', 'err');
++    const r = await postJson('/api/wings/accounts/google/setup', { client_id, client_secret });
++    if (!r.ok) return setMsg(msg, r.data.message || 'Could not save.', 'err');
++    dlg.querySelector('#ow-g-secret').value = '';
++    setMsg(msg, 'Saved. Everyone here can now use Sign in with Google.', 'ok');
++    const host = document.getElementById('ow-connect-apps-card');
++    if (host) renderAccounts(host);
++    return undefined;
++  });
++}
++
++async function confirmRemove(text) {
++  return askConfirm(text, { confirmText: 'Disconnect', danger: true });
++}
++
++async function onAccountsClick(card, e) {
++  const t = (sel) => e.target.closest(sel);
++  let el;
++  if ((el = t('[data-ow-app-connect]'))) return connectApp(card, el.dataset.owAppConnect);
++  if ((el = t('[data-ow-app-disconnect]'))) return disconnectApp(card, el.dataset.owAppDisconnect, el.dataset.owAppName || 'this app');
++  if ((el = t('[data-ow-acct-open]'))) return openAccountCard(el.dataset.owAcctOpen);
++  if (t('[data-ow-google-setup]')) return openGoogleSetup();
++  if ((el = t('[data-ow-mail-remove]'))) {
++    if (!await confirmRemove(`Disconnect ${el.dataset.owName}? OpenWings forgets the password and stops reading this mailbox.`)) return undefined;
++    await postJson(`/api/wings/accounts/mail/${encodeURIComponent(el.dataset.owMailRemove)}`, undefined, 'DELETE');
++    return renderAccounts(card);
++  }
++  if ((el = t('[data-ow-google-remove]'))) {
++    if (!await confirmRemove(`Disconnect ${el.dataset.owName}? OpenWings signs out of Google and removes this account's mail and calendars from OpenWings.`)) return undefined;
++    await postJson(`/api/wings/accounts/google/${encodeURIComponent(el.dataset.owGoogleRemove)}`, undefined, 'DELETE');
++    return renderAccounts(card);
++  }
++  if ((el = t('[data-ow-feed-refresh]'))) {
++    el.disabled = true; el.textContent = 'Refreshing…';
++    const r = await postJson(`/api/wings/accounts/calendar-link/${encodeURIComponent(el.dataset.owFeedRefresh)}/refresh`);
++    if (!r.ok) uiModule.showError(r.data.message || 'Could not refresh that calendar.');
++    else uiModule.showToast(`Calendar refreshed: ${r.data.events} events.`);
++    try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {}
++    return renderAccounts(card);
++  }
++  if ((el = t('[data-ow-feed-remove]'))) {
++    const ok = await askConfirm(`Remove "${el.dataset.owName}"? Its events leave your Calendar.`, { confirmText: 'Remove', danger: true });
++    if (!ok) return undefined;
++    await postJson(`/api/wings/accounts/calendar-link/${encodeURIComponent(el.dataset.owFeedRemove)}`, undefined, 'DELETE');
++    try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {}
++    return renderAccounts(card);
++  }
++  return undefined;
++}
++
++function openAccountCard(id) {
++  const c = ACCOUNT_CARDS.find((x) => x.id === id);
++  if (c && c.open) return c.open(c);
++  if (c && c.kind === 'mail') return openMailDialog(c.provider);
++  if (id === 'google') return openGoogleDialog();
++  if (id === 'calendar-link') return openFeedDialog();
++  return undefined;
++}
++
++// Other screens (Email accounts, Calendar settings) point here: open
++// Settings > Integrations at this card, and its dialog when asked.
++async function goToAccounts(id, { dialog = true } = {}) {
++  try { settingsModule.open('integrations'); } catch (_) {}
++  const card = await waitFor(() => document.getElementById('ow-connect-apps-card'), 6000);
++  if (!card) return;
++  const el = await waitFor(() => card.querySelector(`[data-ow-acct="${CSS.escape(id || 'gmail')}"]`), 4000);
++  if (el) {
++    el.scrollIntoView({ block: 'center' });
++    el.classList.add('ow-flash');
++    setTimeout(() => el.classList.remove('ow-flash'), 1600);
++  }
++  if (dialog && id) openAccountCard(id);
++}
++window.owGoToAccounts = goToAccounts;
++
+ async function renderSettingsAppsCard() {
+   const panel = document.querySelector('[data-settings-panel="integrations"]');
+   if (!panel || document.getElementById('ow-connect-apps-card')) return;
+-  const st = await fetchStatus();
+-  if (!st.admin || !(st.apps || []).length) return;
+   const card = document.createElement('div');
+   card.className = 'admin-card';
+   card.id = 'ow-connect-apps-card';
+-  card.innerHTML = `<h2>${APP_ICON.replace('aria-hidden="true"', 'class="ow-card-ico" aria-hidden="true"')}Connect your apps</h2>
+-    <div class="admin-toggle-sub" style="margin-bottom:8px">One click: you sign in on the app's own page and OpenWings never sees your password. The assistant can then use the app with your account, for everyone on this OpenWings: anyone who chats here can read and change what your account can.</div>
+-    <div class="ow-apps-grid"></div>`;
++  card.innerHTML = `<h2>${APP_ICON.replace('aria-hidden="true"', 'class="ow-card-ico" aria-hidden="true"')}Connect your accounts</h2>
++    <div class="admin-toggle-sub" style="margin-bottom:8px">Each person connects their own mail, calendars and files; the assistant uses them only for that person. Work apps are connected once by an admin for everyone.</div>
++    <div class="ow-acct-groups"><div class="ow-app-note">Loading…</div></div>`;
+   panel.insertBefore(card, panel.firstChild);
+-  card.addEventListener('click', (e) => {
+-    const c = e.target.closest('[data-ow-app-connect]');
+-    if (c) return connectApp(card, c.dataset.owAppConnect);
+-    const d = e.target.closest('[data-ow-app-disconnect]');
+-    if (d) return disconnectApp(card, d.dataset.owAppDisconnect, d.dataset.owAppName || 'this app');
+-    return undefined;
+-  });
+-  await renderAppsGrid(card);
++  card.addEventListener('click', (e) => { onAccountsClick(card, e); });
++  await renderAccounts(card);
+   // Refresh whenever the Integrations panel is shown again.
+   new MutationObserver(() => {
+-    if (!panel.classList.contains('hidden')) renderAppsGrid(card);
++    if (!panel.classList.contains('hidden')) renderAccounts(card);
+   }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+ }
+ 
++document.addEventListener('click', (e) => {
++  const el = e.target.closest && e.target.closest('[data-ow-open-accounts]');
++  if (!el) return;
++  e.preventDefault();
++  goToAccounts(el.dataset.owOpenAccounts, { dialog: el.dataset.owOpenDialog !== '0' });
++});
++
+ // ------------------------------------------------------------ return notes
+ 
+ function handleChatgptReturn() {
+@@ -1171,8 +1754,42 @@ function handleChatgptReturn() {
+   }, 600);
+ }
+ 
++// Back from Sign in with Google (wings/accounts_google.py callback):
++// ?ow_accounts=google (with ow_accounts_note=missing_<parts> when Google did
++// not grant something) or ?ow_accounts_error=<code>. Open the Google card
++// and say plainly what happened.
++function handleAccountsReturn() {
++  const sp = new URLSearchParams(window.location.search);
++  if (!sp.has('ow_accounts') && !sp.has('ow_accounts_error') && !sp.has('ow_accounts_note')) return;
++  const ok = sp.get('ow_accounts');
++  const err = sp.get('ow_accounts_error');
++  const note = sp.get('ow_accounts_note') || '';
++  ['ow_accounts', 'ow_accounts_error', 'ow_accounts_note'].forEach((k) => sp.delete(k));
++  const rest = sp.toString();
++  window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
++  setTimeout(async () => {
++    goToAccounts('google', { dialog: false });
++    if (err || ok !== 'google') {
++      uiModule.showError(ACCOUNT_ERRORS[err] || 'Sign in with Google did not finish. Please try again.');
++      return;
++    }
++    const acc = await fetchAccounts();
++    const links = (acc && acc.google && acc.google.links) || [];
++    const parts = (l) => ['mail', 'calendar', 'drive'].filter((k) => l[k]).map((k) => FEATURE_NAMES[k]);
++    const what = links.map((l) => `${l.account} (${listWords(parts(l)) || 'nothing yet'})`).join('; ');
++    const missing = note.startsWith('missing_') ? note.slice(8).split('_').filter((k) => FEATURE_NAMES[k]).map((k) => FEATURE_NAMES[k]) : [];
++    if (missing.length) {
++      uiModule.showError(`Signed in, but Google did not give OpenWings access to ${listWords(missing)}. Press Sign in again or add more, and leave ${missing.length > 1 ? 'those boxes' : 'that box'} ticked on Google's page.`);
++    } else {
++      uiModule.showToast(`Signed in with Google${what ? `: ${what}` : ''}. Mail and calendars appear in a minute.`, { duration: 7000 });
++    }
++    if (links.some((l) => l.calendar)) { try { window.dispatchEvent(new CustomEvent('ow-calendars-changed')); } catch (_) {} }
++  }, 600);
++}
++
+ function handleReturn() {
+   handleChatgptReturn();
++  handleAccountsReturn();
+   const sp = new URLSearchParams(window.location.search);
+   if (!sp.has('ow_connect') && !sp.has('ow_connect_error')) return;
+   const ok = sp.get('ow_connect');
+diff --git a/tests/test_email_oauth.py b/tests/test_email_oauth.py
+index ee34a9d..434d2db 100644
+--- a/tests/test_email_oauth.py
++++ b/tests/test_email_oauth.py
+@@ -15,7 +15,8 @@ IMAP/SMTP support:
+ - `google_oauth_callback` (real route) — invalid/tampered/missing state and
+   provider errors return generic redirects with no PII; owner mismatch refuses
+   the token write; a valid owner writes encrypted tokens only to the intended
+-  account.
++  account. OpenWings (patch 0025): the state is a one-time sign-in record with
++  PKCE, bound to the person who started it (wings/accounts.py).
+ - `list_email_accounts` (real route) — exposes OAuth status but never token
+   values.
+ - `_imap_connect` — password accounts use login(); OAuth accounts use XOAUTH2.
+@@ -261,6 +262,22 @@ def test_refresh_stores_encrypted_expiry_not_token():
+ # These pull the actual google_oauth_callback endpoint out of the router and
+ # invoke it — they pin the real route's behaviour, not a re-implementation, so
+ # they fail if the ownership/state guards are ever removed or weakened.
++#
++# OpenWings (patch 0025): every Google sign-in is now a flow record in
++# wings/accounts.py (random state bound to the person who started it, used
++# once, ten minutes, S256 PKCE); the callback finishes it only for that person
++# in their own browser. The HMAC state helpers above stay for other callers.
++
++@pytest.fixture(autouse=True)
++def _google_client(monkeypatch):
++    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id.apps.googleusercontent.com")
++    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "client-secret")
++    monkeypatch.setenv("AUTH_ENABLED", "true")
++    import wings.accounts as _A
++    _A._flows.clear()
++    yield
++    _A._flows.clear()
++
+ 
+ def _callback_endpoint():
+     """Return the live google_oauth_callback endpoint from the email router."""
+@@ -273,14 +290,30 @@ def _callback_endpoint():
+ 
+ 
+ class _FakeRequest:
+-    """Minimal stand-in for starlette Request — the callback reads the Host header
+-    and the request scheme. Behind a TLS terminator uvicorn's proxy-headers
+-    middleware rewrites the scheme from `X-Forwarded-Proto`, so the route sees
+-    `https` there and `http` on a plain origin."""
++    """Minimal stand-in for starlette Request: the host and scheme the browser
++    used, the path and query (for the origin bounce), and the signed-in
++    person (`user`) the auth middleware attaches."""
+ 
+-    def __init__(self, scheme="http", host="localhost:7000"):
++    def __init__(self, scheme="http", host="localhost:7000", user="alice", query=""):
+         self.headers = {"host": host}
+-        self.url = SimpleNamespace(scheme=scheme)
++        self.url = SimpleNamespace(scheme=scheme, path="/api/email/oauth/google/callback", query=query)
++        self.state = SimpleNamespace(current_user=user, api_token=False)
++
++
++def _flow(account_id, owner, redirect_uri="http://localhost:7000/api/email/oauth/google/callback"):
++    """Start a sign-in for one mail account, as the authorize route does."""
++    import wings.accounts as _A
++    import wings.accounts_google  # noqa: F401  (registers the provider)
++    return _A.start_flow(owner, "google", "email_account", ["openid", "email", "https://mail.google.com/"],
++                         redirect_uri=redirect_uri, origin="http://localhost:7000",
++                         extra={"account_id": account_id}).state
++
++
++def _ok(body):
++    resp = mock.MagicMock()
++    resp.status_code = 200
++    resp.json.return_value = body
++    return resp
+ 
+ 
+ def _location(resp):
+@@ -292,10 +325,8 @@ def _location(resp):
+ async def test_callback_missing_code_returns_generic_error():
+     """No `code` query param → generic error redirect, with no account id, owner,
+     or state echoed back into the URL."""
+-    from routes.email_helpers import make_oauth_state
+-
+     callback = _callback_endpoint()
+-    state = make_oauth_state("acct-1", "alice")
++    state = _flow("acct-1", "alice")
+     resp = await callback(code=None, state=state, error=None, request=_FakeRequest())
+ 
+     loc = _location(resp)
+@@ -329,13 +360,38 @@ async def test_callback_tampered_state_returns_generic_error_no_leak():
+     assert "token" not in loc
+ 
+ 
++@pytest.mark.asyncio
++async def test_callback_old_signed_state_is_no_longer_enough():
++    """OpenWings: a signed state made outside a sign-in flow (no PKCE, no
++    record of who started it) does not finish a sign-in."""
++    from routes.email_helpers import make_oauth_state
++    callback = _callback_endpoint()
++    resp = await callback(code="4/code", state=make_oauth_state("acct-1", "alice"),
++                          error=None, request=_FakeRequest())
++    assert "email_oauth_error=invalid_state" in _location(resp)
++
++
++@pytest.mark.asyncio
++async def test_callback_finishes_only_for_the_person_who_started_it():
++    """OpenWings: another signed-in person (or no session) cannot finish it."""
++    db, Factory = _make_db()
++    _make_account(db, account_id="acct-p2", owner="alice", imap_user="alice@example.com")
++    db.close()
++    state = _flow("acct-p2", "alice")
++    with mock.patch("httpx.post") as mock_post, mock.patch("core.database.SessionLocal", Factory):
++        resp = await _callback_endpoint()(code="4/code", state=state, error=None, request=_FakeRequest(user="mallory"))
++        assert "email_oauth_error=invalid_state" in _location(resp)
++        resp = await _callback_endpoint()(code="4/code", state=state, error=None, request=_FakeRequest(user=None))
++        assert "email_oauth_error=not_signed_in" in _location(resp)
++    mock_post.assert_not_called()
++
++
+ @pytest.mark.asyncio
+ async def test_callback_owner_mismatch_does_not_write_tokens():
+-    """A signed, valid state whose owner does not match the target account's
+-    owner must NOT write tokens — this blocks one authenticated user from
+-    binding their Google account onto another user's mailbox row.
++    """A valid sign-in whose owner does not match the target account's owner
++    must NOT write tokens — this blocks one authenticated user from binding
++    their Google account onto another user's mailbox row.
+     """
+-    from routes.email_helpers import make_oauth_state
+     from core.database import EmailAccount
+ 
+     db, Factory = _make_db()
+@@ -344,21 +400,17 @@ async def test_callback_owner_mismatch_does_not_write_tokens():
+ 
+     # Token-exchange + userinfo would succeed — the point is the ownership gate
+     # rejects the write *before* trusting them.
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {"access_token": "ya29.attacker", "refresh_token": "r", "expires_in": 3600}
+-    userinfo_resp = mock.MagicMock()
+-    userinfo_resp.is_success = True
+-    userinfo_resp.json.return_value = {"email": "bob@evil.com", "name": "Bob"}
++    token_resp = _ok({"access_token": "ya29.attacker", "refresh_token": "r", "expires_in": 3600})
++    userinfo_resp = _ok({"email": "bob@evil.com", "name": "Bob"})
+ 
+-    # State is genuinely signed, but for owner "bob" — not the row owner "alice".
+-    state = make_oauth_state("acct-x", "bob")
++    # The sign-in was started by "bob" — not the row owner "alice".
++    state = _flow("acct-x", "bob")
+ 
+     with mock.patch("httpx.post", return_value=token_resp), \
+          mock.patch("httpx.get", return_value=userinfo_resp), \
+          mock.patch("core.database.SessionLocal", Factory):
+         callback = _callback_endpoint()
+-        resp = await callback(code="4/code", state=state, error=None, request=_FakeRequest())
++        resp = await callback(code="4/code", state=state, error=None, request=_FakeRequest(user="bob"))
+ 
+     loc = _location(resp)
+     assert "email_oauth_error=ownership_error" in loc
+@@ -372,9 +424,11 @@ async def test_callback_owner_mismatch_does_not_write_tokens():
+ 
+ @pytest.mark.asyncio
+ async def test_callback_valid_owner_writes_encrypted_tokens_to_intended_account():
+-    """A signed state whose owner matches the target account writes the tokens —
+-    and only to that account, stored encrypted (raw token never persisted)."""
+-    from routes.email_helpers import make_oauth_state
++    """A sign-in whose owner matches the target account writes the tokens —
++    and only to that account, stored encrypted (raw token never persisted).
++    The code exchange carries the PKCE verifier."""
++    import hashlib
++    import urllib.parse
+     from src.secret_storage import decrypt as _dec
+     from core.database import EmailAccount
+ 
+@@ -393,22 +447,25 @@ async def test_callback_valid_owner_writes_encrypted_tokens_to_intended_account(
+ 
+     raw_access = "ya29.legit_access_token"
+     raw_refresh = "1//legit_refresh_token"
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {"access_token": raw_access, "refresh_token": raw_refresh, "expires_in": 3600}
+-    userinfo_resp = mock.MagicMock()
+-    userinfo_resp.is_success = True
+-    userinfo_resp.json.return_value = {"email": "alice@nyu.edu", "name": "Alice"}
++    token_resp = _ok({"access_token": raw_access, "refresh_token": raw_refresh, "expires_in": 3600})
++    userinfo_resp = _ok({"email": "alice@nyu.edu", "name": "Alice"})
+ 
+-    state = make_oauth_state("acct-v", "alice")
++    with mock.patch("core.database.SessionLocal", Factory):
++        url = (await _authorize_endpoint()(account_id="acct-v", request=_FakeRequest(), owner="alice")).headers["location"]
++    query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
++    state = query["state"][0]
++    assert query["code_challenge_method"] == ["S256"]
+ 
+-    with mock.patch("httpx.post", return_value=token_resp), \
++    with mock.patch("httpx.post", return_value=token_resp) as mock_post, \
+          mock.patch("httpx.get", return_value=userinfo_resp), \
+          mock.patch("core.database.SessionLocal", Factory):
+         callback = _callback_endpoint()
+         resp = await callback(code="4/code", state=state, error=None, request=_FakeRequest())
+ 
+     assert "email_oauth_success=1" in _location(resp)
++    verifier = mock_post.call_args.kwargs["data"]["code_verifier"]
++    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
++    assert challenge == query["code_challenge"][0]
+ 
+     verify_db = Factory()
+     target = verify_db.query(EmailAccount).filter(EmailAccount.id == "acct-v").first()
+@@ -421,14 +478,18 @@ async def test_callback_valid_owner_writes_encrypted_tokens_to_intended_account(
+     assert _dec(target.oauth_refresh_token) == raw_refresh
+     assert other.oauth_access_token is None, "tokens must only touch the intended account"
+ 
++    # Used once only.
++    resp = await callback(code="4/code", state=state, error=None, request=_FakeRequest())
++    assert "email_oauth_error=invalid_state" in _location(resp)
++
+ 
+-# ── Redirect URI scheme ───────────────────────────────────────────
++# ── Redirect URI ──────────────────────────────────────────────────
+ #
+ # Google rejects the token exchange unless the callback's `redirect_uri` is
+-# byte-identical to the one the authorize step sent, so both routes have to
+-# agree — including on the scheme. Deriving it from the request keeps HTTPS
+-# deployments working without pinning GOOGLE_OAUTH_REDIRECT_URI by hand;
+-# hardcoding `http://` produced an unusable redirect behind any TLS front.
++# byte-identical to the one the authorize step sent. OpenWings stores it with
++# the sign-in when it starts and sends exactly that; it comes from the client
++# an admin saved, GOOGLE_OAUTH_REDIRECT_URI, or the trusted address the
++# browser is using (ALLOWED_ORIGINS), never from an untrusted Host header.
+ 
+ def _authorize_endpoint():
+     """Return the live google_oauth_authorize endpoint from the email router."""
+@@ -446,46 +507,24 @@ def _posted_redirect_uri(mock_post):
+ 
+ 
+ @pytest.mark.asyncio
+-@pytest.mark.parametrize("scheme", ("http", "https"))
+-async def test_callback_redirect_uri_follows_the_request_scheme(scheme, monkeypatch):
+-    """The token exchange must echo the scheme the request actually arrived on —
+-    `https` behind a TLS terminator, `http` on a plain origin."""
+-    from routes.email_helpers import make_oauth_state
+-
+-    monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
+-
++async def test_callback_sends_the_redirect_uri_the_sign_in_started_with():
+     db, Factory = _make_db()
+     _make_account(db, account_id="acct-s", owner="alice", imap_user="alice@example.com")
+     db.close()
+-
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {"access_token": "ya29.t", "refresh_token": "1//r", "expires_in": 3600}
+-    userinfo_resp = mock.MagicMock()
+-    userinfo_resp.is_success = True
+-    userinfo_resp.json.return_value = {"email": "alice@example.com", "name": "Alice"}
+-
+-    state = make_oauth_state("acct-s", "alice")
+-
+-    with mock.patch("httpx.post", return_value=token_resp) as mock_post, \
+-         mock.patch("httpx.get", return_value=userinfo_resp), \
++    started = "https://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
++    state = _flow("acct-s", "alice", redirect_uri=started)
++    with mock.patch("httpx.post", return_value=_ok({"access_token": "ya29.t", "refresh_token": "1//r", "expires_in": 3600})) as mock_post, \
++         mock.patch("httpx.get", return_value=_ok({"email": "alice@example.com", "name": "Alice"})), \
+          mock.patch("core.database.SessionLocal", Factory):
+-        callback = _callback_endpoint()
+-        await callback(
+-            code="4/code", state=state, error=None,
+-            request=_FakeRequest(scheme=scheme, host="odysseus.example.ts.net:7443"),
+-        )
+-
+-    assert _posted_redirect_uri(mock_post) == (
+-        f"{scheme}://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
+-    )
++        await _callback_endpoint()(code="4/code", state=state, error=None, request=_FakeRequest())
++    assert _posted_redirect_uri(mock_post) == started
+ 
+ 
+ @pytest.mark.asyncio
+-async def test_callback_redirect_uri_env_override_still_wins(monkeypatch):
+-    """An explicit GOOGLE_OAUTH_REDIRECT_URI is used verbatim — deriving the
+-    scheme must not override a value the operator pinned by hand."""
+-    from routes.email_helpers import make_oauth_state
++async def test_redirect_uri_env_override_still_wins(monkeypatch):
++    """An explicit GOOGLE_OAUTH_REDIRECT_URI is used verbatim, at the authorize
++    step and for the code exchange."""
++    import urllib.parse
+ 
+     pinned = "https://mail.example.com/api/email/oauth/google/callback"
+     monkeypatch.setenv("GOOGLE_OAUTH_REDIRECT_URI", pinned)
+@@ -494,33 +533,30 @@ async def test_callback_redirect_uri_env_override_still_wins(monkeypatch):
+     _make_account(db, account_id="acct-p", owner="alice", imap_user="alice@example.com")
+     db.close()
+ 
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {"access_token": "ya29.t", "refresh_token": "1//r", "expires_in": 3600}
+-    userinfo_resp = mock.MagicMock()
+-    userinfo_resp.is_success = True
+-    userinfo_resp.json.return_value = {"email": "alice@example.com", "name": "Alice"}
+-
+-    state = make_oauth_state("acct-p", "alice")
++    with mock.patch("core.database.SessionLocal", Factory):
++        url = (await _authorize_endpoint()(account_id="acct-p", request=_FakeRequest(scheme="http"), owner="alice")).headers["location"]
++    query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
++    assert query["redirect_uri"] == [pinned]
+ 
+-    with mock.patch("httpx.post", return_value=token_resp) as mock_post, \
+-         mock.patch("httpx.get", return_value=userinfo_resp), \
++    with mock.patch("httpx.post", return_value=_ok({"access_token": "ya29.t", "refresh_token": "1//r", "expires_in": 3600})) as mock_post, \
++         mock.patch("httpx.get", return_value=_ok({"email": "alice@example.com", "name": "Alice"})), \
+          mock.patch("core.database.SessionLocal", Factory):
+-        callback = _callback_endpoint()
+-        await callback(code="4/code", state=state, error=None, request=_FakeRequest(scheme="http"))
++        await _callback_endpoint()(code="4/code", state=query["state"][0], error=None, request=_FakeRequest(scheme="http"))
+ 
+     assert _posted_redirect_uri(mock_post) == pinned
+ 
+ 
+ @pytest.mark.asyncio
+ @pytest.mark.parametrize("scheme", ("http", "https"))
+-async def test_authorize_redirect_uri_follows_the_request_scheme(scheme, monkeypatch):
+-    """The authorize step builds the same redirect_uri the callback will send.
+-    `owner=""` is the unconfigured / single-user case, so no DB is touched."""
++async def test_authorize_redirect_uri_follows_a_trusted_address(scheme, monkeypatch):
++    """The authorize step uses the address the browser is on when this install
++    trusts it (ALLOWED_ORIGINS), scheme included; `owner=""` is the
++    unconfigured / single-user case, so no DB is touched."""
+     import urllib.parse
+ 
+     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
+-    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id.apps.googleusercontent.com")
++    monkeypatch.setenv("ALLOWED_ORIGINS", f"{scheme}://odysseus.example.ts.net:7443")
++    monkeypatch.setenv("AUTH_ENABLED", "false")   # owner="": single-user install
+ 
+     authorize = _authorize_endpoint()
+     resp = await authorize(
+@@ -530,16 +566,32 @@ async def test_authorize_redirect_uri_follows_the_request_scheme(scheme, monkeyp
+     )
+ 
+     query = urllib.parse.parse_qs(urllib.parse.urlparse(resp.headers["location"]).query)
+-    assert query["redirect_uri"] == [
+-        f"{scheme}://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
+-    ]
++    if scheme == "https":
++        assert query["redirect_uri"] == ["https://odysseus.example.ts.net:7443/api/email/oauth/google/callback"]
++    else:
++        # Google accepts plain http only on localhost or a loopback IP, so
++        # the configured base address is used instead.
++        assert query["redirect_uri"][0] != "http://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
++        assert query["redirect_uri"][0].endswith("/api/email/oauth/google/callback")
++    assert query["code_challenge_method"] == ["S256"]
++
++
++@pytest.mark.asyncio
++async def test_authorize_ignores_an_untrusted_host_header(monkeypatch):
++    import urllib.parse
++    monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
++    monkeypatch.setenv("ALLOWED_ORIGINS", "http://localhost:7000")
++    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "http://localhost:7000")
++    monkeypatch.setenv("AUTH_ENABLED", "false")   # owner="": single-user install
++    resp = await _authorize_endpoint()(account_id="acct-a", request=_FakeRequest(host="evil.example"), owner="")
++    query = urllib.parse.parse_qs(urllib.parse.urlparse(resp.headers["location"]).query)
++    assert query["redirect_uri"] == ["http://localhost:7000/api/email/oauth/google/callback"]
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_callback_rejects_token_for_a_different_mailbox_identity():
+     """Reconnecting with another Google identity must not replace the token
+     while retaining the original IMAP/SMTP login names."""
+-    from routes.email_helpers import make_oauth_state
+     from src.secret_storage import encrypt as _enc, decrypt as _dec
+     from core.database import EmailAccount
+ 
+@@ -556,21 +608,17 @@ async def test_callback_rejects_token_for_a_different_mailbox_identity():
+     )
+     db.close()
+ 
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {
++    token_resp = _ok({
+         "access_token": "ya29.other_access",
+         "refresh_token": "1//other_refresh",
+         "expires_in": 3600,
+-    }
+-    userinfo_resp = mock.MagicMock()
+-    userinfo_resp.is_success = True
+-    userinfo_resp.json.return_value = {
++    })
++    userinfo_resp = _ok({
+         "email": "other@example.edu",
+         "name": "Other User",
+-    }
++    })
+ 
+-    state = make_oauth_state("acct-reconnect", "alice")
++    state = _flow("acct-reconnect", "alice")
+     with mock.patch("httpx.post", return_value=token_resp), \
+          mock.patch("httpx.get", return_value=userinfo_resp), \
+          mock.patch("core.database.SessionLocal", Factory):
+@@ -595,7 +643,6 @@ async def test_callback_rejects_token_for_a_different_mailbox_identity():
+ async def test_callback_rejects_reconnect_without_a_fresh_refresh_token():
+     """A same-identity access token cannot be paired with an unproven refresh
+     token retained from a previously mixed row."""
+-    from routes.email_helpers import make_oauth_state
+     from src.secret_storage import encrypt as _enc, decrypt as _dec
+     from core.database import EmailAccount
+ 
+@@ -612,14 +659,12 @@ async def test_callback_rejects_reconnect_without_a_fresh_refresh_token():
+     )
+     db.close()
+ 
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {
++    token_resp = _ok({
+         "access_token": "ya29.same_identity_access",
+         "expires_in": 3600,
+-    }
++    })
+ 
+-    state = make_oauth_state("acct-refresh-proof", "alice")
++    state = _flow("acct-refresh-proof", "alice")
+     with mock.patch("httpx.post", return_value=token_resp), \
+          mock.patch("httpx.get") as userinfo_get, \
+          mock.patch("core.database.SessionLocal", Factory):
+@@ -645,7 +690,6 @@ async def test_callback_rejects_reconnect_without_a_fresh_refresh_token():
+ @pytest.mark.parametrize("userinfo_result", [None, {}, {"email": None}])
+ async def test_callback_requires_verified_mailbox_identity(userinfo_result):
+     """A failed or incomplete userinfo lookup must not persist fresh tokens."""
+-    from routes.email_helpers import make_oauth_state
+     from core.database import EmailAccount
+ 
+     db, Factory = _make_db()
+@@ -658,22 +702,17 @@ async def test_callback_requires_verified_mailbox_identity(userinfo_result):
+     )
+     db.close()
+ 
+-    token_resp = mock.MagicMock()
+-    token_resp.raise_for_status = mock.MagicMock()
+-    token_resp.json.return_value = {
++    token_resp = _ok({
+         "access_token": "ya29.unverified_access",
+         "refresh_token": "1//unverified_refresh",
+         "expires_in": 3600,
+-    }
++    })
+     if userinfo_result is None:
+         userinfo_call = mock.Mock(side_effect=RuntimeError("userinfo unavailable"))
+     else:
+-        userinfo_resp = mock.MagicMock()
+-        userinfo_resp.is_success = True
+-        userinfo_resp.json.return_value = userinfo_result
+-        userinfo_call = mock.Mock(return_value=userinfo_resp)
++        userinfo_call = mock.Mock(return_value=_ok(userinfo_result))
+ 
+-    state = make_oauth_state("acct-no-identity", "alice")
++    state = _flow("acct-no-identity", "alice")
+     with mock.patch("httpx.post", return_value=token_resp), \
+          mock.patch("httpx.get", userinfo_call), \
+          mock.patch("core.database.SessionLocal", Factory):
