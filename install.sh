@@ -26,6 +26,10 @@
 
 openwings_install() {
   set -euo pipefail
+  # Start from a folder that surely exists: the shell may sit inside a
+  # folder that was just deleted (for example an old ~/openwings), and git
+  # cannot clone from there.
+  cd "$HOME" 2>/dev/null || cd /
 
   local SLUG="Inclined88888/openwings"
   local REPO="https://github.com/${SLUG}"
