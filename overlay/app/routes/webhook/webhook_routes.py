@@ -283,6 +283,12 @@ def setup_webhook_routes(
             _sess_owner = getattr(sess, "owner", None)
             if not _caller_owns_session(_sess_owner, _tok_user):
                 raise HTTPException(404, "Session not found")
+            try:
+                from wings.hermes_import import refuse_if_read_only as _wings_refuse_read_only
+            except ImportError:
+                _wings_refuse_read_only = None
+            if _wings_refuse_read_only is not None:
+                _wings_refuse_read_only(session_id)  # OpenWings 0026: imported chats are read only
 
         # --- Case 2: Direct API key + model (no pre-configured endpoint needed) ---
         if not sess and body.api_key:

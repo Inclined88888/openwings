@@ -2456,7 +2456,7 @@ import { invalidateSettings } from './appConfig.js';
       let _userMsgEl = null;
       if (!skipBubble) {
         const _toggleStateForBubble = Storage.loadToggleState();
-        const _bubbleMode = (_toggleStateForBubble.mode || 'chat') === 'agent' ? 'agent' : 'chat';
+        const _bubbleMode = (_toggleStateForBubble.mode || 'agent') === 'agent' ? 'agent' : 'chat';
         const _bubbleMeta = _pendingAttachInfo ? { attachments: _pendingAttachInfo } : {};
         _bubbleMeta.interaction_mode = _bubbleMode;
         if (docSel) {
@@ -2715,7 +2715,7 @@ import { invalidateSettings } from './appConfig.js';
 	      // intent gate.
 	      const toggleState = Storage.loadToggleState();
 	      const isPlanMode = !!toggleState.plan_mode && !(el('research-toggle') && el('research-toggle').checked);
-	      let isAgentMode = (toggleState.mode || 'chat') === 'agent';
+	      let isAgentMode = (toggleState.mode || 'agent') === 'agent';
 	      const isIncognito = isIncognitoForSend;
 	      const _messageText = String(msg || '');
 	      const _explanatoryQuestion = /^\s*(?:how\s+(?:do|can)\s+i|can\s+you\s+explain|what\s+about|tell\s+me\s+how|show\s+me\s+how)\b/i.test(_messageText);
@@ -2812,7 +2812,7 @@ import { invalidateSettings } from './appConfig.js';
       currentAbort = abortCtrl;
 
 	      const _tState = Storage.loadToggleState();
-	      const _isAgent = (_tState.mode || 'chat') === 'agent' || !!_tState.plan_mode || workspaceAgentIntent;
+	      const _isAgent = (_tState.mode || 'agent') === 'agent' || !!_tState.plan_mode || workspaceAgentIntent;
 
       // Timeout: 6 min for research and agent mode, 3 min otherwise
       const timeoutMs = el('research-toggle').checked || _isAgent ? RESEARCH_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
@@ -2977,22 +2977,17 @@ import { invalidateSettings } from './appConfig.js';
           if (m) errText = m[1].replace(/\\"/g, '"');
           else if (errBody.length < 200) errText = errBody;
         } catch {}
-        // Auto-switch to chat mode for tool-related errors
-        if (errText.includes('tool') || errText.includes('auto')) {
-          errText = 'This model doesn\'t support agent tools — switched to Chat mode. Try again.';
-          const _ab = document.getElementById('mode-agent-btn');
-          const _cb = document.getElementById('mode-chat-btn');
-          if (_ab && _cb) {
-            _ab.classList.remove('active');
-            _cb.classList.add('active');
-            const _toggle = _ab.closest('.mode-toggle');
-            if (_toggle) _toggle.classList.add('mode-chat');
-          }
-          if (typeof Storage !== 'undefined' && Storage.KEYS) {
-            const _st = Storage.getJSON(Storage.KEYS.TOGGLES, {});
-            _st.mode = 'chat';
-            Storage.setJSON(Storage.KEYS.TOGGLES, _st);
-          }
+        // OpenWings (patch 0026): a chat imported from Hermes is read only.
+        if (res.status === 409) {
+          try { const _d = JSON.parse(errText.startsWith('{') ? errText : '{}').detail; if (_d) errText = _d; } catch {}
+        }
+        // A provider that turned down the tools for this message. Upstream
+        // switched to Chat mode for good (saved for every later chat), so
+        // one rejected request left the person with an assistant that has
+        // no tools and no memory. Say it plainly and keep the choice to the
+        // person: Agent stays selected.
+        else if (/\btools?\b|tool_choice/i.test(errText)) {
+          errText = 'This model could not use tools for that message. Send it again, choose Chat next to the message box to answer without tools, or pick a model that supports tools in Settings, Added Models.';
         }
         typewriterInto(holder.querySelector('.body'), errText);
         enableResearchBtn();
@@ -4147,6 +4142,8 @@ import { invalidateSettings } from './appConfig.js';
                 if (!_isBg && _userMsgEl && chatRenderer.setUserModePill) {
                   chatRenderer.setUserModePill(_userMsgEl, json.mode || 'chat', !!json.auto_escalated);
                 }
+                // OpenWings (patch 0026): wings-hermes.js notes once that Chat mode has no tools.
+                if (!_isBg) window.dispatchEvent(new CustomEvent('openwings:turn-mode', { detail: json }));
                 continue;
               }
               if (json.type === 'agent_prep') {

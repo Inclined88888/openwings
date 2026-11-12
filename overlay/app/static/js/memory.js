@@ -880,7 +880,7 @@ export function renderMemoryList() {
 
     const srcSpan = document.createElement('span');
     srcSpan.className = 'memory-item-source';
-    srcSpan.textContent = memory.source === 'auto' ? 'auto' : 'manual';
+    srcSpan.textContent = memory.source === 'auto' ? 'auto' : (memory.source === 'hermes_import' ? 'from Hermes' : 'manual');
     meta.appendChild(srcSpan);
 
     const uses = Number(memory.uses || 0);

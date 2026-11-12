@@ -769,6 +769,12 @@ def setup_session_routes(
         """Bulk-inject messages into a session's history (for group chat sync)."""
         _verify_session_owner(request, sid)
         try:
+            from wings.hermes_import import refuse_if_read_only as _wings_refuse_read_only
+        except ImportError:
+            _wings_refuse_read_only = None
+        if _wings_refuse_read_only is not None:
+            _wings_refuse_read_only(sid)  # OpenWings 0026: imported chats are read only
+        try:
             sess = session_manager.get_session(sid)
         except KeyError:
             raise HTTPException(404, f"Session {sid} not found")
@@ -1219,6 +1225,12 @@ def setup_session_routes(
     async def compact_session(request: Request, session_id: str):
         """Summarize older messages into one compacted history entry."""
         _verify_session_owner(request, session_id)
+        try:
+            from wings.hermes_import import refuse_if_read_only as _wings_refuse_read_only
+        except ImportError:
+            _wings_refuse_read_only = None
+        if _wings_refuse_read_only is not None:
+            _wings_refuse_read_only(session_id)  # OpenWings 0026: imported chats are read only
         try:
             session = session_manager.get_session(session_id)
         except KeyError:

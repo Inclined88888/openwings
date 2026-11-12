@@ -2271,6 +2271,12 @@ def setup_chat_routes(
         # Verify the caller owns this session before loading it.
         # Without this, any authenticated user can post into another user's chat.
         _verify_session_owner(request, session)
+        try:
+            from wings.hermes_import import refuse_if_read_only as _wings_refuse_read_only
+        except ImportError:
+            _wings_refuse_read_only = None
+        if _wings_refuse_read_only is not None:
+            _wings_refuse_read_only(session)  # OpenWings 0026: imported chats are read only
 
         try:
             sess = session_manager.get_session(session)
@@ -2772,6 +2778,12 @@ def setup_chat_routes(
             # Verify ownership AFTER coerce (which may resolve a default session)
             # but BEFORE loading. Prevents cross-user session hijack.
             _verify_session_owner(request, session)
+            try:
+                from wings.hermes_import import refuse_if_read_only as _wings_refuse_read_only
+            except ImportError:
+                _wings_refuse_read_only = None
+            if _wings_refuse_read_only is not None:
+                _wings_refuse_read_only(session)  # OpenWings 0026: imported chats are read only
             sess = session_manager.get_session(session)
             session_mode = str(getattr(sess, "thinking_mode", "") or "off").lower()
             # An explicit request-scoped mode (headless eval, API client, or
@@ -3853,6 +3865,16 @@ def setup_chat_routes(
         _effective_mode = 'research' if effective_do_research else (chat_mode or 'chat')
         if _effective_mode in ('agent', 'research', 'chat'):
             set_session_mode(session, _effective_mode)
+        # OpenWings 0026: say plainly when this model runs Agent mode without
+        # native tool calling, and how to turn tools on.
+        _wings_tools_note = ""
+        if _effective_mode == 'agent':
+            try:
+                from wings.assistant_identity import tools_off_notice, tools_off_reason
+                _wings_tools_note = tools_off_notice(tools_off_reason(
+                    getattr(sess, "endpoint_url", ""), getattr(sess, "model", ""), owner))
+            except ImportError:
+                _wings_tools_note = ""
 
         async def stream_with_save() -> AsyncGenerator[str, None]:
             # _effective_mode is read-only here; closure captures it from
@@ -3863,7 +3885,10 @@ def setup_chat_routes(
             # Register active stream for partial-save safety net
             _active_streams[session] = {"status": "streaming", "partial": "", "query": message, "is_research": effective_do_research, "mode": _effective_mode}
             if not tool_approval_continuation:
-                yield f"data: {json.dumps({'type': 'turn_mode', 'mode': _effective_mode, 'auto_escalated': auto_escalated})}\n\n"
+                _turn_mode_event = {'type': 'turn_mode', 'mode': _effective_mode, 'auto_escalated': auto_escalated}
+                if _wings_tools_note:
+                    _turn_mode_event['tools_note'] = _wings_tools_note
+                yield f"data: {json.dumps(_turn_mode_event)}\n\n"
 
             # The client sent a workspace the server refused to bind (deleted
             # folder, file path, sensitive dir, filesystem root). Tell it up
@@ -5084,6 +5109,12 @@ def setup_chat_routes(
     @router.post("/api/inject_context/{session_id}")
     async def inject_context(request: Request, session_id: str, context: str = Form(...)) -> Dict[str, str]:
         _verify_session_owner(request, session_id)
+        try:
+            from wings.hermes_import import refuse_if_read_only as _wings_refuse_read_only
+        except ImportError:
+            _wings_refuse_read_only = None
+        if _wings_refuse_read_only is not None:
+            _wings_refuse_read_only(session_id)  # OpenWings 0026: imported chats are read only
         try:
             sess = session_manager.get_session(session_id)
             msg = untrusted_context_message("injected research context", f"Research Context: {context}")

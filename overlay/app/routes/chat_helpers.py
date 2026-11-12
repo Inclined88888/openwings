@@ -1182,6 +1182,8 @@ async def build_chat_context(
         agent_mode=agent_mode,
         incognito=incognito,
         use_skills=skills_enabled,
+        model=getattr(sess, "model", None),
+        endpoint_url=getattr(sess, "endpoint_url", None),
     )
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val

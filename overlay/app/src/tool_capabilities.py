@@ -734,6 +734,12 @@ _EXTERNAL_MESSAGE_SOURCE_PREFIXES = ("web page:",)
 _CONTROL_PLANE_CONTEXT_SOURCES = frozenset(
     {
         "skills",
+        # OpenWings 0026: the chat preface's own skill index (chat_processor)
+        # is the same server-owned descriptor list as "skills". Labelled
+        # differently, it made every agent turn look externally tainted, so
+        # the assistant could not read its own memory or notes ("external
+        # untrusted context blocks read_private") without an approval card.
+        "available skills index",
         "client runtime context",
         "backend runtime context",
         "integrations",

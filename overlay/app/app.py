@@ -756,6 +756,9 @@ app.include_router(setup_admin_wipe_routes(session_manager))
 from routes.memory.memory_routes import setup_memory_routes
 memory_router = setup_memory_routes(memory_manager, session_manager, memory_vector=memory_vector)
 app.include_router(memory_router)
+# Wings (patch 0026): Import from Hermes (wings/hermes_routes.py).
+from wings.hermes_routes import setup_hermes_routes as _wings_hermes_routes
+app.include_router(_wings_hermes_routes(memory_manager, session_manager, memory_vector=memory_vector))
 from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
 

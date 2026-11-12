@@ -906,7 +906,7 @@ function initializeEventListeners() {
       if (bashChk && bashChk.checked) {
         bashChk.checked = false;
         if (bashBtn) bashBtn.classList.remove('active');
-        saveToolPref('bash', (loadToggleState().mode || 'chat'), false);
+        saveToolPref('bash', (loadToggleState().mode || 'agent'), false);
       }
     }
     const s = loadToggleState(); s.research = active; saveToggleState(s);
@@ -937,7 +937,7 @@ function initializeEventListeners() {
       const _webChk = el('web-toggle');
       if (_webChk && _webChk.checked) {
         _webChk.checked = false;
-        saveToolPref('web', (loadToggleState().mode || 'chat'), false);
+        saveToolPref('web', (loadToggleState().mode || 'agent'), false);
       }
     }
     const s = loadToggleState(); s.group = active; saveToggleState(s);
@@ -1860,7 +1860,10 @@ function initializeEventListeners() {
     const chatBtn = el('mode-chat-btn');
     if (!agentBtn || !chatBtn) return;
     const state = loadToggleState();
-    let currentMode = state.mode || 'chat';
+    // OpenWings 0026: Agent is the default. Save it once so every check that
+    // reads the stored mode (research, group chat) sees the same value.
+    if (!state.mode) { state.mode = 'agent'; saveToggleState(state); }
+    let currentMode = state.mode || 'agent';
 
     // Immediately hide bash button in chat mode on page load
     if (currentMode === 'chat') {
@@ -1988,14 +1991,14 @@ function initializeEventListeners() {
     const btn = el(btnId);
     if (!btn) return;
     // Restore per-mode saved state for both Agent and Chat modes.
-    const mode = (loadToggleState().mode) || 'chat';
+    const mode = (loadToggleState().mode) || 'agent';
     const saved = loadToolPref(stateKey, mode);
     const chk = el(checkboxId);
     if (chk) chk.checked = saved;
     btn.classList.toggle('active', saved);
     btn.setAttribute('aria-pressed', String(saved));
     btn.addEventListener('click', () => {
-      const curMode = (loadToggleState().mode) || 'chat';
+      const curMode = (loadToggleState().mode) || 'agent';
       const chk = el(checkboxId);
       chk.checked = !chk.checked;
       btn.classList.toggle('active', chk.checked);
@@ -2267,7 +2270,7 @@ function initializeEventListeners() {
         if (webChk && webChk.checked) {
           webChk.checked = false;
           if (webBtn) webBtn.classList.remove('active');
-          saveToolPref('web', (st.mode || 'chat'), false);
+          saveToolPref('web', (st.mode || 'agent'), false);
         }
       }
 
@@ -2285,7 +2288,7 @@ function initializeEventListeners() {
           if (webChk && webChk.checked) {
             webChk.checked = false;
             if (webBtn) webBtn.classList.remove('active');
-            saveToolPref('web', (loadToggleState().mode || 'chat'), false);
+            saveToolPref('web', (loadToggleState().mode || 'agent'), false);
           }
           // Research requires chat mode — force switch from agent
           const rs = loadToggleState();
@@ -2550,7 +2553,7 @@ function initializeEventListeners() {
         if (webChk && webChk.checked) {
           webChk.checked = false;
           if (webBtn) webBtn.classList.remove('active');
-          saveToolPref('web', (loadToggleState().mode || 'chat'), false);
+          saveToolPref('web', (loadToggleState().mode || 'agent'), false);
         }
         // Research requires chat mode
         const rs2 = loadToggleState();
@@ -2744,7 +2747,7 @@ function initializeEventListeners() {
           window.__odysseusSetChatMode(_restoreMode === 'chat' ? 'chat' : 'agent');
         }
         // Reapply the current mode's real defaults to the visible toggles
-        const _curMode = (Storage.getJSON(Storage.KEYS.TOGGLES, {}) || {}).mode || 'chat';
+        const _curMode = (Storage.getJSON(Storage.KEYS.TOGGLES, {}) || {}).mode || 'agent';
         try { applyModeToToggles(_curMode); } catch (_) {}
       }
       // If toggled off mid-chat (welcome screen hidden), hide the button

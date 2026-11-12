@@ -3000,6 +3000,16 @@ def required_read_operation_for_request(message: str, history: Iterable = ()) ->
     Do not invent identifiers, resolve relative dates, extract a read from a
     compound request, or turn a summary/search into an obligatory operation.
     """
+    try:
+        from wings.assistant_identity import asks_about_other_assistant
+    except ImportError:
+        asks_about_other_assistant = None
+    if asks_about_other_assistant is not None and asks_about_other_assistant(message):
+        # OpenWings 0026: "can you see my Hermes memory?" is about another
+        # app's data on the person's computer, not a read of OpenWings'
+        # own memory store. A sealed read answered it "No saved memories
+        # found." instead of letting the model explain the import path.
+        return None
     normalized_text = _normalize_request_lead(message)
     text, maximum = _read_request_and_limit(message)
     rows = list(history)
