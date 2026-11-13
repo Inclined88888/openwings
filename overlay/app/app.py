@@ -511,6 +511,15 @@ if AUTH_ENABLED:
 else:
     logger.info("Auth middleware disabled (set AUTH_ENABLED=true to enable)")
 
+# Wings (patch 0029): sign in off (OPENWINGS_SIGN_IN=off). Accounts stay on;
+# wings/local_guard.py, outside every other middleware, refuses all but the
+# app's own page in a browser on this computer and signs that browser in as
+# the admin.
+if AUTH_ENABLED and os.environ.get("WINGS_SIGN_IN_OFF") == "1":
+    from wings.local_guard import LocalOnlyGuard
+    app.add_middleware(LocalOnlyGuard)
+    logger.warning("Sign in is off: a browser on this computer is signed in as the admin automatically")
+
 # ========= STATIC FILES =========
 os.makedirs(STATIC_DIR, exist_ok=True)
 

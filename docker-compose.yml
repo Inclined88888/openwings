@@ -118,6 +118,12 @@ services:
       - OPENWINGS_WORKSPACE_DEFAULT=${OPENWINGS_WORKSPACE_DEFAULT:-/workspaces/default}
       # Accounts and auth
       - AUTH_ENABLED=true
+      # OPENWINGS_SIGN_IN=off in .env: no sign in page for a browser on this
+      # computer (wings/entrypoint.sh, wings/local_guard.py). Only takes
+      # effect while APP_BIND is 127.0.0.1 and the https profile is off.
+      - OPENWINGS_SIGN_IN=${OPENWINGS_SIGN_IN:-on}
+      - OPENWINGS_APP_BIND=${APP_BIND:-127.0.0.1}
+      - OPENWINGS_PROFILES=${COMPOSE_PROFILES:-}
       - LOCALHOST_BYPASS=false
       - OPENWINGS_ADMIN_USER=${OPENWINGS_ADMIN_USER:-admin}
       - OPENWINGS_ADMIN_PASSWORD=${OPENWINGS_ADMIN_PASSWORD:-}

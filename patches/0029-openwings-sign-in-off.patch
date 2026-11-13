@@ -1,0 +1,44 @@
+OpenWings patch 0029: no sign in page for a browser on this computer
+
+OPENWINGS_SIGN_IN=off in .env removes the sign in page. Accounts stay on
+(AUTH_ENABLED=true), so chats, settings and connected accounts still belong
+to the admin and every feature that needs a signed-in person keeps working.
+wings/entrypoint.sh sets WINGS_SIGN_IN_OFF=1 only while the app port is
+published on 127.0.0.1 (APP_BIND) and the https profile is off; otherwise it
+says so in the log and sign in stays on.
+
+  * app.py: when WINGS_SIGN_IN_OFF=1, installs wings.local_guard.
+    LocalOnlyGuard (an OpenWings file, not part of this diff) outside every
+    other middleware. The guard refuses any source but the container itself
+    and the gateway of one of its Docker networks (where the published port
+    delivers from; the code runner, browser and renderer containers and any
+    unknown address are refused), any request through a proxy, any Host but
+    localhost, 127.0.0.1 or [::1] (DNS rebinding), and any change or
+    websocket from another website (Origin must match; Sec-Fetch-Site
+    cross-site or same-site is refused, and for /api unless it is a top
+    level page load, so sign in returns from providers still work). A page
+    load from the published port without a valid session gets a new admin
+    session, the same cookie a sign in sets.
+
+License: AGPL-3.0-or-later (same as upstream)
+
+diff --git a/app.py b/app.py
+index 4cffc6e..b57b35d 100644
+--- a/app.py
++++ b/app.py
+@@ -511,6 +511,15 @@ if AUTH_ENABLED:
+ else:
+     logger.info("Auth middleware disabled (set AUTH_ENABLED=true to enable)")
+ 
++# Wings (patch 0029): sign in off (OPENWINGS_SIGN_IN=off). Accounts stay on;
++# wings/local_guard.py, outside every other middleware, refuses all but the
++# app's own page in a browser on this computer and signs that browser in as
++# the admin.
++if AUTH_ENABLED and os.environ.get("WINGS_SIGN_IN_OFF") == "1":
++    from wings.local_guard import LocalOnlyGuard
++    app.add_middleware(LocalOnlyGuard)
++    logger.warning("Sign in is off: a browser on this computer is signed in as the admin automatically")
++
+ # ========= STATIC FILES =========
+ os.makedirs(STATIC_DIR, exist_ok=True)
+ 
